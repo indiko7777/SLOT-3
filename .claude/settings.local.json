@@ -58,7 +58,13 @@
       "Bash(chmod +x ~/bin/gh)",
       "Bash(export PATH=\"$HOME/bin:$PATH\")",
       "Bash(export GH_CONFIG_DIR=\"$HOME/.gh\")",
-      "Bash(rm -rf /Users/tenguiz/Downloads/SLOT-3-main/public/assets/symbole2 && rm -rf /Users/tenguiz/Downloads/SLOT-3-main/public/assets/symbols_backup && rm -rf /Users/tenguiz/Downloads/SLOT-3-main/public/assets/backgrounds && rm -rf /tmp/symbol_resize && echo \"Cleaned up\")"
+      "Bash(rm -rf /Users/tenguiz/Downloads/SLOT-3-main/public/assets/symbole2 && rm -rf /Users/tenguiz/Downloads/SLOT-3-main/public/assets/symbols_backup && rm -rf /Users/tenguiz/Downloads/SLOT-3-main/public/assets/backgrounds && rm -rf /tmp/symbol_resize && echo \"Cleaned up\")",
+      "WebFetch(domain:stakeengine.github.io)",
+      "WebFetch(domain:engine.stake.com)",
+      "Bash(gh api *)",
+      "WebFetch(domain:stake-engine.com)",
+      "PowerShell(gh --version)",
+      "PowerShell(gh api repos/StakeEngine/math-sdk --jq '{name,description,default_branch}')"
     ]
   }
 }

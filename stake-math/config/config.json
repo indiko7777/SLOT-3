@@ -1,0 +1,114 @@
+{
+  "workingName": "heat-chase-grand-escape",
+  "frontendConfig": {
+    "file": "fe_config.json",
+    "sha256": ""
+  },
+  "gameID": "heat-chase-grand-escape",
+  "rtp": 96,
+  "betDenomination": 10000,
+  "minDenomination": 100,
+  "providerNumber": 0,
+  "standardForceFile": {
+    "file": "force.json",
+    "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"
+  },
+  "bookShelfConfig": [
+    {
+      "name": "base",
+      "tables": [
+        {
+          "file": "lookUpTable_base_0.csv",
+          "sha256": "d787c58356fbd4f1b59a204c6b240bee4468e94cf78620797a2bf281fe26eb27"
+        }
+      ],
+      "cost": 1,
+      "rtp": 0.96,
+      "bookLength": 40000,
+      "feature": false,
+      "autoEndRoundDisabled": false,
+      "buyBonus": false,
+      "maxWin": 5000,
+      "booksFile": {
+        "file": "books_base.jsonl.zst",
+        "sha256": "72f000178392e153c16b74b73d84006d1594914267ce598006d71e215b84f6a0"
+      },
+      "forceFile": {
+        "file": "force.json",
+        "sha256": ""
+      }
+    },
+    {
+      "name": "ante",
+      "tables": [
+        {
+          "file": "lookUpTable_ante_0.csv",
+          "sha256": "7fcf127520877037c4f3b2d12fda80697d22a561748cd23cf6c6ebd0feb5a41d"
+        }
+      ],
+      "cost": 1.5,
+      "rtp": 0.96,
+      "bookLength": 40000,
+      "feature": true,
+      "autoEndRoundDisabled": false,
+      "buyBonus": false,
+      "maxWin": 5000,
+      "booksFile": {
+        "file": "books_ante.jsonl.zst",
+        "sha256": "5922fd324f98ad1bc2d00700bc88284e0cd4d6641a1b45cd4c6929f381959d9b"
+      },
+      "forceFile": {
+        "file": "force.json",
+        "sha256": ""
+      }
+    },
+    {
+      "name": "buy",
+      "tables": [
+        {
+          "file": "lookUpTable_buy_0.csv",
+          "sha256": "90c0f4b817b4793a617f5daa725a12297549d6ca8b2c375944d7d6d513284689"
+        }
+      ],
+      "cost": 100,
+      "rtp": 0.96,
+      "bookLength": 18000,
+      "feature": false,
+      "autoEndRoundDisabled": false,
+      "buyBonus": true,
+      "maxWin": 5000,
+      "booksFile": {
+        "file": "books_buy.jsonl.zst",
+        "sha256": "38994c613e88b2204cf2f42b7bcf90a9a64744e27cca3cce36f0f97e47752a10"
+      },
+      "forceFile": {
+        "file": "force.json",
+        "sha256": ""
+      }
+    },
+    {
+      "name": "super_buy",
+      "tables": [
+        {
+          "file": "lookUpTable_super_buy_0.csv",
+          "sha256": "e51643ea275b18a88efea8c103b4bbc79f45c9fa4d2147b30c00ac816a8dfef6"
+        }
+      ],
+      "cost": 500,
+      "rtp": 0.96,
+      "bookLength": 18000,
+      "feature": false,
+      "autoEndRoundDisabled": false,
+      "buyBonus": true,
+      "maxWin": 5000,
+      "booksFile": {
+        "file": "books_super_buy.jsonl.zst",
+        "sha256": "d610854f41063012eb4ced560cff82d27cc280e977fc130fd04c697fc6c28739"
+      },
+      "forceFile": {
+        "file": "force.json",
+        "sha256": ""
+      }
+    }
+  ]
+}

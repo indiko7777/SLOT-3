@@ -1,0 +1,27 @@
+{
+  "name": "heat-chase-stake-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Heat Chase: Grand Escape — Stake Engine front-end (Pixi) + RGS client",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5175",
+    "mock-rgs": "tsx mock-rgs/server.ts",
+    "dev:local": "concurrently -k -n RGS,WEB -c cyan,magenta \"npm:mock-rgs\" \"npm:dev\"",
+    "build": "tsc && vite build",
+    "test": "vitest run",
+    "check": "npm run test && npm run build"
+  },
+  "dependencies": {
+    "@bokuweb/zstd-wasm": "^0.0.27",
+    "pixi.js": "^8.8.1",
+    "vite": "^5.4.21"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.29",
+    "concurrently": "^9.1.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "vitest": "^2.1.9"
+  }
+}

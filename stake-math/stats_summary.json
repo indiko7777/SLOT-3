@@ -1,0 +1,73 @@
+{
+  "game": "heat-chase-grand-escape",
+  "target": {
+    "rtp": 0.96,
+    "tolerance": 0.005
+  },
+  "crossModeSpread": 0,
+  "pass": true,
+  "problems": [],
+  "modes": [
+    {
+      "mode": "base",
+      "cost": 1,
+      "rtp": 0.96,
+      "rtpPct": 96,
+      "rows": 40000,
+      "totalWeight": "1000000000000",
+      "hitRate": 0.11299,
+      "bonusHitRate": 0.009862,
+      "maxWinRate": 0.00001152,
+      "stdDev": 19.167,
+      "volatilityVsTarget": 0,
+      "maxPayoutX": 5000,
+      "booksMatch": true
+    },
+    {
+      "mode": "ante",
+      "cost": 1.5,
+      "rtp": 0.96,
+      "rtpPct": 96,
+      "rows": 40000,
+      "totalWeight": "1000000000000",
+      "hitRate": 0.153359,
+      "bonusHitRate": 0.015408,
+      "maxWinRate": 0.00001728,
+      "stdDev": 15.647,
+      "volatilityVsTarget": 0,
+      "maxPayoutX": 5000,
+      "booksMatch": true
+    },
+    {
+      "mode": "buy",
+      "cost": 100,
+      "rtp": 0.96,
+      "rtpPct": 96,
+      "rows": 18000,
+      "totalWeight": "1000000000000",
+      "hitRate": 1,
+      "bonusHitRate": 1,
+      "maxWinRate": 0.002614,
+      "stdDev": 2.615,
+      "volatilityVsTarget": 0,
+      "maxPayoutX": 5000,
+      "booksMatch": true
+    },
+    {
+      "mode": "super_buy",
+      "cost": 500,
+      "rtp": 0.96,
+      "rtpPct": 96,
+      "rows": 18000,
+      "totalWeight": "1000000000000",
+      "hitRate": 1,
+      "bonusHitRate": 1,
+      "maxWinRate": 0.0765,
+      "stdDev": 2.607,
+      "volatilityVsTarget": 0,
+      "maxPayoutX": 5000,
+      "booksMatch": true
+    }
+  ],
+  "generatedAt": "2026-05-17T19:22:11.928Z"
+}
