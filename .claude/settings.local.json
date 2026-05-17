@@ -43,7 +43,22 @@
       "Bash(git init *)",
       "Bash(git remote *)",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(git branch *)",
+      "Bash(git push *)",
+      "Bash(gh auth *)",
+      "Read(//Users/tenguiz/**)",
+      "Bash(ssh -T git@github.com)",
+      "Bash(curl -sL https://github.com/cli/cli/releases/download/v2.74.0/gh_2.74.0_macOS_arm64.zip -o /tmp/gh.zip)",
+      "Bash(unzip -o /tmp/gh.zip -d /tmp/gh_install)",
+      "Bash(sudo cp /tmp/gh_install/gh_2.74.0_macOS_arm64/bin/gh /usr/local/bin/gh)",
+      "Bash(gh --version)",
+      "Bash(mkdir -p ~/bin)",
+      "Bash(cp /tmp/gh_install/gh_2.74.0_macOS_arm64/bin/gh ~/bin/gh)",
+      "Bash(chmod +x ~/bin/gh)",
+      "Bash(export PATH=\"$HOME/bin:$PATH\")",
+      "Bash(export GH_CONFIG_DIR=\"$HOME/.gh\")",
+      "Bash(rm -rf /Users/tenguiz/Downloads/SLOT-3-main/public/assets/symbole2 && rm -rf /Users/tenguiz/Downloads/SLOT-3-main/public/assets/symbols_backup && rm -rf /Users/tenguiz/Downloads/SLOT-3-main/public/assets/backgrounds && rm -rf /tmp/symbol_resize && echo \"Cleaned up\")"
     ]
   }
 }
