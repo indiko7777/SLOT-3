@@ -1,0 +1,5 @@
+id,weight,payoutMultiplier,mode
+4001,0,0,super_buy
+4002,0,0.8,super_buy
+4003,99000,308.75,super_buy
+4004,1000,5000,super_buy

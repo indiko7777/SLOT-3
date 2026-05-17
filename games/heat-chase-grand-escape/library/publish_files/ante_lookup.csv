@@ -1,0 +1,5 @@
+id,weight,payoutMultiplier,mode
+2001,680000,0,ante
+2002,285000,0.8,ante
+2003,34500,188.75,ante
+2004,500,5000,ante

@@ -1,0 +1,5 @@
+id,weight,payoutMultiplier,mode
+1001,720000,0,base
+1002,260000,0.8,base
+1003,19800,188.75,base
+1004,200,5000,base
