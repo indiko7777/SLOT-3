@@ -415,10 +415,6 @@ export class BoardView extends Container {
 
   private createSpinTile(id: SymbolId): Container {
     const c = new Container();
-    const g = new Graphics();
-    g.roundRect(0, 0, this.cellWidth, this.cellHeight, 10)
-      .fill({ color: 0x0a0e1e, alpha: 0.6 });
-    c.addChild(g);
 
     const tex = getSymbolTexture(id);
     if (tex) {
