@@ -33,7 +33,6 @@ export class HudView extends Container {
     if (layout.artPanel) this.drawArt(layout.artPanel, snapshot);
     this.drawTopPlaque(layout.topPlaque);
     this.drawBoardFrame(layout.boardFrame);
-    this.drawHeatRail(layout.heatRail, snapshot.heatLevel);
     this.drawControls(layout.bottomBar, snapshot);
   }
 
