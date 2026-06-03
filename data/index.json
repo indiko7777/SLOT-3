@@ -1,0 +1,28 @@
+{
+  "modes": [
+    {
+      "name": "base",
+      "cost": 1,
+      "events": "books_base.jsonl.zst",
+      "weights": "lookUpTable_base_0.csv"
+    },
+    {
+      "name": "ante",
+      "cost": 1.5,
+      "events": "books_ante.jsonl.zst",
+      "weights": "lookUpTable_ante_0.csv"
+    },
+    {
+      "name": "buy",
+      "cost": 100,
+      "events": "books_buy.jsonl.zst",
+      "weights": "lookUpTable_buy_0.csv"
+    },
+    {
+      "name": "super_buy",
+      "cost": 500,
+      "events": "books_super_buy.jsonl.zst",
+      "weights": "lookUpTable_super_buy_0.csv"
+    }
+  ]
+}
