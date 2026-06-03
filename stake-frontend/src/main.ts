@@ -1,5 +1,6 @@
 import { Application } from "pixi.js";
 import { EventAudioBus } from "./audio";
+import { installBrowserMockRgs } from "./browser-mock-rgs";
 import type { GameEvent, RoundRecord } from "./domain";
 import { hideLoader, showLoader, updateLoader } from "./loader";
 import { applyEvent, INITIAL_SNAPSHOT, type PlaybackSnapshot } from "./playback";
@@ -20,7 +21,8 @@ document.body.style.background = "#050816";
 root.style.width = "100%";
 root.style.height = "100%";
 
-const session = readSession();
+const session = await readSession();
+if (session.isBrowserMock) installBrowserMockRgs();
 const client = new RgsClient(session);
 const audioBus = new EventAudioBus();
 
