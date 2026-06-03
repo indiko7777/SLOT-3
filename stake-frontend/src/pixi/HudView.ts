@@ -338,48 +338,53 @@ export class HudView extends Container {
   }
 
   private drawHeatRail(rect: Rect, heatLevel: number): void {
-    const rail = new Graphics();
-    rail.roundRect(rect.x, rect.y, rect.width, rect.height, 3).fill(0x230b37).stroke({ color: 0xffda64, alpha: 0.55, width: 1 });
-    this.addChild(rail);
-    const starHeight = rect.height / 5;
+    const cx = rect.x + rect.width / 2;
+    const totalH = rect.height;
+    const slotH = totalH / 5;
     const starTex = getExtraTexture("wanted_star");
-    const litStars: { sprite: Sprite; star: number }[] = [];
+    const starSize = Math.min(rect.width * 0.72, slotH * 0.52);
+    const litStars: Sprite[] = [];
 
-    for (let index = 0; index < 5; index += 1) {
+    // "HEAT" label at top
+    this.addChild(makeText("HEAT", Math.min(9, rect.width * 0.18), 0xffda64, cx, rect.y - 10, "center"));
+
+    for (let index = 0; index < 5; index++) {
       const star = 5 - index;
       const lit = heatLevel >= star;
-      const y = rect.y + index * starHeight;
+      const cy = rect.y + index * slotH + slotH / 2;
 
-      // Multiplier label
-      this.addChild(makeText(`${star}x`, Math.min(24, rect.width * 0.34), lit ? 0xffdf65 : 0x7a5570, rect.x + rect.width * 0.5, y + 8, "center"));
-
-      // Wanted star image or fallback text
       if (starTex) {
-        const starSprite = new Sprite(starTex);
-        starSprite.anchor.set(0.5);
-        const starSize = Math.min(rect.width * 0.55, starHeight * 0.45);
-        const scale = starSize / Math.max(starTex.width, starTex.height);
-        starSprite.scale.set(scale);
-        starSprite.position.set(rect.x + rect.width * 0.52, y + starHeight * 0.65);
-        starSprite.alpha = lit ? 1 : 0.2;
-        if (!lit) starSprite.tint = 0x555555;
-        this.addChild(starSprite);
-        if (lit) litStars.push({ sprite: starSprite, star });
+        const sp = new Sprite(starTex);
+        sp.anchor.set(0.5);
+        sp.scale.set(starSize / Math.max(starTex.width, starTex.height));
+        sp.position.set(cx, cy);
+        sp.alpha = lit ? 1 : 0.18;
+        if (!lit) sp.tint = 0x333344;
+        this.addChild(sp);
+        if (lit) litStars.push(sp);
       } else {
-        const starText = makeText("★", Math.min(32, rect.width * 0.52), lit ? 0xff3158 : 0x49344a, rect.x + rect.width * 0.52, y + starHeight * 0.46, "center");
-        this.addChild(starText);
+        // Fallback: draw a plain star glyph
+        const color = lit ? (star === 5 ? 0xff3030 : 0xffda64) : 0x3a3050;
+        this.addChild(makeText("★", Math.min(28, starSize * 0.9), color, cx, cy - 4, "center"));
       }
     }
 
-    // Pulse animation on lit stars
+    // Subtle glow bar behind lit segment only
+    if (heatLevel > 0) {
+      const glowH = (heatLevel / 5) * totalH;
+      const glow = new Graphics();
+      glow.roundRect(rect.x, rect.y + totalH - glowH, rect.width, glowH, 4)
+        .fill({ color: heatLevel >= 5 ? 0xff2020 : 0xff6a00, alpha: 0.13 });
+      this.addChildAt(glow, 0);
+    }
+
+    // Pulse lit stars
     if (litStars.length > 0) {
-      const baseScales = litStars.map(({ sprite }) => sprite.scale.x);
+      const baseScales = litStars.map(s => s.scale.x);
       this.addAmbient((_dt, elapsed) => {
         for (let i = 0; i < litStars.length; i++) {
-          const { sprite, star } = litStars[i];
-          const pulse = 0.85 + Math.sin(elapsed * 3 + star * 0.7) * 0.15;
-          const s = baseScales[i] * pulse;
-          sprite.scale.set(s);
+          const p = 0.88 + Math.sin(elapsed * 3.5 + i * 0.8) * 0.12;
+          litStars[i].scale.set(baseScales[i] * p);
         }
       });
     }

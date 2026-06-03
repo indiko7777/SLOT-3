@@ -8,7 +8,7 @@ export function computeLayout(width: number, height: number): LayoutMetrics {
   if (portrait) {
     const machine: Rect = { x: 8, y: 48, width: width - 16, height: height - bottomHeight - 186 };
     const boardFrame: Rect = { x: machine.x, y: machine.y, width: machine.width, height: machine.height };
-    const heatRailWidth = 50;
+    const heatRailWidth = 32;
     const heatRail: Rect = { x: boardFrame.x + 12, y: boardFrame.y + 16, width: heatRailWidth, height: boardFrame.height - 32 };
     const board: Rect = {
       x: heatRail.x + heatRail.width + 12,
@@ -41,7 +41,7 @@ export function computeLayout(width: number, height: number): LayoutMetrics {
     height: height - bottomHeight - 74
   };
   const boardFrame: Rect = { ...machine };
-  const heatRailWidth = Math.max(58, boardFrame.width * 0.09);
+  const heatRailWidth = Math.max(36, boardFrame.width * 0.055);
   const heatRail: Rect = { x: boardFrame.x + 16, y: boardFrame.y + 18, width: heatRailWidth, height: boardFrame.height - 36 };
   const board: Rect = {
     x: heatRail.x + heatRail.width + 14,
