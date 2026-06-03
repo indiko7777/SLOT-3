@@ -60,18 +60,8 @@ export class SymbolView extends Container {
 
     this.background.clear();
 
-    // --- Subtle dark cell background with very soft edges ---
-    // No harsh borders — just a soft dark shape
-    this.background.roundRect(0, 0, w, h, 10)
-      .fill({ color: 0x0a0e1e, alpha: 0.6 });
-
-    // Subtle bottom shadow for depth
-    this.background.roundRect(1, h * 0.7, w - 2, h * 0.3, 6)
-      .fill({ color: 0x000000, alpha: 0.2 });
-
-    // Very thin border — almost invisible in normal state
+    // Only draw borders for win/alert states — no background fill on normal cells
     if (highlighted) {
-      // Golden glow border for wins
       this.background.roundRect(-2, -2, w + 4, h + 4, 12)
         .stroke({ color: 0xffdf65, width: 3, alpha: 0.9 });
       this.background.roundRect(0, 0, w, h, 10)
@@ -82,16 +72,9 @@ export class SymbolView extends Container {
     } else if (transformed) {
       this.background.roundRect(-1, -1, w + 2, h + 2, 11)
         .stroke({ color: 0x62ffa7, width: 3, alpha: 0.7 });
-    } else {
-      // Very subtle edge — just enough to define the cell
-      this.background.roundRect(0, 0, w, h, 10)
-        .stroke({ color: 0xffffff, width: 0.5, alpha: 0.08 });
     }
 
-    // --- Top glass sheen (subtle highlight across top 30%) ---
     this.topSheen.clear();
-    this.topSheen.roundRect(2, 2, w - 4, h * 0.35, 8)
-      .fill({ color: 0xffffff, alpha: 0.04 });
 
     // Scale sprite to fill cell
     if (this.sprite) {
