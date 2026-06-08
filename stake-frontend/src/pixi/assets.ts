@@ -37,6 +37,15 @@ const EXTRA_ASSETS: Record<string, string> = {
   "wanted_star": "wanted_star.png",
 };
 
+/** Optional images — loaded per-file so a missing one never blocks the game.
+ *  The Getaway (POV chase) bonus renders procedural fallbacks until these exist. */
+const OPTIONAL_ASSETS: Record<string, string> = {
+  "highway_loop": "highway_loop.jpg",
+  "brinks_truck_frame": "brinks_truck_frame.png",
+  "gold_bar": "gold_bar.png",
+  "dynamite": "dynamite.png",
+};
+
 /** Background images — loaded separately so a missing file doesn't block the game */
 const BG_ASSETS: Record<string, string> = {
   "bg_base": "chase_base.png",
@@ -75,8 +84,9 @@ export async function loadSymbolTextures(): Promise<void> {
 
   loaded = true;
 
-  // Load backgrounds separately — failures are silently ignored
-  for (const [key, file] of Object.entries(BG_ASSETS)) {
+  // Load backgrounds + optional bonus art separately — failures are ignored
+  // so a missing file just falls back to procedural rendering.
+  for (const [key, file] of [...Object.entries(BG_ASSETS), ...Object.entries(OPTIONAL_ASSETS)]) {
     try {
       const url = BASE_PATH + file;
       const tex = await Assets.load(url);
@@ -84,7 +94,7 @@ export async function loadSymbolTextures(): Promise<void> {
         textureCache.set(key, tex);
       }
     } catch {
-      // Missing background is fine — the procedural fallback will be used
+      // Missing file is fine — the procedural fallback will be used
     }
   }
 }

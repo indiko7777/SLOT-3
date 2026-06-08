@@ -175,7 +175,8 @@ const server = createServer((req, res) => {
           return;
         }
         const amount = Number(payload.amount) || 0; // 6dp, base bet
-        const debit = Math.round(amount * mode.cost);
+        // A free feature (e.g. the Wanted-meter Getaway) is played at zero cost.
+        const debit = payload.free ? 0 : Math.round(amount * mode.cost);
         if (debit > s.balanceApi) {
           json({
             status: { statusCode: "ERR_IPB", statusMessage: "insufficient balance" },

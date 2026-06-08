@@ -1,23 +1,71 @@
-import { Container, Graphics, Sprite, Text, TextStyle } from "pixi.js";
+import { BlurFilter, Container, Graphics, Sprite, Text, TextStyle, TilingSprite } from "pixi.js";
 import { GRID_COLUMNS, GRID_ROWS, type BonusCell, type Position } from "../domain";
-import { getSymbolTexture } from "./assets";
-import { makeText } from "./text";
-import { tween, wait, easeOutBack, easeOutElastic, easeInOutCubic, easeOutCubic, linear, ambientTicker } from "./tween";
+import { getExtraTexture } from "./assets";
+import { tween, wait, easeOutBack, easeOutCubic, linear, ambientTicker } from "./tween";
 import type { Rect } from "./types";
 
+/* ═══════════════════════════════════════════════════════════════════
+   "THE GETAWAY" — POV police-chase Hold & Spin.
+   Layer 1: scrolling night highway.  Layer 2: armored Brinks-truck frame.
+   Layer 3: the 5x4 grid in the open truck doors — gold bars slam in and
+   stick; dynamite doubles neighbours then vanishes; 5 wanted stars pulse
+   ever faster as dead spins stack the heat, until a hit resets it.
+   Every image has a procedural fallback so it works with no art added.
+   ═══════════════════════════════════════════════════════════════════ */
+
+const FONT = "Impact, 'Arial Black', Arial, sans-serif";
+const keyOf = ([c, r]: Position): string => `${c}:${r}`;
+const HEAT_PERIOD = [0.5, 0.34, 0.22, 0.12]; // seconds per red/blue pulse by heat level
+const POLICE_RED = 0xff1a2e;
+const POLICE_BLUE = 0x1a6bff;
+
+// Measured from brinks_truck_frame.png (1024×572): the transparent door opening.
+// Used to align the grid exactly inside the truck's window.
+const TRUCK_OPENING = { wFrac: 0.3262, hFrac: 0.507, cxFrac: 0.5, cyFrac: 0.4441, aspect: 334 / 290 };
+
+// Must match stake-math BONUS_RESPINS: how many respins/pips the meter shows.
+const MAX_RESPINS = 4;
+
+// Near-black reel/opening background so the gold symbols read clearly.
+const REEL_BG = 0x05070b;
+
+function fmtX(v: number): string {
+  const r = Math.round(v * 100) / 100;
+  return `${r.toLocaleString("en-US", { maximumFractionDigits: 2 })}x`;
+}
+
 export class BonusView extends Container {
-  private readonly overlay = new Graphics();
+  private readonly bgLayer = new Container();
+  private readonly truckLayer = new Container();
   private readonly gridLayer = new Container();
-  private readonly effectsLayer = new Container();
-  private readonly ambientLayer = new Container();
+  private readonly fxLayer = new Container();
+  private readonly hudLayer = new Container();
+  private readonly police = new Graphics();
+
   private rect: Rect = { x: 0, y: 0, width: 100, height: 100 };
-  private gap = 6;
   private ambientCb: ((dt: number, elapsed: number) => void) | null = null;
+
+  private highwayTile: TilingSprite | null = null;
+  private highwayProc: Graphics | null = null;
+  private truck: Container | null = null;
+  private stars: Graphics | null = null;
+  private collectedText: Text | null = null;
+  private collectedShown = 0;
+  private spinsBox: Container | null = null;
+  private spinsText: Text | null = null;
+  private spinsLabel: Text | null = null;
+  private resultCard: Container | null = null;
+
+  private heat = 0;          // 0 = baseline … 3 = max
+  private busted = false;
+  private readonly cells = new Map<string, Container>();
 
   constructor() {
     super();
     this.visible = false;
-    this.addChild(this.overlay, this.gridLayer, this.effectsLayer, this.ambientLayer);
+    this.addChild(this.bgLayer, this.truckLayer, this.gridLayer, this.fxLayer, this.police, this.hudLayer);
+    // Heavy blur turns the police light sources into soft, natural bloom.
+    this.police.filters = [new BlurFilter({ strength: 30, quality: 3 })];
   }
 
   layout(rect: Rect): void {
@@ -25,517 +73,840 @@ export class BonusView extends Container {
     this.position.set(rect.x, rect.y);
   }
 
+  // ── geometry (local coords) ──────────────────────────────────────────
+  /** On-screen rectangle for the grid — matches the truck opening's aspect so
+   *  the frame aligns to it exactly. Wider in portrait so the doors crop away. */
+  private opening(): Rect {
+    const W = this.rect.width;
+    const H = this.rect.height;
+    const portrait = W < H;
+    let ow: number;
+    let oh: number;
+    if (portrait) {
+      ow = W * 0.9;
+      oh = ow / TRUCK_OPENING.aspect;
+      const maxH = H * 0.5;
+      if (oh > maxH) { oh = maxH; ow = oh * TRUCK_OPENING.aspect; }
+    } else {
+      oh = H * 0.64;
+      ow = oh * TRUCK_OPENING.aspect;
+      const maxW = W * 0.5;
+      if (ow > maxW) { ow = maxW; oh = ow / TRUCK_OPENING.aspect; }
+    }
+    const cx = W / 2;
+    const cy = H * (portrait ? 0.4 : 0.46);
+    return { x: cx - ow / 2, y: cy - oh / 2, width: ow, height: oh };
+  }
+
+  /** The 5×4 grid fills the opening exactly — no inner margin / background gaps. */
+  private cellRect(col: number, row: number): { x: number; y: number; w: number; h: number } {
+    const o = this.opening();
+    const w = o.width / GRID_COLUMNS;
+    const h = o.height / GRID_ROWS;
+    return { x: o.x + col * w, y: o.y + row * h, w, h };
+  }
+
+  centerOf(position: Position): { x: number; y: number } {
+    const r = this.cellRect(position[0], position[1]);
+    return { x: this.rect.x + r.x + r.w / 2, y: this.rect.y + r.y + r.h / 2 };
+  }
+
+  // ── lifecycle ────────────────────────────────────────────────────────
   async intro(turbo: boolean): Promise<void> {
     this.visible = true;
-    this.alpha = 0;
-    this.scale.set(0.85);
-    this.drawShell(3);
+    this.busted = false;
+    this.heat = 0;
+    this.collectedShown = 0;
+    this.cells.clear();
+    this.gridLayer.removeChildren();
+    this.fxLayer.removeChildren();
 
-    await tween(turbo ? 120 : 500, (progress) => {
-      this.alpha = Math.min(1, progress * 1.3);
-      this.scale.set(0.85 + 0.15 * progress);
-    }, easeOutBack);
+    this.buildHighway();
+    this.buildTruck();
+    this.buildHud();
+    this.startAmbient();
     this.scale.set(1);
-    this.alpha = 1;
-    this.startAmbient();
-  }
 
-  setGrid(grid: BonusCell[][], respins: number, highlighted: Position[], cracked: Position[]): void {
-    this.visible = true;
-    this.drawShell(respins);
-    this.drawGrid(grid, highlighted, cracked);
-    this.startAmbient();
-  }
+    if (turbo) { this.alpha = 1; return; }
 
-  async grandReveal(grid: BonusCell[][], positions: Position[], respins: number, turbo: boolean, onSafeLand?: (index: number, total: number) => void): Promise<void> {
-    this.visible = true;
-    this.startAmbient();
+    const W = this.rect.width;
+    const H = this.rect.height;
 
-    const emptyGrid = this.makeEmptyGrid();
-    this.drawShell(respins);
-    this.drawGrid(emptyGrid, [], []);
+    // 1. Crossfade the chase scene in over the base game.
+    this.alpha = 0;
+    void tween(560, (p) => { this.alpha = p; }, easeOutCubic);
 
-    // Shuffle positions for unpredictable reveal
-    const order = [...positions];
-    for (let i = order.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [order[i], order[j]] = [order[j], order[i]];
-    }
-
-    const top = 72;
-    const cellWidth = (this.rect.width - this.gap * (GRID_COLUMNS + 1)) / GRID_COLUMNS;
-    const cellHeight = (this.rect.height - 86 - this.gap * (GRID_ROWS + 1)) / GRID_ROWS;
-    const total = order.length;
-
-    let runningTotal = 0;
-
-    for (let i = 0; i < total; i++) {
-      const [col, row] = order[i];
-      const cell = grid[col][row];
-      runningTotal += cell.value ?? 0;
-
-      const progress = i / (total - 1);
-      // Crescendo: 450ms → 60ms
-      const delayMs = turbo ? 30 : Math.round(450 - 390 * progress);
-
-      const cx = this.gap + col * (cellWidth + this.gap) + cellWidth / 2;
-      const cy = top + this.gap + row * (cellHeight + this.gap) + cellHeight / 2;
-      const x = this.gap + col * (cellWidth + this.gap);
-      const y = top + this.gap + row * (cellHeight + this.gap);
-
-      // Draw the safe cell
-      this.drawSingleCell(x, y, cellWidth, cellHeight, cell, true);
-      onSafeLand?.(i, total);
-
-      // Impact flash
-      const flash = new Graphics();
-      flash.roundRect(x - 6, y - 6, cellWidth + 12, cellHeight + 12, 12)
-        .fill({ color: 0xffdf65, alpha: 0.5 });
-      this.effectsLayer.addChild(flash);
-
-      // Slam animation on the cell contents
-      const cellContainer = this.gridLayer.children[this.gridLayer.children.length - 1] as Container;
-      if (cellContainer) {
-        const slamScale = 1.3 - progress * 0.15;
-        cellContainer.pivot?.set(0, 0);
-
-        await tween(turbo ? 40 : Math.max(80, 160 - progress * 80), (p) => {
-          flash.alpha = (1 - p) * 0.5;
-          // Shake intensity increases with progress
-          const shakeIntensity = (2 + progress * 4) * (1 - p);
-          const shakeX = Math.sin(p * Math.PI * 6) * shakeIntensity;
-          const shakeY = Math.cos(p * Math.PI * 4) * shakeIntensity * 0.5;
-          this.gridLayer.x = shakeX;
-          this.gridLayer.y = shakeY;
-        }, easeOutCubic);
-
-        this.gridLayer.x = 0;
-        this.gridLayer.y = 0;
-      }
-
-      flash.destroy();
-
-      // Strobe flash every 5 safes
-      if ((i + 1) % 5 === 0 && !turbo) {
-        const strobe = new Graphics();
-        strobe.rect(0, 0, this.rect.width, this.rect.height)
-          .fill({ color: 0xffdf65, alpha: 0.2 });
-        this.effectsLayer.addChild(strobe);
-        tween(200, (p) => { strobe.alpha = (1 - p) * 0.2; }).then(() => strobe.destroy());
-      }
-
-      // Running total counter
-      this.updateRevealCounter(runningTotal);
-
-      if (i < total - 1) await wait(delayMs);
-    }
-
-    // === GRAND FINALE ===
-    await this.grandFinale(turbo);
-  }
-
-  private updateRevealCounter(total: number): void {
-    const existing = this.effectsLayer.getChildByLabel("revealCounter");
-    if (existing) existing.destroy();
-
-    const counter = new Text({
-      text: `${total}x`,
-      style: new TextStyle({
-        fill: 0xffdf65,
-        fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
-        fontSize: 28,
-        fontWeight: "900",
-        letterSpacing: 2,
-        stroke: { color: 0x8b4513, width: 3 },
-        dropShadow: { color: 0xff6a00, alpha: 0.7, blur: 10, distance: 0 }
-      })
-    });
-    counter.anchor.set(0.5, 0);
-    counter.position.set(this.rect.width / 2, this.rect.height - 40);
-    counter.label = "revealCounter";
-    this.effectsLayer.addChild(counter);
-  }
-
-  private async grandFinale(turbo: boolean): Promise<void> {
-    const w = this.rect.width;
-    const h = this.rect.height;
-
-    // Full-screen golden flash
+    // 2. A big "THE GETAWAY" title card slams in, with a red siren wash.
     const flash = new Graphics();
-    flash.rect(0, 0, w, h).fill({ color: 0xffdf65, alpha: 0.6 });
-    this.effectsLayer.addChild(flash);
+    flash.rect(0, 0, W, H).fill({ color: POLICE_RED, alpha: 0 });
+    this.hudLayer.addChild(flash);
 
-    // Heavy screen shake
-    const origX = this.gridLayer.x;
-    const origY = this.gridLayer.y;
+    const card = new Container();
+    card.position.set(W / 2, H * 0.42);
+    this.hudLayer.addChild(card);
+    const kicker = new Text({ text: "THE", style: new TextStyle({ fill: 0xffffff, fontFamily: FONT, fontSize: Math.min(34, W / 26), fontWeight: "900", letterSpacing: 10, dropShadow: { color: 0x000000, alpha: 0.8, blur: 8, distance: 0, angle: 0 } }) });
+    kicker.anchor.set(0.5, 1);
+    kicker.position.set(0, -Math.min(34, W / 26) * 0.4);
+    const big = new Text({ text: "GETAWAY", style: new TextStyle({ fill: 0xffd95c, fontFamily: FONT, fontSize: Math.min(96, W / 9), fontWeight: "900", letterSpacing: 6, stroke: { color: 0x3a2400, width: 7 }, dropShadow: { color: 0xff6a00, alpha: 0.7, blur: 22, distance: 0, angle: 0 } }) });
+    big.anchor.set(0.5, 0);
+    big.position.set(0, -Math.min(34, W / 26) * 0.2);
+    card.addChild(kicker, big);
 
-    await tween(turbo ? 100 : 500, (p) => {
-      flash.alpha = (1 - p) * 0.6;
-      const decay = 1 - p;
-      const intensity = 10 * decay;
-      this.gridLayer.x = origX + Math.sin(p * Math.PI * 12) * intensity;
-      this.gridLayer.y = origY + Math.cos(p * Math.PI * 8) * intensity * 0.6;
+    card.scale.set(0.55);
+    card.alpha = 0;
+    await tween(520, (p) => {
+      card.scale.set(0.55 + 0.45 * easeOutBack(p));
+      card.alpha = Math.min(1, p * 2.4);
+      flash.alpha = Math.sin(p * Math.PI) * 0.22;
     }, linear);
-    this.gridLayer.x = origX;
-    this.gridLayer.y = origY;
+    card.scale.set(1);
+    card.alpha = 1;
     flash.destroy();
 
-    // Radial gold burst
-    const burst = new Graphics();
-    const cx = w / 2;
-    const cy = h / 2;
-    this.effectsLayer.addChild(burst);
+    await wait(720); // hold the title
 
-    await tween(turbo ? 80 : 400, (p) => {
-      burst.clear();
-      const radius = Math.max(w, h) * 0.5 * p;
-      burst.circle(cx, cy, radius).fill({ color: 0xffdf65, alpha: 0.15 * (1 - p) });
-      burst.circle(cx, cy, radius * 0.6).fill({ color: 0xffffff, alpha: 0.1 * (1 - p) });
-    }, easeOutCubic);
-    burst.destroy();
-
-    // Gold particle explosion
-    const particles: Graphics[] = [];
-    const particleData: Array<{ vx: number; vy: number; spin: number }> = [];
-    const particleCount = turbo ? 10 : 40;
-
-    for (let i = 0; i < particleCount; i++) {
-      const p = new Graphics();
-      const size = 3 + Math.random() * 5;
-      const color = [0xffdf65, 0xffd700, 0xffec80, 0xff6a00, 0xffffff][i % 5];
-      p.circle(0, 0, size).fill(color);
-      p.position.set(cx, cy);
-      p.alpha = 0;
-      particles.push(p);
-      this.effectsLayer.addChild(p);
-      const angle = (Math.PI * 2 * i) / particleCount + (Math.random() - 0.5) * 0.5;
-      particleData.push({
-        vx: Math.cos(angle) * (150 + Math.random() * 200),
-        vy: Math.sin(angle) * (150 + Math.random() * 200),
-        spin: (Math.random() - 0.5) * 8
-      });
-    }
-
-    await tween(turbo ? 200 : 800, (p) => {
-      particles.forEach((particle, i) => {
-        const d = particleData[i];
-        const fadeIn = Math.min(1, p * 4);
-        const fadeOut = p > 0.4 ? 1 - (p - 0.4) / 0.6 : 1;
-        particle.alpha = fadeIn * fadeOut * 0.9;
-        particle.x = cx + d.vx * p;
-        particle.y = cy + d.vy * p + 80 * p * p;
-        particle.rotation += d.spin * 0.012;
-        particle.scale.set(1 - p * 0.5);
-      });
-    }, easeOutCubic);
-    particles.forEach((p) => p.destroy());
-
-    // Sustained gold glow pulse
-    const glow = new Graphics();
-    this.effectsLayer.addChild(glow);
-    await tween(turbo ? 100 : 600, (p) => {
-      glow.clear();
-      const alpha = Math.sin(p * Math.PI * 3) * 0.12;
-      glow.roundRect(4, 4, w - 8, h - 8, 10)
-        .fill({ color: 0xffdf65, alpha: Math.max(0, alpha) });
-    });
-    glow.destroy();
-
-    // Clean up counter
-    const counter = this.effectsLayer.getChildByLabel("revealCounter");
-    if (counter) counter.destroy();
+    // 3. Title flies up and fades, revealing the ready reel.
+    await tween(440, (p) => { card.y = H * 0.42 - 40 * p; card.scale.set(1 + 0.25 * p); card.alpha = 1 - p; }, easeOutCubic);
+    card.destroy();
+    this.alpha = 1;
   }
 
-  async pulse(positions: Position[], turbo: boolean): Promise<void> {
-    if (!positions.length) return wait(turbo ? 40 : 100);
+  /** Smoothly fade the whole bonus out, then tear it down (used at round end). */
+  async fadeOutAndHide(turbo: boolean): Promise<void> {
+    if (turbo) { this.hide(); this.alpha = 1; return; }
+    await tween(560, (p) => { this.alpha = 1 - p; }, easeOutCubic);
+    this.hide();
+    this.alpha = 1;
+  }
 
-    await tween(turbo ? 100 : 320, (progress) => {
-      const s = 1 + Math.sin(progress * Math.PI) * 0.06;
-      this.gridLayer.scale.set(s);
-    }, easeInOutCubic);
-    this.gridLayer.scale.set(1);
+  /** Draw the current grid with no animation (used when resuming a round). */
+  showStatic(grid: BonusCell[][]): void {
+    this.visible = true;
+    if (!this.truck) { this.buildHighway(); this.buildTruck(); this.buildHud(); this.startAmbient(); }
+    this.gridLayer.removeChildren();
+    this.cells.clear();
+    for (let c = 0; c < GRID_COLUMNS; c++)
+      for (let r = 0; r < GRID_ROWS; r++) {
+        const cell = grid[c][r];
+        if (cell.symbol === "SAFE") this.placeCell([c, r], this.buildGoldBar(cell.value ?? 0, c, r));
+      }
+    this.setCollected(this.sumGrid(grid), false);
+  }
+
+  /** One hold-and-spin step. Empty cells spin; gold bars / dynamite slam in. */
+  async playSpin(grid: BonusCell[][], landed: Position[], respins: number, deadSpins: number, turbo: boolean, onLand?: (i: number, n: number) => void): Promise<void> {
+    if (!this.truck) await this.intro(turbo);
+    this.visible = true;
+
+    const landedSet = new Set(landed.map(keyOf));
+
+    // Re-draw the persistent (previously locked) gold bars; clear the rest.
+    this.gridLayer.removeChildren();
+    this.cells.clear();
+    const spinning: Position[] = [];
+    for (let c = 0; c < GRID_COLUMNS; c++)
+      for (let r = 0; r < GRID_ROWS; r++) {
+        const cell = grid[c][r];
+        const prevLocked = cell.symbol === "SAFE" && !landedSet.has(keyOf([c, r]));
+        if (prevLocked) {
+          this.placeCell([c, r], this.buildGoldBar(cell.value ?? 0, c, r));
+        } else {
+          spinning.push([c, r]);
+        }
+      }
+
+    // Normal reel spin: open cells spin and STOP on their result, which sticks.
+    await this.spinColumns(grid, spinning, turbo, onLand);
+
+    // Resolve the respin meter AFTER the spin so the change reads clearly:
+    // a hit refills the pips (+RESET), a dead spin drops one (+"-1 SPIN").
+    if (landed.length > 0) {
+      this.heat = 0;
+      this.hitFlash();
+      this.setSpins(respins);
+      this.pulseSpinsReset();
+    } else {
+      this.heat = Math.min(3, deadSpins);
+      this.setSpins(respins);
+      this.pulseSpinsDead();
+    }
+
+    this.setCollected(this.sumGrid(grid), true);
+    await wait(turbo ? 70 : 230);
+  }
+
+  /** Dynamite detonates: shockwave over neighbours, double them, then vanish. */
+  async crack(keyPos: Position, affected: Array<{ position: Position; newValue: number }>, turbo: boolean): Promise<void> {
+    const kc = this.cellRect(keyPos[0], keyPos[1]);
+    const cx = kc.x + kc.w / 2;
+    const cy = kc.y + kc.h / 2;
+    const reach = Math.max(kc.w, kc.h);
+    const dyn = this.cells.get(keyOf(keyPos));
+
+    // Blast: bright flash + expanding shockwave ring + spark debris; the
+    // dynamite bursts outward as it detonates.
+    const flash = new Graphics(); this.fxLayer.addChild(flash);
+    const ring = new Graphics(); this.fxLayer.addChild(ring);
+    const sparks: Graphics[] = [];
+    const sv: Array<{ vx: number; vy: number }> = [];
+    const ns = turbo ? 8 : 18;
+    for (let i = 0; i < ns; i++) {
+      const g = new Graphics();
+      g.circle(0, 0, 2 + Math.random() * 3).fill([0xffd95c, 0xff6a00, 0xffffff][i % 3]);
+      g.position.set(cx, cy);
+      this.fxLayer.addChild(g);
+      sparks.push(g);
+      const ang = (Math.PI * 2 * i) / ns + Math.random() * 0.4;
+      const sp = reach * (2 + Math.random() * 2.5);
+      sv.push({ vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp });
+    }
+    await tween(turbo ? 200 : 440, (p) => {
+      flash.clear();
+      flash.circle(cx, cy, reach * (0.5 + p * 0.7)).fill({ color: 0xfff2c0, alpha: (1 - p) * 0.7 });
+      ring.clear();
+      const rr = reach * 0.4 + reach * 1.9 * p;
+      ring.circle(cx, cy, rr).stroke({ color: 0xffd95c, width: Math.max(1, 9 * (1 - p)), alpha: (1 - p) * 0.95 });
+      ring.circle(cx, cy, rr * 0.62).stroke({ color: 0xffffff, width: Math.max(1, 5 * (1 - p)), alpha: (1 - p) * 0.7 });
+      sparks.forEach((g, i) => { g.x = cx + sv[i].vx * p; g.y = cy + sv[i].vy * p + 50 * p * p; g.alpha = 1 - p; g.scale.set(1 - p * 0.5); });
+      if (dyn) { dyn.scale.set(1 + p * 0.5); dyn.alpha = 1 - p; }
+    }, easeOutCubic);
+    flash.destroy(); ring.destroy(); sparks.forEach((g) => g.destroy());
+    if (dyn) { this.cells.delete(keyOf(keyPos)); dyn.destroy(); }
+
+    // Double each neighbour — clear "×2" badge + a punch + a gold flash so the
+    // upgrade is unmistakable.
+    for (const a of affected) {
+      const nc = this.cellRect(a.position[0], a.position[1]);
+      const node = this.cells.get(keyOf(a.position));
+      if (node) {
+        this.updateGoldValue(node, a.newValue);
+        const num = node.getChildByLabel("num") as Text | null;
+        void tween(turbo ? 180 : 380, (p) => { const s = 1 + Math.sin(Math.min(1, p) * Math.PI) * 0.4; node.scale.set(s); if (num) num.scale.set(s); }).then(() => { node.scale.set(1); if (num) num.scale.set(1); });
+        const cf = new Graphics(); this.fxLayer.addChild(cf);
+        void tween(turbo ? 160 : 360, (p) => { cf.clear(); cf.circle(nc.x + nc.w / 2, nc.y + nc.h / 2, Math.max(nc.w, nc.h) * 0.55 * (1 + p * 0.4)).fill({ color: 0xffd95c, alpha: (1 - p) * 0.5 }); }).then(() => cf.destroy());
+      }
+      this.floatBadge(nc.x + nc.w / 2, nc.y + nc.h * 0.2, "×2");
+    }
+    await wait(turbo ? 80 : 280);
+  }
+
+  /** A floating "×2" badge that pops up and fades. */
+  private floatBadge(x: number, y: number, text: string): void {
+    const c = new Container();
+    c.position.set(x, y);
+    const g = new Graphics();
+    g.roundRect(-30, -18, 60, 36, 9).fill({ color: 0xe11d2a, alpha: 0.96 });
+    g.roundRect(-30, -18, 60, 36, 9).stroke({ color: 0xffffff, width: 2.5, alpha: 0.9 });
+    c.addChild(g);
+    const t = new Text({ text, style: new TextStyle({ fill: 0xffffff, fontFamily: FONT, fontSize: 24, fontWeight: "900", letterSpacing: 1 }) });
+    t.anchor.set(0.5);
+    c.addChild(t);
+    this.fxLayer.addChild(c);
+    c.alpha = 0;
+    void tween(800, (p) => {
+      c.y = y - 46 * p;
+      c.alpha = p < 0.18 ? p / 0.18 : 1 - (p - 0.18) / 0.82;
+      c.scale.set(0.4 + 0.6 * Math.min(1, p * 3.5));
+    }).then(() => c.destroy());
+  }
+
+  /** End of the chase. filled = Grand Escape jackpot; otherwise Busted. */
+  async finish(filled: boolean, totalX: number, turbo: boolean): Promise<void> {
+    if (filled) { void this.grandEscape(turbo); }
+    else { this.busted = true; this.heat = 3; void this.bustedFlash(turbo); }
+
+    const W = this.rect.width;
+    const H = this.rect.height;
+    // Dim the chase so the result reads clearly.
+    const dim = new Graphics();
+    dim.rect(0, 0, W, H).fill({ color: 0x000000, alpha: 1 });
+    dim.alpha = 0;
+    this.hudLayer.addChild(dim);
+
+    const card = this.buildResultCard(filled);
+    this.hudLayer.addChild(card);
+    this.resultCard = card;
+    card.scale.set(0.72);
+    card.alpha = 0;
+    await tween(turbo ? 220 : 560, (p) => {
+      dim.alpha = p * 0.55;
+      card.alpha = Math.min(1, p * 2);
+      card.scale.set(0.72 + 0.28 * easeOutBack(p));
+    }, linear);
+    card.scale.set(1);
+    card.alpha = 1;
+
+    // Count the payout up on the card for a satisfying finish.
+    const payout = card.getChildByLabel("payout") as Text | null;
+    if (payout) await this.countUp(payout, totalX, turbo);
+    this.setCollected(totalX, false);
+    await wait(turbo ? 250 : 950);
+  }
+
+  private async countUp(text: Text, target: number, turbo: boolean): Promise<void> {
+    await tween(turbo ? 250 : 700, (p) => {
+      text.text = fmtX(target * p);
+      text.scale.set(1 + Math.sin(p * Math.PI) * 0.12);
+    }, easeOutCubic);
+    text.text = fmtX(target);
+    text.scale.set(1);
+  }
+
+  private buildResultCard(filled: boolean): Container {
+    const W = this.rect.width;
+    const H = this.rect.height;
+    const c = new Container();
+    c.position.set(W / 2, H / 2);
+    const accent = filled ? 0xffd95c : 0xff5b5b;
+    const pw = Math.min(W * 0.62, 560);
+    const ph = Math.min(H * 0.42, 260);
+
+    const g = new Graphics();
+    g.roundRect(-pw / 2 - 6, -ph / 2 - 6, pw + 12, ph + 12, 22).fill({ color: 0x000000, alpha: 0.45 });
+    g.roundRect(-pw / 2, -ph / 2, pw, ph, 18).fill({ color: 0x0a0e1a, alpha: 0.95 });
+    g.roundRect(-pw / 2, -ph / 2, pw, ph, 18).stroke({ color: accent, width: 4 });
+    c.addChild(g);
+
+    const title = new Text({
+      text: filled ? "GRAND ESCAPE!" : "BUSTED",
+      style: new TextStyle({ fill: accent, fontFamily: FONT, fontSize: Math.min(48, pw / 9), fontWeight: "900", letterSpacing: 3, stroke: { color: 0x000000, width: 4 }, dropShadow: { color: accent, alpha: 0.5, blur: 16, distance: 0, angle: 0 } })
+    });
+    title.anchor.set(0.5);
+    title.position.set(0, -ph * 0.27);
+    c.addChild(title);
+
+    const sub = new Text({ text: filled ? "FULL HAUL — MAX WIN" : "TOTAL COLLECTED", style: new TextStyle({ fill: 0x9fb4d0, fontFamily: FONT, fontSize: Math.min(15, pw / 30), letterSpacing: 3 }) });
+    sub.anchor.set(0.5);
+    sub.position.set(0, -ph * 0.02);
+    c.addChild(sub);
+
+    const payout = new Text({
+      text: "0x",
+      style: new TextStyle({ fill: 0xffd95c, fontFamily: FONT, fontSize: Math.min(64, pw / 7), fontWeight: "900", letterSpacing: 1, stroke: { color: 0x3a2400, width: 5 }, dropShadow: { color: 0xff6a00, alpha: 0.7, blur: 14, distance: 0, angle: 0 } })
+    });
+    payout.anchor.set(0.5);
+    payout.position.set(0, ph * 0.24);
+    payout.label = "payout";
+    c.addChild(payout);
+    return c;
   }
 
   hide(): void {
     this.visible = false;
-    this.gridLayer.removeChildren();
-    this.effectsLayer.removeChildren();
-    this.ambientLayer.removeChildren();
     this.stopAmbient();
+    this.gridLayer.removeChildren();
+    this.fxLayer.removeChildren();
+    this.hudLayer.removeChildren();
+    this.truckLayer.removeChildren();
+    this.bgLayer.removeChildren();
+    this.cells.clear();
+    this.highwayTile = this.highwayProc = null;
+    this.truck = this.stars = null;
+    this.collectedText = this.spinsLabel = this.spinsText = null;
+    this.spinsBox = null;
+    this.resultCard = null;
   }
 
-  centerOf(position: Position): { x: number; y: number } {
-    const top = 72;
-    const cellWidth = (this.rect.width - this.gap * (GRID_COLUMNS + 1)) / GRID_COLUMNS;
-    const cellHeight = (this.rect.height - 86 - this.gap * (GRID_ROWS + 1)) / GRID_ROWS;
-    const [column, row] = position;
-    return {
-      x: this.rect.x + this.gap + column * (cellWidth + this.gap) + cellWidth / 2,
-      y: this.rect.y + top + this.gap + row * (cellHeight + this.gap) + cellHeight / 2
+  // ── layer builders ───────────────────────────────────────────────────
+  private buildHighway(): void {
+    this.bgLayer.removeChildren();
+    // Static near-black backdrop (covered by the truck + reel panel anyway).
+    const g = new Graphics();
+    g.rect(0, 0, this.rect.width, this.rect.height).fill(0x03040a);
+    this.bgLayer.addChild(g);
+    this.highwayTile = null;
+    this.highwayProc = null;
+  }
+
+  private buildTruck(): void {
+    this.truckLayer.removeChildren();
+    const tex = getExtraTexture("brinks_truck_frame");
+    const truck = new Container();
+    if (tex) {
+      // Scale & place the truck so its door opening lands exactly on opening().
+      const o = this.opening();
+      const sprite = new Sprite(tex);
+      sprite.anchor.set(0.5);
+      const scale = o.width / (TRUCK_OPENING.wFrac * tex.width);
+      sprite.scale.set(scale);
+      const truckH = tex.height * scale;
+      sprite.position.set(
+        o.x + o.width / 2,
+        o.y + o.height / 2 - (TRUCK_OPENING.cyFrac - 0.5) * truckH
+      );
+      truck.addChild(sprite);
+    } else {
+      truck.addChild(this.procTruck());
+    }
+
+    // Solid near-black reel surface inside the opening (overscanned a few px to
+    // cover any truck-interior bleed). No white sheen — keeps symbols readable.
+    const o = this.opening();
+    const pad = 6;
+    const panel = new Graphics();
+    panel.rect(o.x - pad, o.y - pad, o.width + pad * 2, o.height + pad * 2).fill({ color: REEL_BG });
+    panel.rect(o.x, o.y, o.width, o.height * 0.45).fill({ color: 0x000000, alpha: 0.35 });
+    panel.rect(o.x, o.y + o.height * 0.85, o.width, o.height * 0.15).fill({ color: 0x000000, alpha: 0.35 });
+    // subtle grid separators so the cells read cleanly
+    for (let c = 1; c < GRID_COLUMNS; c++) {
+      panel.rect(o.x + (o.width / GRID_COLUMNS) * c - 1, o.y, 2, o.height).fill({ color: 0x000000, alpha: 0.3 });
+    }
+    for (let r = 1; r < GRID_ROWS; r++) {
+      panel.rect(o.x, o.y + (o.height / GRID_ROWS) * r - 1, o.width, 2).fill({ color: 0x000000, alpha: 0.25 });
+    }
+    truck.addChild(panel);
+
+    this.truckLayer.addChild(truck);
+    this.truck = truck;
+  }
+
+  /** Procedural armored-truck frame: steel border with a transparent door window. */
+  private procTruck(): Graphics {
+    const W = this.rect.width;
+    const H = this.rect.height;
+    const o = this.opening();
+    const g = new Graphics();
+    // steel body filling the screen, with the door opening punched out (drawn as a frame)
+    g.rect(0, 0, W, H).fill(0x1b1f27);
+    g.rect(0, 0, W, H).fill({ color: 0x000000, alpha: 0.15 });
+    // rivet seams
+    for (let x = 0; x < W; x += 46) g.rect(x, 0, 2, H).fill({ color: 0x000000, alpha: 0.18 });
+    // the opening: punch a hole by drawing the surrounding frame only
+    const pad = 14;
+    g.roundRect(o.x - pad, o.y - pad, o.width + pad * 2, o.height + pad * 2, 10)
+      .fill({ color: 0x05070f, alpha: 1 });
+    // gold-trimmed door edges
+    g.roundRect(o.x - pad, o.y - pad, o.width + pad * 2, o.height + pad * 2, 10)
+      .stroke({ color: 0xffd95c, width: 4, alpha: 0.7 });
+    // big door panels left/right with brake-light glow
+    g.rect(0, H * 0.12, W * 0.16, H * 0.76).fill({ color: 0x23282f, alpha: 0.9 });
+    g.rect(W * 0.84, H * 0.12, W * 0.16, H * 0.76).fill({ color: 0x23282f, alpha: 0.9 });
+    g.rect(W * 0.155, H * 0.45, 4, H * 0.1).fill({ color: 0xff2a2a, alpha: 0.6 });
+    g.rect(W * 0.84, H * 0.45, 4, H * 0.1).fill({ color: 0xff2a2a, alpha: 0.6 });
+    // CRITICAL: clear the opening interior so the highway shows through
+    g.roundRect(o.x, o.y, o.width, o.height, 6).cut();
+    return g;
+  }
+
+  private buildHud(): void {
+    this.hudLayer.removeChildren();
+    const W = this.rect.width;
+    const H = this.rect.height;
+
+    // Small kicker title at the very top
+    const title = new Text({
+      text: "THE GETAWAY",
+      style: new TextStyle({ fill: 0xffd95c, fontFamily: FONT, fontSize: Math.min(20, W / 38), fontWeight: "900", letterSpacing: 5, dropShadow: { color: 0xff6a00, alpha: 0.6, blur: 12, distance: 0, angle: 0 } })
+    });
+    title.anchor.set(0.5, 0);
+    title.position.set(W / 2, H * 0.022);
+    this.hudLayer.addChild(title);
+
+    // 5 wanted stars, prominently below the title (drawn each frame in drawStars)
+    const stars = new Graphics();
+    this.hudLayer.addChild(stars);
+    this.stars = stars;
+
+    // SPINS LEFT number, top-right — refills on a hit, drops on a dead spin
+    // (with "SPINS RESET" / "-1 SPIN" callouts so the up/down is clear).
+    const box = new Container();
+    box.position.set(W * 0.88, H * 0.04);
+    this.hudLayer.addChild(box);
+    this.spinsBox = box;
+    const sLabel = new Text({ text: "SPINS LEFT", style: new TextStyle({ fill: 0x9fb4d0, fontFamily: FONT, fontSize: 13, letterSpacing: 2 }) });
+    sLabel.anchor.set(0.5, 0);
+    sLabel.position.set(0, 0);
+    box.addChild(sLabel);
+    this.spinsLabel = sLabel;
+    const sVal = new Text({ text: `${MAX_RESPINS}`, style: new TextStyle({ fill: 0xffd95c, fontFamily: FONT, fontSize: Math.min(56, W / 14), fontWeight: "900", dropShadow: { color: 0xff6a00, alpha: 0.6, blur: 8, distance: 0, angle: 0 } }) });
+    sVal.anchor.set(0.5, 0);
+    sVal.position.set(0, 16);
+    box.addChild(sVal);
+    this.spinsText = sVal;
+    this.setSpins(MAX_RESPINS);
+
+    // COLLECTED total, bottom-centre
+    const label = new Text({ text: "COLLECTED", style: new TextStyle({ fill: 0x9fb4d0, fontFamily: FONT, fontSize: 13, letterSpacing: 3 }) });
+    label.anchor.set(0.5, 1);
+    label.position.set(W / 2, H * 0.905);
+    this.hudLayer.addChild(label);
+    const val = new Text({ text: "0x", style: new TextStyle({ fill: 0xffd95c, fontFamily: FONT, fontSize: Math.min(46, W / 16), fontWeight: "900", letterSpacing: 1, dropShadow: { color: 0xff6a00, alpha: 0.7, blur: 10, distance: 0, angle: 0 } }) });
+    val.anchor.set(0.5, 0);
+    val.position.set(W / 2, H * 0.905);
+    this.hudLayer.addChild(val);
+    this.collectedText = val;
+  }
+
+  private setSpins(n: number): void {
+    if (!this.spinsText || !this.spinsLabel) return;
+    const v = Math.max(0, n);
+    this.spinsText.text = `${v}`;
+    const low = v <= 1;
+    this.spinsText.style.fill = low ? 0xff5b5b : 0xffd95c;
+    this.spinsLabel.text = v === 1 ? "LAST SPIN!" : "SPINS LEFT";
+    this.spinsLabel.style.fill = low ? 0xff5b5b : 0x9fb4d0;
+  }
+
+  /** A new symbol landed — respins reset to full. Make it unmistakable. */
+  private pulseSpinsReset(): void {
+    const box = this.spinsBox;
+    if (box) {
+      void tween(440, (p) => box.scale.set(1 + Math.sin(Math.min(1, p) * Math.PI) * 0.32)).then(() => box.scale.set(1));
+      this.floatCallout(box.x, box.y - 8, "SPINS RESET", 0xffd95c);
+    }
+  }
+
+  /** A dead spin — one respin spent. Shake + "-1" so the player feels it. */
+  private pulseSpinsDead(): void {
+    const box = this.spinsBox;
+    if (box) {
+      const bx = box.x;
+      void tween(380, (p) => { box.x = bx + Math.sin(p * Math.PI * 5) * 6 * (1 - p); }).then(() => (box.x = bx));
+      this.floatCallout(box.x, box.y - 8, "-1 SPIN", 0xff5b5b);
+    }
+  }
+
+  /** Short floating text near the HUD (does not vibrate with the grid). */
+  private floatCallout(x: number, y: number, text: string, color: number): void {
+    const t = new Text({ text, style: new TextStyle({ fill: color, fontFamily: FONT, fontSize: 18, fontWeight: "900", letterSpacing: 1, stroke: { color: 0x000000, width: 3 } }) });
+    t.anchor.set(0.5, 1);
+    t.position.set(x, y);
+    this.hudLayer.addChild(t);
+    void tween(900, (p) => { t.y = y - 28 * p; t.alpha = p < 0.2 ? p / 0.2 : 1 - (p - 0.2) / 0.8; }).then(() => t.destroy());
+  }
+
+  private drawStars(elapsed: number): void {
+    const g = this.stars;
+    if (!g) return;
+    const W = this.rect.width;
+    const period = HEAT_PERIOD[this.heat] ?? 0.5;
+    const phase = (elapsed % period) / period;
+    const blue = phase < 0.5;
+    const color = blue ? POLICE_BLUE : POLICE_RED;
+    const bright = this.busted ? 1 : 0.6 + Math.abs(Math.sin(phase * Math.PI)) * 0.4;
+
+    g.clear();
+    const r = Math.min(20, W / 40);
+    const gap = r * 2.9;
+    const total = gap * 4;
+    const startX = W / 2 - total / 2;
+    const y = this.rect.height * 0.085;
+    for (let i = 0; i < 5; i++) {
+      const sx = startX + i * gap;
+      // soft colored glow
+      g.poly(this.starPoints(sx, y, r * 1.55, r * 0.66)).fill({ color, alpha: 0.22 * bright });
+      g.poly(this.starPoints(sx, y, r * 1.25, r * 0.55)).fill({ color, alpha: 0.25 * bright });
+      // bright body: white core tinted toward the pulse colour
+      const pts = this.starPoints(sx, y, r, r * 0.42);
+      g.poly(pts).fill(0xffffff);
+      g.poly(pts).fill({ color, alpha: 0.55 * bright });
+      g.poly(pts).stroke({ color: 0xffffff, width: 1.5, alpha: 0.85 });
+    }
+  }
+
+  /** 3 quick flashes across a burst window (real police strobe rhythm). */
+  private strobe(t: number): number {
+    return Math.abs(Math.sin(t * Math.PI * 3));
+  }
+
+  /**
+   * Police lighting: bright light sources at the rear light-bar (behind the POV)
+   * with up-top reflections, flashing red then blue in a real strobe rhythm.
+   * A heavy BlurFilter on this layer turns them into soft, natural bloom — not
+   * flat 2D shapes.
+   */
+  private drawPolice(elapsed: number): void {
+    this.police.clear();
+    const peak = this.busted ? 0.95 : [0.0, 0.55, 0.78, 1.0][this.heat] ?? 0;
+    if (peak <= 0.001) return;
+    const W = this.rect.width;
+    const H = this.rect.height;
+    const cycle = this.busted ? 0.5 : [1.1, 0.85, 0.62, 0.45][this.heat] ?? 1.1;
+    const ph = (elapsed % cycle) / cycle;
+    let red = 0;
+    let blue = 0;
+    if (ph < 0.42) red = this.strobe(ph / 0.42);
+    else if (ph >= 0.5 && ph < 0.92) blue = this.strobe((ph - 0.5) / 0.42);
+
+    const src = (cx: number, cy: number, rx: number, ry: number, color: number, a: number): void => {
+      if (a <= 0.01) return;
+      this.police.ellipse(cx, cy, rx, ry).fill({ color, alpha: Math.min(1, a) });
     };
+    // Rear light-bar wash (cop sits behind/below the POV) + upper reflections.
+    src(W * 0.30, H * 0.98, W * 0.30, H * 0.22, POLICE_RED, red * peak);
+    src(W * 0.70, H * 0.98, W * 0.30, H * 0.22, POLICE_BLUE, blue * peak);
+    src(W * 0.14, H * 0.14, W * 0.20, H * 0.16, POLICE_RED, red * peak * 0.7);
+    src(W * 0.86, H * 0.14, W * 0.20, H * 0.16, POLICE_BLUE, blue * peak * 0.7);
+    // faint full-scene colour grade so the whole frame feels lit
+    if (red > 0) this.police.rect(0, 0, W, H).fill({ color: POLICE_RED, alpha: red * peak * 0.07 });
+    if (blue > 0) this.police.rect(0, 0, W, H).fill({ color: POLICE_BLUE, alpha: blue * peak * 0.07 });
   }
 
-  private makeEmptyGrid(): BonusCell[][] {
-    return Array.from({ length: GRID_COLUMNS }, () =>
-      Array.from({ length: GRID_ROWS }, () => ({ symbol: "EMPTY" as const }))
-    );
+  // ── cell nodes ───────────────────────────────────────────────────────
+  private placeCell(pos: Position, node: Container): void {
+    const r = this.cellRect(pos[0], pos[1]);
+    node.position.set(r.x + r.w / 2, r.y + r.h / 2);
+    this.gridLayer.addChild(node);
+    this.cells.set(keyOf(pos), node);
   }
 
+  private buildGoldBar(value: number, col: number, row: number, hideNumber = false): Container {
+    const r = this.cellRect(col, row);
+    const c = new Container();
+    const tex = getExtraTexture("gold_bar");
+    if (tex) {
+      const s = new Sprite(tex);
+      s.anchor.set(0.5);
+      s.scale.set(Math.min((r.w * 0.94) / tex.width, (r.h * 0.94) / tex.height));
+      c.addChild(s);
+    } else {
+      const g = new Graphics();
+      const w = r.w * 0.82, h = r.h * 0.6;
+      g.roundRect(-w / 2, -h / 2, w, h, 6).fill(0xffcf3a);
+      g.roundRect(-w / 2, -h / 2, w, h * 0.4, 6).fill({ color: 0xffe98a, alpha: 0.8 });
+      g.roundRect(-w / 2, -h / 2, w, h, 6).stroke({ color: 0xb8860b, width: 2 });
+      c.addChild(g);
+    }
+    if (!hideNumber) c.addChild(this.numText(value, r));
+    return c;
+  }
+
+  private numText(value: number, r: { w: number; h: number }): Text {
+    const t = new Text({
+      text: fmtX(value),
+      style: new TextStyle({
+        fill: 0xffffff, fontFamily: FONT, fontSize: Math.min(26, r.h * 0.34), fontWeight: "900",
+        letterSpacing: 1, stroke: { color: 0x3a2400, width: 4 },
+        dropShadow: { color: 0x000000, alpha: 0.7, blur: 4, distance: 1, angle: Math.PI / 2 }
+      })
+    });
+    t.anchor.set(0.5);
+    t.label = "num";
+    this.fit(t, r.w * 0.92);
+    return t;
+  }
+
+  private updateGoldValue(node: Container, value: number): void {
+    const num = node.getChildByLabel("num") as Text | null;
+    if (num) num.text = fmtX(value);
+  }
+
+  private buildDynamite(col: number, row: number): Container {
+    const r = this.cellRect(col, row);
+    const c = new Container();
+    const tex = getExtraTexture("dynamite");
+    if (tex) {
+      const s = new Sprite(tex);
+      s.anchor.set(0.5);
+      s.scale.set(Math.min((r.w * 0.92) / tex.width, (r.h * 0.92) / tex.height));
+      c.addChild(s);
+    } else {
+      const g = new Graphics();
+      const bw = r.w * 0.16;
+      for (let i = -1; i <= 1; i++) {
+        g.roundRect(i * bw * 1.2 - bw / 2, -r.h * 0.28, bw, r.h * 0.56, 3).fill(0xcc2b2b);
+        g.roundRect(i * bw * 1.2 - bw / 2, -r.h * 0.28, bw, r.h * 0.12, 3).fill({ color: 0xff6a00, alpha: 0.6 });
+      }
+      g.rect(-r.w * 0.24, -r.h * 0.04, r.w * 0.48, r.h * 0.08).fill(0x222222);
+      g.circle(0, -r.h * 0.34, 3).fill(0xffd95c); // fuse spark
+      c.addChild(g);
+    }
+    return c;
+  }
+
+  // ── animation helpers ────────────────────────────────────────────────
+  /**
+   * Normal reel spin on the open cells. Each cell scrolls a strip of gold/dynamite
+   * faces and decelerates to STOP on its real outcome (gold / dynamite / blank).
+   * The outcome then sticks as a fixed overlay. Columns settle left → right.
+   * Locked cells from earlier spins are untouched (they stay put as overlays).
+   */
+  private async spinColumns(grid: BonusCell[][], spinning: Position[], turbo: boolean, onLand?: (i: number, n: number) => void): Promise<void> {
+    if (!spinning.length) { await wait(turbo ? 60 : 240); return; }
+    const landCount = spinning.filter(([c, r]) => grid[c][r].symbol !== "EMPTY").length;
+    let landIdx = 0;
+    const onLandOne = (): void => onLand?.(landIdx++, landCount);
+
+    // Group the open cells by column → one continuous reel per column.
+    const byCol = new Map<number, number[]>();
+    for (const [c, r] of spinning) { (byCol.get(c) ?? byCol.set(c, []).get(c)!).push(r); }
+
+    const base = turbo ? 260 : 540;
+    const stagger = turbo ? 45 : 105;
+    await Promise.all([...byCol.entries()].map(([c, rows]) =>
+      this.spinOneColumn(grid, c, rows, base + c * stagger, turbo, onLandOne)
+    ));
+  }
+
+  /**
+   * One continuous column reel: a single strip of faces scrolls smoothly through
+   * the open rows of the column (symbols flow across cell boundaries — no seams),
+   * decelerates, and stops on the column's outcome. Landed faces then stick.
+   */
+  private spinOneColumn(grid: BonusCell[][], col: number, rows: number[], dur: number, turbo: boolean, onLandOne: () => void): Promise<void> {
+    const rc0 = this.cellRect(col, 0);
+    const cellW = rc0.w;
+    const cellH = rc0.h;
+    const cx = rc0.x + cellW / 2;
+    const colTop = rc0.y;
+    const colH = cellH * GRID_ROWS;
+    const screens = turbo ? 3 : 5;
+    const travel = colH * screens;
+
+    const strip = new Container();
+    const addFace = (r: number, k: number, finalScreen: boolean): void => {
+      let node: Container | null = null;
+      if (finalScreen) {
+        const cell = grid[col][r];
+        if (cell.symbol === "SAFE") node = this.buildGoldBar(cell.value ?? 0, col, r);
+        else if (cell.symbol === "MASTER_KEY") node = this.buildDynamite(col, r);
+      } else {
+        node = Math.random() < 0.16 ? this.buildDynamite(col, r) : this.buildGoldBar(0, col, r, true);
+      }
+      if (node) { node.position.set(cx, colTop + r * cellH + cellH / 2 - k * colH); strip.addChild(node); }
+    };
+    // final screen (k=0): only the open rows get their real outcome
+    for (const r of rows) addFace(r, 0, true);
+    // filler screens above (all rows → a continuously-filled reel; masked to open rows)
+    for (let k = 1; k <= screens; k++) for (let r = 0; r < GRID_ROWS; r++) addFace(r, k, false);
+
+    // mask = the open rows only, so locked rows keep showing their sticky overlay
+    const mask = new Graphics();
+    for (const r of rows) { const rc = this.cellRect(col, r); mask.rect(rc.x, rc.y, rc.w, rc.h).fill(0xffffff); }
+    this.gridLayer.addChild(mask);
+    strip.mask = mask;
+    strip.y = -travel;
+    this.gridLayer.addChild(strip);
+
+    return tween(dur, (p) => { strip.y = -travel * (1 - p); }, easeOutCubic).then(() => {
+      strip.destroy({ children: true });
+      mask.destroy();
+      for (const r of rows) {
+        const cell = grid[col][r];
+        if (cell.symbol === "SAFE") { this.placeCell([col, r], this.buildGoldBar(cell.value ?? 0, col, r)); onLandOne(); }
+        else if (cell.symbol === "MASTER_KEY") { this.placeCell([col, r], this.buildDynamite(col, r)); onLandOne(); }
+        // EMPTY → stays clear (reel surface shows).
+      }
+    });
+  }
+
+  private hitFlash(): void {
+    const W = this.rect.width;
+    const H = this.rect.height;
+    const f = new Graphics();
+    this.fxLayer.addChild(f);
+    void tween(360, (p) => {
+      f.clear();
+      const blue = p < 0.5;
+      f.rect(0, 0, W, H).fill({ color: blue ? POLICE_BLUE : POLICE_RED, alpha: (1 - p) * 0.28 });
+    }).then(() => f.destroy());
+  }
+
+  private async bustedFlash(turbo: boolean): Promise<void> {
+    const W = this.rect.width;
+    const H = this.rect.height;
+    const f = new Graphics();
+    this.fxLayer.addChild(f);
+    await tween(turbo ? 200 : 700, (p) => {
+      f.clear();
+      f.rect(0, 0, W, H).fill({ color: POLICE_RED, alpha: (1 - p) * 0.45 });
+    });
+    f.destroy();
+  }
+
+  private async grandEscape(turbo: boolean): Promise<void> {
+    const W = this.rect.width;
+    const H = this.rect.height;
+    const flash = new Graphics();
+    flash.rect(0, 0, W, H).fill({ color: 0xffd95c, alpha: 0.6 });
+    this.fxLayer.addChild(flash);
+    const cx = W / 2, cy = H / 2;
+    const parts: Graphics[] = [];
+    const data: Array<{ vx: number; vy: number }> = [];
+    const n = turbo ? 14 : 44;
+    for (let i = 0; i < n; i++) {
+      const g = new Graphics();
+      g.circle(0, 0, 3 + Math.random() * 5).fill([0xffd95c, 0xffec80, 0xff6a00, 0xffffff][i % 4]);
+      g.position.set(cx, cy);
+      this.fxLayer.addChild(g);
+      parts.push(g);
+      const ang = (Math.PI * 2 * i) / n + Math.random() * 0.4;
+      data.push({ vx: Math.cos(ang) * (160 + Math.random() * 220), vy: Math.sin(ang) * (160 + Math.random() * 220) });
+    }
+    await tween(turbo ? 220 : 850, (p) => {
+      flash.alpha = (1 - p) * 0.6;
+      parts.forEach((g, i) => {
+        g.x = cx + data[i].vx * p;
+        g.y = cy + data[i].vy * p + 90 * p * p;
+        g.alpha = 1 - p;
+        g.scale.set(1 - p * 0.5);
+      });
+    }, easeOutCubic);
+    flash.destroy();
+    parts.forEach((g) => g.destroy());
+  }
+
+  // ── ambient + totals ─────────────────────────────────────────────────
   private startAmbient(): void {
     this.stopAmbient();
+    // Background is static & dark for readability — no scroll, no vibrate.
+    // Only the heat star/light pulses animate.
+    this.truckLayer.x = this.truckLayer.y = 0;
+    this.gridLayer.x = this.gridLayer.y = 0;
+    this.fxLayer.x = this.fxLayer.y = 0;
     this.ambientCb = (_dt, elapsed) => {
-      this.ambientLayer.removeChildren();
-      const w = this.rect.width;
-      const h = this.rect.height;
-
-      const sweep = new Graphics();
-      const spotX = (Math.sin(elapsed * 0.8) * 0.5 + 0.5) * w;
-      const spotWidth = w * 0.25;
-      sweep.rect(spotX - spotWidth / 2, 70, spotWidth, h - 90)
-        .fill({ color: 0xffdf65, alpha: 0.03 + Math.sin(elapsed * 1.5) * 0.01 });
-      this.ambientLayer.addChild(sweep);
-
-      const pulseAlpha = 0.15 + Math.sin(elapsed * 3) * 0.08;
-      const alarm = new Graphics();
-      alarm.roundRect(6, 6, w - 12, h - 12, 10)
-        .stroke({ color: 0xff3158, alpha: pulseAlpha, width: 1 });
-      this.ambientLayer.addChild(alarm);
+      this.drawStars(elapsed);
+      this.drawPolice(elapsed);
     };
     ambientTicker.add(this.ambientCb);
   }
 
   private stopAmbient(): void {
-    if (this.ambientCb) {
-      ambientTicker.remove(this.ambientCb);
-      this.ambientCb = null;
-    }
-    this.ambientLayer.removeChildren();
+    if (this.ambientCb) { ambientTicker.remove(this.ambientCb); this.ambientCb = null; }
   }
 
-  private drawShell(respins: number): void {
-    const w = this.rect.width;
-    const h = this.rect.height;
-
-    this.overlay.clear();
-    this.overlay.rect(0, 0, w, h).fill({ color: 0x040810, alpha: 0.97 });
-    this.overlay.circle(w / 2, h / 2, Math.max(w, h) * 0.4)
-      .fill({ color: 0x0a1a3a, alpha: 0.6 });
-    this.overlay.roundRect(4, 4, w - 8, h - 8, 10)
-      .stroke({ color: 0xffdf65, alpha: 0.7, width: 3 });
-    this.overlay.roundRect(8, 8, w - 16, h - 16, 8)
-      .stroke({ color: 0xffdf65, alpha: 0.2, width: 1 });
-
-    const rivetPositions = [
-      [16, 16], [w - 16, 16], [16, h - 16], [w - 16, h - 16]
-    ];
-    for (const [rx, ry] of rivetPositions) {
-      this.overlay.circle(rx, ry, 4).fill({ color: 0x2a3a5a, alpha: 1 });
-      this.overlay.circle(rx, ry, 4).stroke({ color: 0x4a6a9a, width: 1 });
-      this.overlay.circle(rx - 1, ry - 1, 1.5).fill({ color: 0x6a8aba, alpha: 0.6 });
-    }
-
-    this.overlay.rect(12, 12, w - 24, 52).fill({ color: 0x0a0e22, alpha: 0.8 });
-    this.overlay.rect(12, 62, w - 24, 2).fill({ color: 0xffdf65, alpha: 0.3 });
-    this.overlay.rect(12, h - 16, w - 24, 1).fill({ color: 0xffdf65, alpha: 0.15 });
-
-    this.gridLayer.removeChildren();
-
-    const titleSize = Math.min(38, w / 16);
-    const titleGlow = new Text({
-      text: "THE GETAWAY",
-      style: new TextStyle({
-        fill: 0xffdf65,
-        fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
-        fontSize: titleSize,
-        fontWeight: "900",
-        letterSpacing: 4,
-        align: "center",
-        dropShadow: { color: 0xff6a00, alpha: 0.6, blur: 14, distance: 0 }
-      })
-    });
-    titleGlow.anchor.set(0.5, 0);
-    titleGlow.position.set(w / 2, 18);
-    this.gridLayer.addChild(titleGlow);
-
-    const titleMain = new Text({
-      text: "THE GETAWAY",
-      style: new TextStyle({
-        fill: 0xffdf65,
-        fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
-        fontSize: titleSize,
-        fontWeight: "900",
-        letterSpacing: 4,
-        align: "center",
-        stroke: { color: 0x8b4513, width: 2 }
-      })
-    });
-    titleMain.anchor.set(0.5, 0);
-    titleMain.position.set(w / 2, 18);
-    this.gridLayer.addChild(titleMain);
-
-    const badgeW = Math.min(140, w * 0.22);
-    const badgeH = 30;
-    const badgeX = w - badgeW - 16;
-    const badgeY = 24;
-    const badge = new Graphics();
-    badge.roundRect(badgeX, badgeY, badgeW, badgeH, 6)
-      .fill(respins <= 1 ? 0x4a0a0a : 0x0a1a3a)
-      .stroke({ color: respins <= 1 ? 0xff3158 : 0x48e5ff, width: 2 });
-    this.gridLayer.addChild(badge);
-
-    const respinText = new Text({
-      text: `${respins} RESPINS`,
-      style: new TextStyle({
-        fill: respins <= 1 ? 0xff3158 : 0x9fe8ff,
-        fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
-        fontSize: Math.min(18, badgeW * 0.14),
-        fontWeight: "900",
-        letterSpacing: 2
-      })
-    });
-    respinText.anchor.set(0.5, 0.5);
-    respinText.position.set(badgeX + badgeW / 2, badgeY + badgeH / 2);
-    this.gridLayer.addChild(respinText);
+  private sumGrid(grid: BonusCell[][]): number {
+    let t = 0;
+    for (let c = 0; c < GRID_COLUMNS; c++)
+      for (let r = 0; r < GRID_ROWS; r++) {
+        const cell = grid[c][r];
+        if (cell.symbol === "SAFE" && cell.value) t += cell.value;
+      }
+    return Number(t.toFixed(2));
   }
 
-  private drawSingleCell(x: number, y: number, cellWidth: number, cellHeight: number, cell: BonusCell, active: boolean): void {
-    const g = new Graphics();
-
-    if (cell.symbol === "SAFE" || cell.symbol === "MASTER_KEY") {
-      const cellColor = cell.symbol === "SAFE" ? 0x3a2a0a : 0x0a2a4a;
-
-      if (active) {
-        g.roundRect(x - 4, y - 4, cellWidth + 8, cellHeight + 8, 12)
-          .fill({ color: 0xffdf65, alpha: 0.2 });
-      }
-
-      g.roundRect(x, y, cellWidth, cellHeight, 8).fill(cellColor);
-      g.roundRect(x + 1, y + cellHeight * 0.6, cellWidth - 2, cellHeight * 0.4, 6)
-        .fill({ color: 0x000000, alpha: 0.25 });
-      g.roundRect(x + 2, y + 2, cellWidth - 4, cellHeight * 0.35, 6)
-        .fill({ color: 0xffffff, alpha: 0.06 });
-
-      const borderColor = active ? 0xffdf65 : 0x5a4a2a;
-      g.roundRect(x, y, cellWidth, cellHeight, 8)
-        .stroke({ color: borderColor, width: active ? 3 : 1.5, alpha: active ? 0.9 : 0.6 });
-
-      this.gridLayer.addChild(g);
-
-      const tex = getSymbolTexture(cell.symbol);
-      if (tex) {
-        const sprite = new Sprite(tex);
-        sprite.anchor.set(0.5);
-        const padding = 4;
-        const scale = Math.min((cellWidth - padding * 2) / tex.width, (cellHeight - padding * 2) / tex.height);
-        sprite.scale.set(scale);
-        sprite.position.set(x + cellWidth / 2, y + cellHeight / 2);
-        this.gridLayer.addChild(sprite);
-      }
-
-      if (cell.value) {
-        const valueBg = new Graphics();
-        valueBg.roundRect(x + 4, y + cellHeight - 30, cellWidth - 8, 26, 4)
-          .fill({ color: 0x000000, alpha: 0.7 });
-        this.gridLayer.addChild(valueBg);
-        this.gridLayer.addChild(makeText(
-          `${cell.value}x`,
-          Math.min(22, cellWidth / 3.5), 0xffdf65,
-          x + cellWidth / 2, y + cellHeight - 29, "center"
-        ));
-      }
+  private setCollected(total: number, animate: boolean): void {
+    if (!this.collectedText) return;
+    if (!animate || total <= this.collectedShown) {
+      this.collectedShown = total;
+      this.collectedText.text = fmtX(total);
+      return;
     }
+    const start = this.collectedShown;
+    void tween(450, (p) => {
+      const v = start + (total - start) * p;
+      this.collectedShown = v;
+      if (this.collectedText) {
+        this.collectedText.text = fmtX(v);
+        this.collectedText.scale.set(1 + Math.sin(p * Math.PI) * 0.12);
+      }
+    }, easeOutCubic).then(() => {
+      this.collectedShown = total;
+      if (this.collectedText) { this.collectedText.text = fmtX(total); this.collectedText.scale.set(1); }
+    });
   }
 
-  private drawGrid(grid: BonusCell[][], highlighted: Position[], cracked: Position[]): void {
-    const highlightedSet = new Set(highlighted.map(([column, row]) => `${column}:${row}`));
-    const crackedSet = new Set(cracked.map(([column, row]) => `${column}:${row}`));
-    const top = 72;
-    const cellWidth = (this.rect.width - this.gap * (GRID_COLUMNS + 1)) / GRID_COLUMNS;
-    const cellHeight = (this.rect.height - 86 - this.gap * (GRID_ROWS + 1)) / GRID_ROWS;
-
-    for (let row = 0; row < GRID_ROWS; row += 1) {
-      for (let column = 0; column < GRID_COLUMNS; column += 1) {
-        const cell = grid[column][row];
-        const key = `${column}:${row}`;
-        const x = this.gap + column * (cellWidth + this.gap);
-        const y = top + this.gap + row * (cellHeight + this.gap);
-        const isActive = highlightedSet.has(key) || crackedSet.has(key);
-        const isCracked = crackedSet.has(key);
-
-        if (cell.symbol === "SAFE" || cell.symbol === "MASTER_KEY") {
-          const g = new Graphics();
-          const cellColor = cell.symbol === "SAFE" ? 0x3a2a0a : 0x0a2a4a;
-
-          if (isActive) {
-            const glowColor = isCracked ? 0xffdf65 : 0x48e5ff;
-            g.roundRect(x - 4, y - 4, cellWidth + 8, cellHeight + 8, 12)
-              .fill({ color: glowColor, alpha: 0.2 });
-          }
-
-          g.roundRect(x, y, cellWidth, cellHeight, 8).fill(cellColor);
-          g.roundRect(x + 1, y + cellHeight * 0.6, cellWidth - 2, cellHeight * 0.4, 6)
-            .fill({ color: 0x000000, alpha: 0.25 });
-          g.roundRect(x + 2, y + 2, cellWidth - 4, cellHeight * 0.35, 6)
-            .fill({ color: 0xffffff, alpha: 0.06 });
-
-          const borderColor = isCracked ? 0xffdf65 : isActive ? 0x68f7ff : 0x5a4a2a;
-          g.roundRect(x, y, cellWidth, cellHeight, 8)
-            .stroke({ color: borderColor, width: isActive ? 3 : 1.5, alpha: isActive ? 0.9 : 0.6 });
-
-          this.gridLayer.addChild(g);
-
-          const tex = getSymbolTexture(cell.symbol);
-          if (tex) {
-            const sprite = new Sprite(tex);
-            sprite.anchor.set(0.5);
-            const padding = 4;
-            const scale = Math.min((cellWidth - padding * 2) / tex.width, (cellHeight - padding * 2) / tex.height);
-            sprite.scale.set(scale);
-            sprite.position.set(x + cellWidth / 2, y + cellHeight / 2);
-            this.gridLayer.addChild(sprite);
-          } else {
-            this.gridLayer.addChild(makeText(
-              cell.symbol === "MASTER_KEY" ? "KEY" : "SAFE",
-              Math.min(18, cellWidth / 4), 0xffffff,
-              x + cellWidth / 2, y + cellHeight * 0.3, "center"
-            ));
-          }
-
-          if (cell.value) {
-            const valueBg = new Graphics();
-            valueBg.roundRect(x + 4, y + cellHeight - 30, cellWidth - 8, 26, 4)
-              .fill({ color: 0x000000, alpha: 0.7 });
-            this.gridLayer.addChild(valueBg);
-            this.gridLayer.addChild(makeText(
-              `${cell.value}x`,
-              Math.min(22, cellWidth / 3.5), 0xffdf65,
-              x + cellWidth / 2, y + cellHeight - 29, "center"
-            ));
-          }
-        } else {
-          const g = new Graphics();
-          g.roundRect(x, y, cellWidth, cellHeight, 8)
-            .fill({ color: 0x0a1228, alpha: 0.9 });
-          g.roundRect(x + 2, y + 2, cellWidth - 4, cellHeight - 4, 6)
-            .stroke({ color: 0x1a2a4a, alpha: 0.4, width: 1 });
-
-          const cx = x + cellWidth / 2;
-          const cy = y + cellHeight / 2;
-          const lockSize = Math.min(cellWidth, cellHeight) * 0.15;
-          g.roundRect(cx - lockSize, cy - lockSize * 0.2, lockSize * 2, lockSize * 1.6, 3)
-            .fill({ color: 0x1a2a4a, alpha: 0.5 });
-          g.roundRect(cx - lockSize, cy - lockSize * 0.2, lockSize * 2, lockSize * 1.6, 3)
-            .stroke({ color: 0x2a3a5a, alpha: 0.4, width: 1 });
-          g.arc(cx, cy - lockSize * 0.2, lockSize * 0.7, Math.PI, 0)
-            .stroke({ color: 0x2a3a5a, alpha: 0.4, width: 2 });
-          g.circle(cx, cy + lockSize * 0.3, lockSize * 0.2)
-            .fill({ color: 0x0a1228, alpha: 0.8 });
-          g.roundRect(x, y, cellWidth, cellHeight, 8)
-            .stroke({ color: 0x1a2a4a, alpha: 0.3, width: 1 });
-
-          this.gridLayer.addChild(g);
-        }
-      }
+  private starPoints(cx: number, cy: number, outerR: number, innerR: number): number[] {
+    const pts: number[] = [];
+    for (let i = 0; i < 10; i++) {
+      const a = -Math.PI / 2 + (i * Math.PI) / 5;
+      const r = i % 2 === 0 ? outerR : innerR;
+      pts.push(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
     }
+    return pts;
+  }
+
+  private fit(t: Text, maxWidth: number): void {
+    if (t.width > maxWidth) t.scale.set(maxWidth / t.width);
   }
 }

@@ -46,6 +46,24 @@ const VOLUME: Record<TrackName, number> = {
 /** Fade duration in seconds */
 const FADE = 0.8;
 
+/* ── Radio stations (GTA-style) ─────────────────────
+   Each wheel option maps to either a looping mp3 track, a procedurally
+   generated synth station, a scanner/talk channel, or OFF (full mute). */
+type StationAudio =
+  | { kind: "off" }
+  | { kind: "track"; track: TrackName }
+  | { kind: "synth"; wave: OscillatorType; base: number; tempo: number; scale: number[] }
+  | { kind: "scanner" };
+
+export const STATION_AUDIO: Record<string, StationAudio> = {
+  off:     { kind: "off" },
+  heat:    { kind: "track", track: "bg_base" },
+  vault:   { kind: "track", track: "bg_bonus" },
+  neon:    { kind: "synth", wave: "sawtooth", base: 220.0, tempo: 0.22, scale: [0, 3, 7, 10, 12, 10, 7, 3] },
+  vice:    { kind: "synth", wave: "square",   base: 277.18, tempo: 0.18, scale: [0, 2, 4, 7, 9, 12, 9, 4] },
+  scanner: { kind: "scanner" },
+};
+
 /* ── Active loop handle ─────────────────────────── */
 
 interface ActiveLoop {
@@ -67,6 +85,12 @@ export class EventAudioBus {
   private bgLoop: ActiveLoop | null = null;
   private spinLoop: ActiveLoop | null = null;
   private inBonus = false;
+
+  /* radio: once the player picks a station the game stops auto-switching music */
+  private radioOverride = false;
+  private radioStation = "heat";
+  private synthTimer: number | null = null;
+  private synthMaster: GainNode | null = null;
 
   /* ── lifecycle ─────────────────────────────────── */
 
@@ -149,6 +173,199 @@ export class EventAudioBus {
   playUI(_cue: string, muted: boolean): void {
     if (muted) return;
     void this.unlock().then(() => this.synthClick());
+  }
+
+  /* ── Bonus heat (chase tension) ────────────────── */
+
+  private heliTimer: number | null = null;
+  private heliMaster: GainNode | null = null;
+  private lastHeat = -1;
+
+  /** Drive the chase tension: escalating siren stabs + a helicopter at max heat. */
+  setBonusHeat(level: number): void {
+    if (level === this.lastHeat) return;
+    const rising = level > this.lastHeat;
+    this.lastHeat = level;
+    void this.unlock().then(() => {
+      if (level > 0 && rising) this.fire("siren", 0.35 + level * 0.22);
+      if (level >= 3) this.startHeli();
+      else this.stopHeli();
+    });
+  }
+
+  /** Procedural helicopter: rapid low rotor thumps. */
+  private startHeli(): void {
+    if (!this.ctx || this.heliTimer !== null) return;
+    const master = this.ctx.createGain();
+    master.gain.setValueAtTime(0.0001, this.ctx.currentTime);
+    master.gain.exponentialRampToValueAtTime(0.5, this.ctx.currentTime + 0.4);
+    master.connect(this.ctx.destination);
+    this.heliMaster = master;
+    let next = this.ctx.currentTime + 0.05;
+    const tick = (): void => {
+      if (!this.ctx || !this.heliMaster) return;
+      while (next < this.ctx.currentTime + 0.25) {
+        const osc = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+        osc.type = "square";
+        osc.frequency.setValueAtTime(48, next);
+        g.gain.setValueAtTime(0.0001, next);
+        g.gain.exponentialRampToValueAtTime(0.09, next + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, next + 0.07);
+        osc.connect(g).connect(master);
+        osc.start(next);
+        osc.stop(next + 0.09);
+        next += 0.085; // ~12 Hz rotor
+      }
+      this.heliTimer = window.setTimeout(tick, 60);
+    };
+    tick();
+  }
+
+  private stopHeli(): void {
+    if (this.heliTimer !== null) { window.clearTimeout(this.heliTimer); this.heliTimer = null; }
+    if (this.heliMaster && this.ctx) {
+      const g = this.heliMaster;
+      const now = this.ctx.currentTime;
+      try {
+        g.gain.cancelScheduledValues(now);
+        g.gain.setValueAtTime(Math.max(g.gain.value, 0.0001), now);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + 0.3);
+      } catch { /* ignore */ }
+      const ref = g;
+      window.setTimeout(() => { try { ref.disconnect(); } catch { /* ignore */ } }, 400);
+      this.heliMaster = null;
+    }
+  }
+
+  /* ── Radio (GTA-style station wheel) ───────────── */
+
+  getStation(): string {
+    return this.radioStation;
+  }
+
+  /** Switch the background music to a chosen radio station. */
+  selectStation(id: string): void {
+    this.radioStation = id;
+    this.radioOverride = true;
+    void this.unlock().then(() => {
+      this.stopSynthRadio();
+      this.fadeOut("bg");
+      const cfg = STATION_AUDIO[id];
+      if (!cfg || cfg.kind === "off") return;
+      if (cfg.kind === "track") {
+        this.startLoop(cfg.track, "bg");
+      } else if (cfg.kind === "synth") {
+        this.startSynthRadio(cfg.wave, cfg.base, cfg.tempo, cfg.scale);
+      } else if (cfg.kind === "scanner") {
+        this.startScannerRadio();
+      }
+    });
+  }
+
+  /** A looping procedural synthwave arpeggio + bass. */
+  private startSynthRadio(wave: OscillatorType, base: number, tempo: number, scale: number[]): void {
+    if (!this.ctx) return;
+    const master = this.ctx.createGain();
+    master.gain.setValueAtTime(0.0001, this.ctx.currentTime);
+    master.gain.exponentialRampToValueAtTime(0.5, this.ctx.currentTime + FADE);
+    master.connect(this.ctx.destination);
+    this.synthMaster = master;
+
+    let step = 0;
+    let nextTime = this.ctx.currentTime + 0.06;
+    const semis = (n: number) => base * Math.pow(2, n / 12);
+
+    const schedule = (): void => {
+      if (!this.ctx || !this.synthMaster) return;
+      while (nextTime < this.ctx.currentTime + 0.25) {
+        // arpeggio note
+        this.synthNoteAt(wave, semis(scale[step % scale.length]), nextTime, tempo * 0.9, 0.10, master);
+        // bass on every 4th step (an octave + a fifth down)
+        if (step % 4 === 0) this.synthNoteAt("triangle", semis(scale[0]) / 2, nextTime, tempo * 3.6, 0.16, master);
+        // off-beat soft shimmer an octave up
+        if (step % 2 === 1) this.synthNoteAt("sine", semis(scale[step % scale.length] + 12), nextTime, tempo * 0.5, 0.04, master);
+        nextTime += tempo;
+        step++;
+      }
+      this.synthTimer = window.setTimeout(schedule, 60);
+    };
+    schedule();
+  }
+
+  /** A low police-scanner channel: static chatter bursts + the odd siren blip. */
+  private startScannerRadio(): void {
+    if (!this.ctx) return;
+    const master = this.ctx.createGain();
+    master.gain.setValueAtTime(0.0001, this.ctx.currentTime);
+    master.gain.exponentialRampToValueAtTime(0.5, this.ctx.currentTime + FADE);
+    master.connect(this.ctx.destination);
+    this.synthMaster = master;
+
+    let nextTime = this.ctx.currentTime + 0.1;
+    const schedule = (): void => {
+      if (!this.ctx || !this.synthMaster) return;
+      while (nextTime < this.ctx.currentTime + 0.4) {
+        if (Math.random() < 0.7) this.noiseBurstAt(nextTime, 0.12 + Math.random() * 0.18, master);
+        if (Math.random() < 0.12) this.synthNoteAt("square", 620 + Math.random() * 240, nextTime, 0.14, 0.06, master);
+        nextTime += 0.18 + Math.random() * 0.22;
+      }
+      this.synthTimer = window.setTimeout(schedule, 70);
+    };
+    schedule();
+  }
+
+  /** Schedule one enveloped oscillator note into a destination gain. */
+  private synthNoteAt(wave: OscillatorType, freq: number, when: number, dur: number, gain: number, dest: GainNode): void {
+    if (!this.ctx) return;
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = wave;
+    osc.frequency.setValueAtTime(freq, when);
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.exponentialRampToValueAtTime(gain, when + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+    osc.connect(g).connect(dest);
+    osc.start(when);
+    osc.stop(when + dur + 0.03);
+  }
+
+  /** Filtered white-noise burst (radio static). */
+  private noiseBurstAt(when: number, dur: number, dest: GainNode): void {
+    if (!this.ctx) return;
+    const frames = Math.floor(this.ctx.sampleRate * dur);
+    const buf = this.ctx.createBuffer(1, frames, this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < frames; i++) data[i] = (Math.random() * 2 - 1) * 0.5;
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.value = 900 + Math.random() * 1400;
+    filter.Q.value = 1.5;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.exponentialRampToValueAtTime(0.08, when + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+    src.connect(filter).connect(g).connect(dest);
+    src.start(when);
+    src.stop(when + dur + 0.02);
+  }
+
+  private stopSynthRadio(): void {
+    if (this.synthTimer !== null) { window.clearTimeout(this.synthTimer); this.synthTimer = null; }
+    if (this.synthMaster && this.ctx) {
+      const g = this.synthMaster;
+      const now = this.ctx.currentTime;
+      try {
+        g.gain.cancelScheduledValues(now);
+        g.gain.setValueAtTime(Math.max(g.gain.value, 0.0001), now);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+      } catch { /* ignore */ }
+      const ref = g;
+      window.setTimeout(() => { try { ref.disconnect(); } catch { /* ignore */ } }, 500);
+      this.synthMaster = null;
+    }
   }
 
   /* ── event → sound routing ─────────────────────── */
@@ -297,12 +514,14 @@ export class EventAudioBus {
 
   /** Crossfade background music to a new track */
   private crossfadeBg(to: TrackName): void {
+    if (this.radioOverride) return; // the player is controlling the radio
     this.fadeOut("bg");
     this.startLoop(to, "bg");
   }
 
   /** Make sure background music is running (restart after mute) */
   private ensureBg(): void {
+    if (this.radioOverride) return; // the chosen station persists; don't auto-restart
     if (this.bgLoop) return;
     this.startLoop(this.inBonus ? "bg_bonus" : "bg_base", "bg");
   }
@@ -327,6 +546,7 @@ export class EventAudioBus {
   private killAll(): void {
     this.fadeOut("bg");
     this.fadeOut("spin");
+    this.stopSynthRadio();
   }
 
   /* ═══════════════════════════════════════════════

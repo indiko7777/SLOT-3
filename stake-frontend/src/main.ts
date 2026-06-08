@@ -5,6 +5,7 @@ import { hideLoader, showLoader, updateLoader } from "./loader";
 import { applyEvent, INITIAL_SNAPSHOT, type PlaybackSnapshot } from "./playback";
 import { loadSymbolTextures } from "./pixi/assets";
 import { PixiGameScene } from "./pixi/PixiGameScene";
+import { RadioWheel } from "./radio";
 import { RgsClient, RgsError, toDisplay } from "./rgs/client";
 import { readSession } from "./rgs/session";
 import type { BetModeObject, Jurisdiction } from "./rgs/types";
@@ -34,12 +35,21 @@ let jurisdiction: Jurisdiction | null = null;
 
 let pixi: Application;
 let scene: PixiGameScene;
+let radioWheel: RadioWheel;
 let activeModeKey = "base";
 let anteEnabled = false;
 let turbo = false;
 let muted = false;
 let isPlaying = false;
 let snapshot: PlaybackSnapshot = INITIAL_SNAPSHOT;
+/** Persistent Wanted meter (0–5, fractional). Climbs on base-game wins; at 5 it
+ *  triggers a FREE Getaway and resets. (3 scatters still trigger it directly.) */
+let wantedMeter = 0;
+
+/** How much a winning base spin raises the Wanted meter (bigger win → more). */
+function wantedGain(winX: number): number {
+  return Math.min(2, 0.6 + winX * 0.15);
+}
 
 void boot();
 
@@ -101,9 +111,13 @@ async function boot(): Promise<void> {
     getBetLevel: () => betLevels[betIndex] ?? 0,
     getCredit: () => balance,
     getCurrency: () => currency,
+    getWantedLevel: () => wantedMeter,
     onAction: handleAction,
     onSafeLand: (index, total) => {
       if (!muted) audioBus.fireSafeLand(index, total);
+    },
+    onBonusHeat: (level) => {
+      if (!muted) audioBus.setBonusHeat(level);
     },
     previewRecord: PREVIEW_RECORD
   });
@@ -111,6 +125,17 @@ async function boot(): Promise<void> {
   scene.resize();
   scene.renderSnapshot(snapshot);
   hideLoader();
+
+  radioWheel = new RadioWheel((stationId) => {
+    if (stationId === "off") {
+      muted = true;
+      audioBus.selectStation("off");
+    } else {
+      muted = false;
+      audioBus.selectStation(stationId);
+    }
+    scene.renderSnapshot(snapshot); // refresh the radio button state
+  }, "heat");
 
   window.addEventListener("resize", () => {
     scene.resize();
@@ -141,10 +166,10 @@ async function handleAction(action: string): Promise<void> {
     case "menu":
       scene.togglePaytable();
       return;
-    case "mute":
-      muted = !muted;
-      if (!muted) await audioBus.unlock();
-      scene.renderSnapshot(snapshot);
+    case "mute": // repurposed: open the GTA-style radio wheel
+      await audioBus.unlock();
+      radioWheel.setCurrent(muted ? "off" : audioBus.getStation());
+      radioWheel.toggle();
       return;
     case "ante":
       if (!betModes.ante) return; // RGS did not offer an ante mode
@@ -176,7 +201,7 @@ async function handleAction(action: string): Promise<void> {
   }
 }
 
-async function playRound(modeKey: string): Promise<void> {
+async function playRound(modeKey: string, free = false): Promise<void> {
   const betAmount = betLevels[betIndex];
   if (betAmount == null) return;
 
@@ -185,8 +210,10 @@ async function playRound(modeKey: string): Promise<void> {
   snapshot = INITIAL_SNAPSHOT;
   scene.resetRound(snapshot);
 
+  let hadBonus = false;
+  let winX = 0;
   try {
-    const res = await client.play(betAmount, currency, modeKey);
+    const res = await client.play(betAmount, currency, modeKey, free);
     // Debit reflected by the RGS — never computed locally.
     balance = toDisplay(res.balance.amount);
     const record: RoundRecord = {
@@ -194,6 +221,8 @@ async function playRound(modeKey: string): Promise<void> {
       payoutMultiplier: res.round.payoutMultiplier,
       events: res.round.state
     };
+    winX = record.payoutMultiplier;
+    hadBonus = (record.events as GameEvent[]).some((e) => e.type === "bonus_trigger");
     await replayRound(record, res.round.active);
   } catch (e) {
     isPlaying = false;
@@ -203,7 +232,24 @@ async function playRound(modeKey: string): Promise<void> {
     return;
   }
   isPlaying = false;
+
+  // ── Wanted meter: only regular base/ante spins move it ──
+  const isRegularSpin = modeKey === "base" || modeKey === "ante";
+  if (isRegularSpin) {
+    if (hadBonus) wantedMeter = 0;                                  // scatters gave the Getaway
+    else if (winX > 0) wantedMeter = Math.min(5, wantedMeter + wantedGain(winX)); // win raises heat
+  }
   scene.renderSnapshot(snapshot);
+
+  // Meter hit 5 stars → FREE Getaway, then reset the meter.
+  if (isRegularSpin && wantedMeter >= 5) {
+    isPlaying = true; // lock input through the transition
+    await new Promise((r) => window.setTimeout(r, 700)); // let the full 5 stars register
+    wantedMeter = 0;
+    await playRound("buy", true);
+    activeModeKey = anteEnabled ? "ante" : "base";
+    scene.renderSnapshot(snapshot);
+  }
 }
 
 async function replayRound(record: RoundRecord, active: boolean): Promise<void> {

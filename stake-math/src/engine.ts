@@ -478,7 +478,8 @@ function runHoldAndSpin(
   };
 
   // Landing probability per empty cell; wincap forces a full grid.
-  const landP = forceWincap ? 0.62 : mode === "super_buy" ? 0.3 : mode === "buy" ? 0.26 : 0.22;
+  // (Tuned down for buy/super since the 4th respin raised the average bonus.)
+  const landP = forceWincap ? 0.62 : mode === "super_buy" ? 0.25 : mode === "buy" ? 0.15 : 0.22;
   const keyP = 0.12;
 
   let safety = 0;
@@ -494,17 +495,21 @@ function runHoldAndSpin(
     for (const [c, r] of empties) {
       if (!rng.bool(landP)) continue;
       if (rng.bool(keyP)) {
+        // Dynamite: lands, doubles neighbours, then VACATES its cell (below) so
+        // it can be refilled by a gold bar on a later spin. It does NOT count
+        // toward filling the grid.
         grid[c]![r] = { symbol: "MASTER_KEY" };
         landed.push({ symbol: "MASTER_KEY", position: [c, r] });
       } else {
+        // Gold bar: sticky multiplier, counts toward the 20-cell fill.
         const value = pickWeighted(
           rng,
           cfg.safeValues.map((s) => ({ value: s.value, weight: s.weight }))
         );
         grid[c]![r] = { symbol: "SAFE", value };
         landed.push({ symbol: "SAFE", position: [c, r], value });
+        locked += 1;
       }
-      locked += 1;
     }
 
     respins = landed.length > 0 ? BONUS_RESPINS : respins - 1;
@@ -544,6 +549,8 @@ function runHoldAndSpin(
           keyPosition: l.position,
           affectedSafes: affected
         });
+      // The dynamite is spent — clear its cell so a gold bar can land there later.
+      grid[l.position[0]]![l.position[1]] = { symbol: "EMPTY" };
     }
   }
 

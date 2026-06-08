@@ -9,8 +9,12 @@ export interface SceneRuntime {
   getBetLevel(): number;
   getCredit(): number;
   getCurrency(): string;
+  /** Persistent Wanted meter, 0–5 (fractional). At 5 the Getaway triggers free. */
+  getWantedLevel(): number;
   onAction(action: string): Promise<void>;
   onSafeLand?: (index: number, total: number) => void;
+  /** Bonus heat level 0–3 (consecutive dead spins); drives siren/helicopter audio. */
+  onBonusHeat?: (level: number) => void;
   previewRecord: RoundRecord;
 }
 
@@ -29,8 +33,6 @@ export interface LayoutMetrics {
   leftPanel: Rect | null;
   artPanel: Rect | null;
   machine: Rect;
-  topPlaque: Rect;
   boardFrame: Rect;
-  heatRail: Rect;
   board: Rect;
 }

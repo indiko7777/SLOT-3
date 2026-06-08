@@ -56,20 +56,11 @@ export class SymbolView extends Container {
   redraw(highlighted: boolean, transformed: boolean, alert: boolean): void {
     const w = this.widthValue;
     const h = this.heightValue;
-    const skin = SYMBOL_ASSETS[this.id];
 
     this.background.clear();
 
-    // --- Subtle dark cell background with very soft edges ---
-    // No harsh borders — just a soft dark shape
-    this.background.roundRect(0, 0, w, h, 10)
-      .fill({ color: 0x0a0e1e, alpha: 0.6 });
-
-    // Subtle bottom shadow for depth
-    this.background.roundRect(1, h * 0.7, w - 2, h * 0.3, 6)
-      .fill({ color: 0x000000, alpha: 0.2 });
-
-    // Very thin border — almost invisible in normal state
+    // No idle cell box or white frame — symbols sit directly on the reel.
+    // A border is only drawn to signal win / alert / transform states.
     if (highlighted) {
       // Golden glow border for wins
       this.background.roundRect(-2, -2, w + 4, h + 4, 12)
@@ -82,16 +73,10 @@ export class SymbolView extends Container {
     } else if (transformed) {
       this.background.roundRect(-1, -1, w + 2, h + 2, 11)
         .stroke({ color: 0x62ffa7, width: 3, alpha: 0.7 });
-    } else {
-      // Very subtle edge — just enough to define the cell
-      this.background.roundRect(0, 0, w, h, 10)
-        .stroke({ color: 0xffffff, width: 0.5, alpha: 0.08 });
     }
 
-    // --- Top glass sheen (subtle highlight across top 30%) ---
+    // Top glass sheen removed — it was part of the white per-cell frame.
     this.topSheen.clear();
-    this.topSheen.roundRect(2, 2, w - 4, h * 0.35, 8)
-      .fill({ color: 0xffffff, alpha: 0.04 });
 
     // Scale sprite to fill cell
     if (this.sprite) {
@@ -113,16 +98,7 @@ export class SymbolView extends Container {
   }
 
   startIdleShimmer(): void {
-    if (this.ambientCb) return;
-    const phase = Math.random() * Math.PI * 2;
-    this.ambientCb = (_dt, elapsed) => {
-      const alpha = 0.02 + Math.sin(elapsed * 1.8 + phase) * 0.02;
-      this.shimmer.clear();
-      this.shimmer.roundRect(2, 2, this.widthValue - 4, this.heightValue * 0.3, 8)
-        .fill({ color: 0xffffff, alpha });
-      this.shimmer.alpha = 1;
-    };
-    ambientTicker.add(this.ambientCb);
+    // Idle white sheen removed — no per-cell shimmer rectangle.
   }
 
   stopIdleShimmer(): void {

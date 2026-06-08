@@ -20,6 +20,8 @@ export class PixiGameScene {
   private layout: LayoutMetrics;
   private currentSnapshot: PlaybackSnapshot | null = null;
   private hasBoard = false;
+  private bonusDeadSpins = 0;
+  private bonusActive = false;
 
   constructor(private readonly app: Application, private readonly runtime: SceneRuntime) {
     this.layout = computeLayout(app.screen.width, app.screen.height);
@@ -32,7 +34,8 @@ export class PixiGameScene {
   resize(): void {
     this.layout = computeLayout(this.app.screen.width, this.app.screen.height);
     this.board.layout(this.layout.board);
-    this.bonus.layout(this.layout.board);
+    // The Getaway bonus is a full-screen POV chase.
+    this.bonus.layout({ x: 0, y: 0, width: this.layout.width, height: this.layout.height });
   }
 
   resetRound(snapshot: PlaybackSnapshot): void {
@@ -56,8 +59,11 @@ export class PixiGameScene {
       this.board.setInstant(board);
       this.hasBoard = true;
     }
-    if (snapshot.bonusGrid) {
-      this.bonus.setGrid(snapshot.bonusGrid, snapshot.respins, snapshot.highlighted, snapshot.cracked);
+    // Only re-show the bonus when resuming an ACTIVE bonus round (not after it ends).
+    if (snapshot.bonusGrid && snapshot.state.startsWith("bonus")) {
+      this.bonus.showStatic(snapshot.bonusGrid);
+    } else {
+      this.bonus.hide();
     }
   }
 
@@ -122,39 +128,48 @@ export class PixiGameScene {
         await this.effects.banner("Max Heat", `${event.value}x`, this.layout.board, turbo);
         return;
       case "bonus_trigger":
+        this.bonusDeadSpins = 0;
+        this.bonusActive = true;
         await this.board.scatterTease(event.scatterPositions, turbo);
         await this.bonus.intro(turbo);
-        await this.effects.banner(snapshot.lastMessage, "", this.layout.board, turbo);
         return;
-      case "bonus_spin":
-        if (event.landedSymbols.length >= GRID_COLUMNS * GRID_ROWS) {
-          await this.bonus.grandReveal(event.lockedGrid, event.landedSymbols.map((s) => s.position), event.respinsAfter, turbo, this.runtime.onSafeLand);
-        } else {
-          this.bonus.setGrid(event.lockedGrid, event.respinsAfter, event.landedSymbols.map((symbol) => symbol.position), []);
-          await this.bonus.pulse(event.landedSymbols.map((symbol) => symbol.position), turbo);
-        }
-        return;
-      case "safe_lock":
-        await this.effects.banner(snapshot.lastMessage, `${event.value}x`, this.layout.board, turbo);
-        return;
-      case "master_key_crack": {
-        if (snapshot.bonusGrid) {
-          this.bonus.setGrid(snapshot.bonusGrid, snapshot.respins, [event.keyPosition], event.affectedSafes.map((safe) => safe.position));
-        }
-        const from = this.bonus.centerOf(event.keyPosition);
-        const targets = event.affectedSafes.map((safe) => this.bonus.centerOf(safe.position));
-        await this.effects.keyBeam(from, targets, turbo);
-        await this.bonus.pulse(event.affectedSafes.map((safe) => safe.position), turbo);
-        await this.effects.banner("Master Key Crack", "", this.layout.board, turbo);
+      case "bonus_spin": {
+        const landed = event.landedSymbols.map((s) => s.position);
+        // Dead spin (nothing landed) stacks the heat; a hit resets it.
+        if (landed.length > 0) this.bonusDeadSpins = 0;
+        else this.bonusDeadSpins += 1;
+        const heat = landed.length > 0 ? 0 : Math.min(3, this.bonusDeadSpins);
+        this.runtime.onBonusHeat?.(heat);
+        await this.bonus.playSpin(event.lockedGrid, landed, event.respinsAfter, this.bonusDeadSpins, turbo, this.runtime.onSafeLand);
         return;
       }
+      case "safe_lock":
+        // Value is shown on the gold bar and added to COLLECTED — no banner.
+        return;
+      case "master_key_crack":
+        // Dynamite: shockwave, double neighbours, then it vanishes.
+        await this.bonus.crack(
+          event.keyPosition,
+          event.affectedSafes.map((safe) => ({ position: safe.position, newValue: safe.newValue })),
+          turbo
+        );
+        return;
       case "bonus_end":
-        this.effects.cashRain(this.layout.board, turbo);
+        this.runtime.onBonusHeat?.(0);
         this.effects.screenShake(this.root, turbo);
-        await this.effects.banner(snapshot.lastMessage, formatMultiplier(event.totalPayout), this.layout.board, turbo);
+        // The bonus shows its own clean, centered result card (no board-rect banner).
+        await this.bonus.finish(event.filledScreen, event.totalPayout, turbo);
         return;
       case "round_end": {
         this.hud.draw(this.layout, snapshot);
+        if (this.bonusActive) {
+          // The chase already showed its centered result — hold, then fade out
+          // smoothly back to the base board.
+          this.bonusActive = false;
+          await wait(turbo ? 150 : 550);
+          await this.bonus.fadeOutAndHide(turbo);
+          return;
+        }
         if (event.payoutMultiplier === 0) {
           await wait(turbo ? 20 : 80);
           return;

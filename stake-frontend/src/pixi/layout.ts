@@ -8,12 +8,10 @@ export function computeLayout(width: number, height: number): LayoutMetrics {
   if (portrait) {
     const machine: Rect = { x: 8, y: 48, width: width - 16, height: height - bottomHeight - 186 };
     const boardFrame: Rect = { x: machine.x, y: machine.y, width: machine.width, height: machine.height };
-    const heatRailWidth = 50;
-    const heatRail: Rect = { x: boardFrame.x + 12, y: boardFrame.y + 16, width: heatRailWidth, height: boardFrame.height - 32 };
     const board: Rect = {
-      x: heatRail.x + heatRail.width + 12,
+      x: boardFrame.x + 12,
       y: boardFrame.y + 16,
-      width: boardFrame.width - heatRail.width - 36,
+      width: boardFrame.width - 24,
       height: boardFrame.height - 32
     };
 
@@ -25,9 +23,7 @@ export function computeLayout(width: number, height: number): LayoutMetrics {
       leftPanel: { x: 8, y: height - bottomHeight - 122, width: width - 16, height: 110 },
       artPanel: null,
       machine,
-      topPlaque: { x: width * 0.12, y: 8, width: width * 0.76, height: 34 },
       boardFrame,
-      heatRail,
       board
     };
   }
@@ -41,12 +37,10 @@ export function computeLayout(width: number, height: number): LayoutMetrics {
     height: height - bottomHeight - 74
   };
   const boardFrame: Rect = { ...machine };
-  const heatRailWidth = Math.max(58, boardFrame.width * 0.09);
-  const heatRail: Rect = { x: boardFrame.x + 16, y: boardFrame.y + 18, width: heatRailWidth, height: boardFrame.height - 36 };
   const board: Rect = {
-    x: heatRail.x + heatRail.width + 14,
+    x: boardFrame.x + 18,
     y: boardFrame.y + 18,
-    width: boardFrame.width - heatRail.width - 44,
+    width: boardFrame.width - 36,
     height: boardFrame.height - 36
   };
 
@@ -58,9 +52,7 @@ export function computeLayout(width: number, height: number): LayoutMetrics {
     leftPanel: { x: 12, y: 52, width: leftWidth - 24, height: height - bottomHeight - 68 },
     artPanel: { x: width - rightWidth + 12, y: 50, width: rightWidth - 26, height: height - bottomHeight - 58 },
     machine,
-    topPlaque: { x: machine.x + machine.width * 0.12, y: machine.y - 44, width: machine.width * 0.76, height: 38 },
     boardFrame,
-    heatRail,
     board
   };
 }

@@ -146,8 +146,9 @@ export const HEAT5_MULTIPLIERS = [
 ];
 
 export const SCATTER_TRIGGER_COUNT = 3;
-/** Hold & Spin starts with this many respins; resets on any new lock. */
-export const BONUS_RESPINS = 3;
+/** Hold & Spin starts with this many spins; resets on any land. Bust after this
+ *  many consecutive dead spins (4 = baseline + 3 escalating heat levels). */
+export const BONUS_RESPINS = 4;
 export const BONUS_CELLS = 20;
 /** Hard guards to keep event streams (and memory) bounded. */
 export const MAX_TUMBLES = 16;

@@ -31,9 +31,7 @@ export class HudView extends Container {
     this.drawBackground(layout, snapshot);
     if (layout.leftPanel) this.drawBuyPanel(layout.leftPanel);
     if (layout.artPanel) this.drawArt(layout.artPanel, snapshot);
-    this.drawTopPlaque(layout.topPlaque);
     this.drawBoardFrame(layout.boardFrame);
-    this.drawHeatRail(layout.heatRail, snapshot.heatLevel);
     this.drawControls(layout.bottomBar, snapshot);
   }
 
@@ -175,6 +173,13 @@ export class HudView extends Container {
     });
   }
 
+  /** Shrink a text object uniformly so it never spills past maxWidth (never enlarges). */
+  private fitText(text: Text, maxWidth: number): void {
+    if (text.width > maxWidth) {
+      text.scale.set(maxWidth / text.width);
+    }
+  }
+
   private panelButton(x: number, y: number, width: number, height: number, kicker: string, title: string, value: string, action: string): void {
     const panel = new Container();
 
@@ -199,10 +204,15 @@ export class HudView extends Container {
     // Top glass reflection
     bg.roundRect(8, 3, width - 16, 1.5, 1).fill({ color: 0xffffff, alpha: 0.06 });
 
+    // Inner width available for text (account for the rounded body padding)
+    const textMaxWidth = width - 16;
+
     // Kicker text
     const kickerSize = Math.min(13, Math.max(10, width / 12));
     const kickerColor = action === "super_buy" ? 0xbfa65c : action === "ante" ? 0x6abf8a : 0x6ab8cc;
-    panel.addChild(makeText(kicker, kickerSize, kickerColor, width / 2, 10, "center"));
+    const kickerText = makeText(kicker, kickerSize, kickerColor, width / 2, 10, "center");
+    this.fitText(kickerText, textMaxWidth);
+    panel.addChild(kickerText);
 
     // Title — bold Impact
     const tSize = Math.min(22, Math.max(13, width / 8));
@@ -220,6 +230,7 @@ export class HudView extends Container {
     });
     titleText.anchor.set(0.5, 0);
     titleText.position.set(width / 2, height * 0.34);
+    this.fitText(titleText, textMaxWidth);
     panel.addChild(titleText);
 
     // Value — gold with drop shadow
@@ -238,6 +249,7 @@ export class HudView extends Container {
     });
     valText.anchor.set(0.5, 0);
     valText.position.set(width / 2, height * 0.65);
+    this.fitText(valText, textMaxWidth);
     panel.addChild(valText);
 
     panel.position.set(x, y);
@@ -269,58 +281,6 @@ export class HudView extends Container {
     this.addChild(panel);
   }
 
-  private drawTopPlaque(rect: Rect): void {
-    const cx = rect.x + rect.width / 2;
-    const cy = rect.y + rect.height / 2;
-    const w = rect.width;
-    const h = rect.height;
-    const r = Math.min(12, h / 3);
-
-    // === Gold luxury frame ===
-    const frame = new Graphics();
-    frame.roundRect(rect.x - 2, rect.y + 2, w + 4, h + 2, r + 2)
-      .fill({ color: 0x1a0e00, alpha: 0.5 });
-    frame.roundRect(rect.x, rect.y, w, h, r)
-      .fill(0x0c0a14);
-    frame.roundRect(rect.x, rect.y, w, h, r)
-      .stroke({ color: 0xd4a830, width: 3 });
-    frame.roundRect(rect.x + 4, rect.y + 3, w - 8, h - 6, r - 2)
-      .stroke({ color: 0xffd95c, width: 1.5, alpha: 0.4 });
-    // Top sheen
-    frame.roundRect(rect.x + 12, rect.y + 2, w - 24, Math.max(3, h * 0.12), r)
-      .fill({ color: 0xffffff, alpha: 0.07 });
-    this.addChild(frame);
-
-    // === Single bold gold line: "WIN UP TO 5,000X YOUR BET" ===
-    const fontSize = Math.min(26, w / 22, h * 0.6);
-    const mainText = new Text({
-      text: "WIN UP TO 5,000X YOUR BET",
-      style: new TextStyle({
-        fill: 0xffd95c,
-        fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
-        fontSize,
-        fontWeight: "900",
-        letterSpacing: 3,
-        stroke: { color: 0x8b6914, width: 2 },
-        dropShadow: { color: 0xd4a830, alpha: 0.5, blur: 10, distance: 0 }
-      })
-    });
-    mainText.anchor.set(0.5, 0.5);
-    mainText.position.set(cx, cy);
-    this.addChild(mainText);
-
-    // === Shimmer sweep ===
-    const shimmer = new Graphics();
-    shimmer.rect(0, rect.y + 2, 40, h - 4).fill({ color: 0xffffff, alpha: 0.06 });
-    this.addChild(shimmer);
-
-    this.addAmbient((_dt, elapsed) => {
-      const cycle = (elapsed % 3.5) / 3.5;
-      shimmer.x = rect.x + cycle * (w + 60) - 40;
-      shimmer.alpha = cycle < 0.1 || cycle > 0.9 ? 0 : 0.1;
-    });
-  }
-
   private drawBoardFrame(rect: Rect): void {
     const frame = new Graphics();
     // Dark metallic frame background
@@ -337,54 +297,6 @@ export class HudView extends Container {
     this.addChild(frame);
   }
 
-  private drawHeatRail(rect: Rect, heatLevel: number): void {
-    const rail = new Graphics();
-    rail.roundRect(rect.x, rect.y, rect.width, rect.height, 3).fill(0x230b37).stroke({ color: 0xffda64, alpha: 0.55, width: 1 });
-    this.addChild(rail);
-    const starHeight = rect.height / 5;
-    const starTex = getExtraTexture("wanted_star");
-    const litStars: { sprite: Sprite; star: number }[] = [];
-
-    for (let index = 0; index < 5; index += 1) {
-      const star = 5 - index;
-      const lit = heatLevel >= star;
-      const y = rect.y + index * starHeight;
-
-      // Multiplier label
-      this.addChild(makeText(`${star}x`, Math.min(24, rect.width * 0.34), lit ? 0xffdf65 : 0x7a5570, rect.x + rect.width * 0.5, y + 8, "center"));
-
-      // Wanted star image or fallback text
-      if (starTex) {
-        const starSprite = new Sprite(starTex);
-        starSprite.anchor.set(0.5);
-        const starSize = Math.min(rect.width * 0.55, starHeight * 0.45);
-        const scale = starSize / Math.max(starTex.width, starTex.height);
-        starSprite.scale.set(scale);
-        starSprite.position.set(rect.x + rect.width * 0.52, y + starHeight * 0.65);
-        starSprite.alpha = lit ? 1 : 0.2;
-        if (!lit) starSprite.tint = 0x555555;
-        this.addChild(starSprite);
-        if (lit) litStars.push({ sprite: starSprite, star });
-      } else {
-        const starText = makeText("★", Math.min(32, rect.width * 0.52), lit ? 0xff3158 : 0x49344a, rect.x + rect.width * 0.52, y + starHeight * 0.46, "center");
-        this.addChild(starText);
-      }
-    }
-
-    // Pulse animation on lit stars
-    if (litStars.length > 0) {
-      const baseScales = litStars.map(({ sprite }) => sprite.scale.x);
-      this.addAmbient((_dt, elapsed) => {
-        for (let i = 0; i < litStars.length; i++) {
-          const { sprite, star } = litStars[i];
-          const pulse = 0.85 + Math.sin(elapsed * 3 + star * 0.7) * 0.15;
-          const s = baseScales[i] * pulse;
-          sprite.scale.set(s);
-        }
-      });
-    }
-  }
-
   private drawControls(rect: Rect, snapshot: PlaybackSnapshot): void {
     // Bar background with top highlight
     const bar = new Graphics();
@@ -395,7 +307,7 @@ export class HudView extends Container {
 
     // Small utility buttons
     this.smallButton(rect.x + 18, rect.y + rect.height / 2 - 20, 40, "☰", "menu");
-    this.smallButton(rect.x + 66, rect.y + rect.height / 2 - 20, 40, this.runtime.isMuted() ? "🔇" : "🔊", "mute");
+    this.smallButton(rect.x + 66, rect.y + rect.height / 2 - 20, 40, this.runtime.isMuted() ? "🔇" : "📻", "mute");
     this.smallButton(rect.x + 114, rect.y + rect.height / 2 - 20, 40, "i", "info");
 
     const credit = this.runtime.getCredit();
@@ -457,104 +369,9 @@ export class HudView extends Container {
     this.betButton(right + 160, rect.y + rect.height / 2 - 20, 42, "+", "plus");
   }
 
-  private drawArt(rect: Rect, snapshot: PlaybackSnapshot): void {
-    const cx = rect.x + rect.width / 2;
-    const titleSize = Math.min(48, rect.width / 4.5);
-    const subSize = Math.min(22, rect.width / 9);
-    const heatAreaHeight = 90;
-
-    // === CHARACTER IMAGE — rendered first so titles overlay on top ===
-    const charTex = getExtraTexture("getaway_car_scene");
-
-    if (charTex) {
-      const charSprite = new Sprite(charTex);
-      const titleReserve = titleSize + subSize + 28;
-      const availH = rect.height - heatAreaHeight - titleReserve;
-      const availW = rect.width;
-      // Use the LARGER scale so the character fills the space — big and dominant
-      const scaleH = availH / charTex.height;
-      const scaleW = availW / charTex.width;
-      const imgScale = Math.max(scaleH, scaleW);
-      charSprite.scale.set(imgScale);
-      charSprite.anchor.set(0.5, 0);
-      const imageTop = rect.y + titleReserve;
-      charSprite.position.set(cx, imageTop);
-
-      // Mask so character never bleeds into title area or below heat bar
-      const clipMask = new Graphics();
-      clipMask.rect(rect.x, rect.y + titleReserve, rect.width, availH).fill(0xffffff);
-      this.addChild(clipMask);
-      charSprite.mask = clipMask;
-
-      this.addChild(charSprite);
-
-      // Subtle idle sway
-      this.addAmbient((_dt, elapsed) => {
-        charSprite.y = imageTop + Math.sin(elapsed * 1.2) * 2;
-      });
-    }
-
-    // === TITLE: "HEAT CHASE" — bold gold with glow ===
-    const titleGlow = new Text({
-      text: TEXT.title.toUpperCase(),
-      style: new TextStyle({
-        fill: 0xffdf65,
-        fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
-        fontSize: titleSize,
-        fontWeight: "900",
-        letterSpacing: 4,
-        align: "center",
-        dropShadow: { color: 0x000000, alpha: 0.9, blur: 12, distance: 0 }
-      })
-    });
-    titleGlow.anchor.set(0.5, 0);
-    titleGlow.position.set(cx, rect.y + 10);
-    this.addChild(titleGlow);
-
-    const titleMain = new Text({
-      text: TEXT.title.toUpperCase(),
-      style: new TextStyle({
-        fill: 0xffdf65,
-        fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
-        fontSize: titleSize,
-        fontWeight: "900",
-        letterSpacing: 4,
-        align: "center",
-        stroke: { color: 0x8b4513, width: 3 }
-      })
-    });
-    titleMain.anchor.set(0.5, 0);
-    titleMain.position.set(cx, rect.y + 10);
-    this.addChild(titleMain);
-
-    // === SUBTITLE: "GRAND ESCAPE" — white with cyan accent ===
-    const subtitle = new Text({
-      text: TEXT.subtitle.toUpperCase(),
-      style: new TextStyle({
-        fill: 0xffffff,
-        fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
-        fontSize: subSize,
-        fontWeight: "900",
-        letterSpacing: 6,
-        align: "center",
-        stroke: { color: 0x1a6b8a, width: 2 },
-        dropShadow: { color: 0x000000, alpha: 0.9, blur: 10, distance: 0 }
-      })
-    });
-    subtitle.anchor.set(0.5, 0);
-    subtitle.position.set(cx, rect.y + 10 + titleSize + 4);
-    this.addChild(subtitle);
-
-    // Ambient title pulse
-    this.addAmbient((_dt, elapsed) => {
-      const glow = 0.85 + Math.sin(elapsed * 2.5) * 0.15;
-      titleGlow.alpha = glow;
-    });
-
-    // === HEAT METER — GTA V wanted stars with police siren ===
-    const heatY = rect.y + rect.height - heatAreaHeight;
-    const meterH = heatAreaHeight;
-    const starCY = heatY + meterH / 2;
+  private drawArt(rect: Rect, _snapshot: PlaybackSnapshot): void {
+    // === WANTED LEVEL — persistent meter that fills on wins (fractional / half
+    // stars). At 5 stars The Getaway triggers free. Pinned top-right (GTA HUD).
 
     // GTA-style stars: big, bold, tightly spaced
     const starR = Math.min(22, rect.width / 11); // outer radius
@@ -562,90 +379,50 @@ export class HudView extends Container {
     const gap = starR * 0.55;
     const totalW = starR * 2 * 5 + gap * 4;
     const startX = rect.x + (rect.width - totalW) / 2 + starR;
+    const starCY = rect.y + starR + 14; // pin the row to the very top of the panel
 
-    const POLICE_BLUE = 0x1177ff;
-    const POLICE_RED = 0xff1133;
+    const meter = Math.max(0, Math.min(5, this.runtime.getWantedLevel()));
+    const GOLD = 0xffd95c;
+    const filledStars: Graphics[] = [];
 
-    const starBodies: Graphics[] = [];
-    const glowLayers: Graphics[] = [];
+    // "WANTED LEVEL" label above the row
+    this.addChild(makeText("WANTED LEVEL", Math.min(13, rect.width * 0.075), 0x9fb4d0, rect.x + rect.width / 2, rect.y - 6, "center"));
 
     for (let i = 0; i < 5; i++) {
-      const lit = snapshot.heatLevel > i;
       const sx = startX + i * (starR * 2 + gap);
-
-      // Glow layer (behind star, animated for lit ones)
-      const glow = new Graphics();
-      this.addChild(glow);
-      glowLayers.push(glow);
-
-      // Star body
-      const star = new Graphics();
+      const fill = Math.max(0, Math.min(1, meter - i)); // how full this star is (0..1)
       const pts = this.starPoints(sx, starCY, starR, starIR);
 
-      if (lit) {
-        // Solid filled star — white base, will be tinted by animation
-        star.poly(pts).fill(0xffffff);
-        star.poly(pts).stroke({ color: 0xffffff, width: 2, alpha: 0.8 });
-      } else {
-        // Empty outlined star — like GTA's unfilled wanted stars
-        star.poly(pts).fill({ color: 0x0a0e1e, alpha: 0.4 });
-        star.poly(pts).stroke({ color: 0x3a4565, width: 2.5, alpha: 0.55 });
-      }
-      this.addChild(star);
-      starBodies.push(star);
-    }
+      // empty base star
+      const base = new Graphics();
+      base.poly(pts).fill({ color: 0x0a0e1e, alpha: 0.5 });
+      base.poly(pts).stroke({ color: 0x4a5570, width: 2.5, alpha: 0.6 });
+      this.addChild(base);
 
-    // Multiplier badge to the right
-    if (snapshot.globalMultiplier > 1) {
-      const badgeX = startX + 4 * (starR * 2 + gap) + starR + 16;
-      const mult = new Text({
-        text: `${snapshot.globalMultiplier}x`,
-        style: new TextStyle({
-          fill: 0xffdf65,
-          fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
-          fontSize: Math.min(22, starR * 1.1),
-          fontWeight: "900",
-          dropShadow: { color: 0xff6a00, alpha: 0.7, blur: 6, distance: 0 }
-        })
-      });
-      mult.anchor.set(0, 0.5);
-      mult.position.set(badgeX, starCY);
-      this.addChild(mult);
-    }
-
-    // Police siren animation — alternating red/blue across lit stars
-    if (snapshot.heatLevel > 0) {
-      this.addAmbient((_dt, elapsed) => {
-        const speed = 4 + snapshot.heatLevel;
-        for (let i = 0; i < 5; i++) {
-          const sx = startX + i * (starR * 2 + gap);
-          const glow = glowLayers[i];
-          const star = starBodies[i];
-
-          if (snapshot.heatLevel <= i) {
-            glow.clear();
-            continue;
-          }
-
-          // Phase offset per star so they ripple like police bar
-          const phase = elapsed * speed + i * Math.PI * 0.6;
-          const wave = Math.sin(phase);
-          const isBlue = wave > 0;
-          const color = isBlue ? POLICE_BLUE : POLICE_RED;
-          const bright = Math.abs(wave);
-
-          // Glow halo
-          glow.clear();
-          glow.circle(sx, starCY, starR * 1.4)
-            .fill({ color, alpha: bright * 0.35 });
-          glow.circle(sx, starCY, starR * 0.9)
-            .fill({ color, alpha: bright * 0.2 });
-
-          // Tint the star itself
-          star.tint = isBlue
-            ? this.lerpColor(0xffffff, 0x88bbff, bright * 0.7)
-            : this.lerpColor(0xffffff, 0xff8888, bright * 0.7);
+      // gold filled portion, bottom-up — supports partial / half stars
+      if (fill > 0) {
+        const filled = new Graphics();
+        filled.poly(pts).fill(GOLD);
+        filled.poly(pts).stroke({ color: 0xffffff, width: 1.5, alpha: 0.75 });
+        this.addChild(filled);
+        if (fill < 1) {
+          const h = 2 * starR * fill;
+          const mask = new Graphics();
+          mask.rect(sx - starR, starCY + starR - h, starR * 2, h).fill(0xffffff);
+          this.addChild(mask);
+          filled.mask = mask;
         }
+        filledStars.push(filled);
+      }
+    }
+
+    // Glow pulse that intensifies as the meter approaches 5 (the Getaway).
+    if (filledStars.length > 0) {
+      const near = meter / 5;
+      this.addAmbient((_dt, elapsed) => {
+        const pulse = 0.5 + Math.sin(elapsed * (2 + near * 5)) * 0.5;
+        const a = 0.8 + pulse * 0.2 * near;
+        for (const s of filledStars) s.alpha = a;
       });
     }
   }

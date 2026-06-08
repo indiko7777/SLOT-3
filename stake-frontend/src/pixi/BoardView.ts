@@ -415,10 +415,6 @@ export class BoardView extends Container {
 
   private createSpinTile(id: SymbolId): Container {
     const c = new Container();
-    const g = new Graphics();
-    g.roundRect(0, 0, this.cellWidth, this.cellHeight, 10)
-      .fill({ color: 0x0a0e1e, alpha: 0.6 });
-    c.addChild(g);
 
     const tex = getSymbolTexture(id);
     if (tex) {
@@ -495,8 +491,6 @@ export class BoardView extends Container {
       this.background.rect(x - 0.5, 4, 1, h - 8).fill({ color: 0x48e5ff, alpha: 0.12 });
     }
 
-    this.background.rect(0, 0, w, 30).fill({ color: 0xffffff, alpha: 0.03 });
-    this.background.rect(0, 0, w, 8).fill({ color: 0xffffff, alpha: 0.02 });
     this.background.rect(0, h - 20, w, 20).fill({ color: 0x000000, alpha: 0.15 });
     this.background.roundRect(0, 0, w, h, 6).stroke({ color: 0x48e5ff, alpha: 0.15, width: 1 });
   }
@@ -514,7 +508,6 @@ export class BoardView extends Container {
     this.glassOverlay.rect(0, 0, w, 6).fill({ color: 0x000000, alpha: 0.15 });
     this.glassOverlay.rect(0, h - 18, w, 18).fill({ color: 0x000000, alpha: 0.25 });
     this.glassOverlay.rect(0, h - 6, w, 6).fill({ color: 0x000000, alpha: 0.15 });
-    this.glassOverlay.rect(0, 0, w, 3).fill({ color: 0xffffff, alpha: 0.06 });
   }
 
   private markPositions(positions: Position[], mode: "highlight" | "transform" | "alert"): void {
