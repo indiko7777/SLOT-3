@@ -24,6 +24,14 @@ export class BoardView extends Container {
   private gap = 4;
   private currentBoard: Board | null = null;
   private ambientCb: ((dt: number, elapsed: number) => void) | null = null;
+  private onReelStop?: (col: number, total: number) => void;
+  private onAnticipation?: () => void;
+
+  /** Wire audio cues fired during the reel spin (reel stops, anticipation riser). */
+  setAudioHooks(hooks: { onReelStop?: (col: number, total: number) => void; onAnticipation?: () => void }): void {
+    this.onReelStop = hooks.onReelStop;
+    this.onAnticipation = hooks.onAnticipation;
+  }
 
   constructor() {
     super();
@@ -294,6 +302,9 @@ export class BoardView extends Container {
       }
     }
 
+    // Tension riser for anticipation spins (2+ scatters in play).
+    if (anticipation && !turbo) this.onAnticipation?.();
+
     // 3. Build one strip per column (allows independent stopping)
     interface ReelData {
       strip: Container;
@@ -388,6 +399,7 @@ export class BoardView extends Container {
           }, easeOutBack);
         }
         reel.strip.y = 0;
+        this.onReelStop?.(col, GRID_COLUMNS);
       })());
     }
 

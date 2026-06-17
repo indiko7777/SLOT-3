@@ -178,15 +178,18 @@ function anteReels(): Record<SymbolId, number> {
 }
 
 function safeTable(scale: number): { value: number; weight: number }[] {
+  // Fat-tailed gold-bar values: most bars are tiny (1–3x) so a short bonus is a
+  // real loss, but a rare big bar (250–750x) can make a single spin explode.
+  // This skew is what gives the feature a high-variance, exciting payout curve.
   return [
-    { value: 1 * scale, weight: 360 },
-    { value: 2 * scale, weight: 230 },
-    { value: 3 * scale, weight: 140 },
-    { value: 5 * scale, weight: 85 },
-    { value: 10 * scale, weight: 42 },
-    { value: 20 * scale, weight: 18 },
-    { value: 50 * scale, weight: 6 },
-    { value: 100 * scale, weight: 2 },
-    { value: 250 * scale, weight: 1 }
+    { value: 1 * scale, weight: 420 },
+    { value: 2 * scale, weight: 250 },
+    { value: 3 * scale, weight: 130 },
+    { value: 5 * scale, weight: 70 },
+    { value: 10 * scale, weight: 34 },
+    { value: 25 * scale, weight: 14 },
+    { value: 75 * scale, weight: 5 },
+    { value: 250 * scale, weight: 1.6 },
+    { value: 750 * scale, weight: 0.5 }
   ];
 }

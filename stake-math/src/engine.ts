@@ -478,8 +478,11 @@ function runHoldAndSpin(
   };
 
   // Landing probability per empty cell; wincap forces a full grid.
-  // (Tuned down for buy/super since the 4th respin raised the average bonus.)
-  const landP = forceWincap ? 0.62 : mode === "super_buy" ? 0.25 : mode === "buy" ? 0.15 : 0.22;
+  // Tuned LOW for the buy modes so bonuses frequently bust early with only a few
+  // bars (real losses), giving the feature genuine high volatility instead of a
+  // flat "always ~your-money-back" payout. The fat-tailed safe values then supply
+  // the rare big wins. base/ante keep a more generous land rate (you earned it).
+  const landP = forceWincap ? 0.62 : mode === "super_buy" ? 0.18 : mode === "buy" ? 0.085 : 0.22;
   const keyP = 0.12;
 
   let safety = 0;

@@ -119,12 +119,21 @@ async function boot(): Promise<void> {
     onBonusHeat: (level) => {
       if (!muted) audioBus.setBonusHeat(level);
     },
+    onReelStop: (col, total) => audioBus.reelStop(col, total, muted),
+    onAnticipation: () => audioBus.anticipation(muted),
     previewRecord: PREVIEW_RECORD
   });
 
   scene.resize();
   scene.renderSnapshot(snapshot);
   hideLoader();
+
+  // DEV-only on-screen feature tester (stripped from production builds): fire any
+  // win / combination / bonus animation from a button panel — no spinning needed.
+  if (import.meta.env.DEV) {
+    const { mountDebugPanel } = await import("./debugPanel");
+    mountDebugPanel((action) => { void scene?.debugPlay(action); });
+  }
 
   radioWheel = new RadioWheel((stationId) => {
     if (stationId === "off") {

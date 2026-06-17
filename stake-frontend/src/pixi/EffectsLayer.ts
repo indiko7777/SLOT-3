@@ -3,6 +3,7 @@ import type { Position } from "../domain";
 import type { Rect } from "./types";
 import { makeText } from "./text";
 import { tween, wait, easeOutBack, easeOutCubic, easeInOutCubic, easeOutElastic, linear } from "./tween";
+import { pulseBloom, pulseChromaticAberration } from "../vfx/Shaders";
 
 export class EffectsLayer extends Container {
   private readonly particles = new Container();
@@ -137,6 +138,16 @@ export class EffectsLayer extends Container {
     }
 
     this.addChild(group);
+
+    // GPU bloom + chromatic-aberration glitch on the win moment. Applied to THIS
+    // (the mask-free effects layer) — filtering the masked board/root blanks the
+    // canvas in Pixi v8, so the banner + rays + coins carry the surge instead.
+    if (!turbo && (intensity === "mid" || intensity === "high" || intensity === "grand")) {
+      void pulseBloom(this, { scale: intensity === "grand" ? 1.7 : intensity === "high" ? 1.2 : 0.8, duration: 900 });
+      if (intensity === "grand" || intensity === "high") {
+        void pulseChromaticAberration(this, { intensity: intensity === "grand" ? 10 : 6, duration: 600 });
+      }
+    }
 
     // === Phase 1: Burst in ===
     await tween(turbo ? 80 : 220, (p) => {
@@ -393,7 +404,7 @@ export class EffectsLayer extends Container {
       sweep.clear();
       const redAlpha = 0.22 * Math.sin(progress * Math.PI * 3);
       const blueAlpha = 0.22 * Math.sin(progress * Math.PI * 3 + Math.PI);
-      sweep.rect(rect.x, rect.y, rect.width / 2, rect.height).fill({ color: 0xff3158, alpha: Math.max(0, redAlpha) });
+      sweep.rect(rect.x, rect.y, rect.width / 2, rect.height).fill({ color: 0xffb000, alpha: Math.max(0, redAlpha) });
       sweep.rect(rect.x + rect.width / 2, rect.y, rect.width / 2, rect.height).fill({ color: 0x29d4ff, alpha: Math.max(0, blueAlpha) });
       sweep.alpha = 1 - progress * 0.3;
     }, linear);
@@ -416,7 +427,7 @@ export class EffectsLayer extends Container {
       for (let i = 0; i < 8; i++) {
         const dot = new Graphics();
         const size = 2 + Math.random() * 4;
-        const color = [0xffdf65, 0xff3158, 0x62ffa7, 0x68f7ff, 0xffd700][i % 5];
+        const color = [0xffdf65, 0xffb000, 0x62ffa7, 0x68f7ff, 0xffd700][i % 5];
         dot.circle(0, 0, size).fill(color);
         dot.position.set(cx, cy);
         dot.alpha = 0;

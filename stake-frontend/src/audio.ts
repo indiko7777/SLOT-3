@@ -175,6 +175,70 @@ export class EventAudioBus {
     void this.unlock().then(() => this.synthClick());
   }
 
+  /** Mechanical reel-stop: a low "thock" + high transient, pitched up per column. */
+  reelStop(col: number, total: number, muted: boolean): void {
+    if (muted) return;
+    void this.unlock().then(() => {
+      if (!this.ctx) return;
+      const t = this.ctx.currentTime;
+      const prog = total > 1 ? col / (total - 1) : 0;
+
+      // Low body thock (pitch drops fast).
+      const osc = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      osc.type = "triangle";
+      const f0 = 150 + prog * 70;
+      osc.frequency.setValueAtTime(f0, t);
+      osc.frequency.exponentialRampToValueAtTime(f0 * 0.5, t + 0.07);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.10, t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.10);
+      osc.connect(g).connect(this.ctx.destination);
+      osc.start(t); osc.stop(t + 0.12);
+
+      // High transient tick (the "snap" of the stop).
+      const frames = Math.floor(this.ctx.sampleRate * 0.012);
+      const buf = this.ctx.createBuffer(1, frames, this.ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < frames; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / frames);
+      const src = this.ctx.createBufferSource();
+      src.buffer = buf;
+      const hp = this.ctx.createBiquadFilter();
+      hp.type = "highpass"; hp.frequency.value = 2600;
+      const tg = this.ctx.createGain();
+      tg.gain.value = 0.06;
+      src.connect(hp).connect(tg).connect(this.ctx.destination);
+      src.start(t);
+    });
+  }
+
+  /** Rising tension riser when 2+ scatters are in play (anticipation spin). */
+  anticipation(muted: boolean): void {
+    if (muted || this.riserActive) return;
+    this.riserActive = true;
+    void this.unlock().then(() => {
+      if (!this.ctx) return;
+      const t = this.ctx.currentTime;
+      const dur = 1.1;
+      const osc = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      const lp = this.ctx.createBiquadFilter();
+      lp.type = "lowpass";
+      lp.frequency.setValueAtTime(500, t);
+      lp.frequency.exponentialRampToValueAtTime(3500, t + dur);
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(160, t);
+      osc.frequency.exponentialRampToValueAtTime(620, t + dur);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.10, t + dur * 0.7);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.1);
+      osc.connect(lp).connect(g).connect(this.ctx.destination);
+      osc.start(t); osc.stop(t + dur + 0.15);
+      window.setTimeout(() => { this.riserActive = false; }, (dur + 0.2) * 1000);
+    });
+  }
+  private riserActive = false;
+
   /* ── Bonus heat (chase tension) ────────────────── */
 
   private heliTimer: number | null = null;

@@ -2,3 +2,8 @@ node_modules
 dist
 .DS_Store
 *.log
+
+# Asset-pipeline working dirs (originals backup, raw downloads, extracted frames)
+stake-frontend/tools/asset-pipeline/_originals/
+stake-frontend/tools/asset-pipeline/raw/
+stake-frontend/tools/asset-pipeline/frames/

@@ -138,7 +138,7 @@ export class HudView extends Container {
       g.circle(layout.width * 0.78, layout.height * 0.2, Math.max(layout.width, layout.height) * 0.26).fill({ color: 0x126dff, alpha: 0.24 });
       g.circle(layout.width * 0.26, layout.height * 0.96, Math.max(layout.width, layout.height) * 0.25).fill({ color: 0xff6129, alpha: 0.3 });
       if (isMaxHeat) {
-        g.rect(0, 0, layout.width / 2, layout.height).fill({ color: 0xff3158, alpha: 0.14 });
+        g.rect(0, 0, layout.width / 2, layout.height).fill({ color: 0xffb000, alpha: 0.14 });
         g.rect(layout.width / 2, 0, layout.width / 2, layout.height).fill({ color: 0x29d4ff, alpha: 0.14 });
       }
       this.addChild(g);

@@ -1,4 +1,4 @@
-import { Assets, Texture } from "pixi.js";
+import { Assets, Texture, Spritesheet } from "pixi.js";
 import type { SymbolId } from "../domain";
 
 export interface SymbolSkin {
@@ -28,7 +28,25 @@ export const SYMBOL_ASSETS: Record<SymbolId, SymbolSkin> = {
 
 const BASE_PATH = "assets/";
 
+/** Win sprite-sheet atlases, produced by tools/asset-pipeline/build-sheets.mjs.
+ *  Optional — a symbol without one (or before art is generated) falls back to
+ *  the procedural glow in SymbolView.winCelebrate. Keys match the atlas
+ *  animation name (`<file>_win`). */
+const ANIM_ASSETS: Partial<Record<SymbolId, string>> = {
+  CAR_WILD: "anim/cyan_car_wild_win.json",
+  SAFE: "anim/safe_win.json",
+  MASTER_KEY: "anim/master_key_win.json",
+  DIAMOND: "anim/diamond_win.json",
+  PHONE_SCATTER: "anim/burner_phone_win.json",
+};
+
+export interface SymbolAnimation {
+  textures: Texture[];
+  fps: number;
+}
+
 const textureCache = new Map<string, Texture>();
+const animCache = new Map<SymbolId, SymbolAnimation>();
 let loaded = false;
 
 /** Extra non-symbol images to preload */
@@ -97,6 +115,22 @@ export async function loadSymbolTextures(): Promise<void> {
       // Missing file is fine — the procedural fallback will be used
     }
   }
+
+  // Load win sprite-sheet atlases per-file. A missing atlas just means that
+  // symbol uses the procedural glow — never blocks the game.
+  for (const [id, file] of Object.entries(ANIM_ASSETS) as [SymbolId, string][]) {
+    try {
+      const sheet = await Assets.load<Spritesheet>(BASE_PATH + file);
+      const animName = file.replace("anim/", "").replace(".json", "");
+      const textures = sheet.animations?.[animName];
+      if (textures && textures.length) {
+        const fps = (sheet.data?.meta as { fps?: number } | undefined)?.fps ?? 16;
+        animCache.set(id, { textures, fps });
+      }
+    } catch {
+      // No atlas yet — procedural fallback will be used
+    }
+  }
 }
 
 export function getSymbolTexture(id: SymbolId): Texture | null {
@@ -106,6 +140,11 @@ export function getSymbolTexture(id: SymbolId): Texture | null {
 
 export function getExtraTexture(key: string): Texture | null {
   return textureCache.get(key) ?? null;
+}
+
+/** Win animation frames for a symbol, if a sprite-sheet atlas was loaded. */
+export function getSymbolAnimation(id: SymbolId): SymbolAnimation | null {
+  return animCache.get(id) ?? null;
 }
 
 export const IMAGE_DROP_IN_GUIDE = {

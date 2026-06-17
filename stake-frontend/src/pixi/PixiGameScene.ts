@@ -1,5 +1,5 @@
 import { Application, Container } from "pixi.js";
-import { GRID_COLUMNS, GRID_ROWS, type Board, type GameEvent, type Position } from "../domain";
+import { GRID_COLUMNS, GRID_ROWS, type Board, type BonusCell, type GameEvent, type Position, type SymbolId } from "../domain";
 import type { PlaybackSnapshot } from "../playback";
 import { BoardView } from "./BoardView";
 import { BonusView } from "./BonusView";
@@ -26,6 +26,10 @@ export class PixiGameScene {
   constructor(private readonly app: Application, private readonly runtime: SceneRuntime) {
     this.layout = computeLayout(app.screen.width, app.screen.height);
     this.hud = new HudView(runtime);
+    this.board.setAudioHooks({
+      onReelStop: (col, total) => runtime.onReelStop?.(col, total),
+      onAnticipation: () => runtime.onAnticipation?.(),
+    });
     this.root.addChild(this.hud, this.board, this.bonus, this.effects, this.paytable);
     this.app.stage.addChild(this.root);
   }
@@ -71,6 +75,178 @@ export class PixiGameScene {
     this.paytable.toggle(this.layout.width, this.layout.height);
   }
 
+  /* ─────────────────────────────────────────────────────────────────
+   *  DEV FEATURE TESTER (gated to import.meta.env.DEV in main.ts).
+   *  Fires any single animation on demand so every win / combination /
+   *  bonus state can be previewed without spinning. See DebugPanel.
+   * ───────────────────────────────────────────────────────────────── */
+
+  private allPositions(): Position[] {
+    const out: Position[] = [];
+    for (let c = 0; c < GRID_COLUMNS; c++) for (let r = 0; r < GRID_ROWS; r++) out.push([c, r]);
+    return out;
+  }
+
+  private uniformBoard(id: SymbolId): Board {
+    const b: Board = [];
+    for (let c = 0; c < GRID_COLUMNS; c++) {
+      const col: SymbolId[] = [];
+      for (let r = 0; r < GRID_ROWS; r++) col.push(id);
+      b.push(col);
+    }
+    return b;
+  }
+
+  private emptyGrid(): BonusCell[][] {
+    return Array.from({ length: GRID_COLUMNS }, () =>
+      Array.from({ length: GRID_ROWS }, () => ({ symbol: "EMPTY" }) as BonusCell)
+    );
+  }
+
+  private async ensureBonusVisible(): Promise<void> {
+    if (!this.bonus.visible) { this.bonusActive = true; await this.bonus.intro(true); }
+  }
+
+  /** Restore a clean idle base board (used by the panel's Reset). */
+  private debugReset(): void {
+    this.bonus.hide();
+    this.bonusActive = false;
+    if (this.currentSnapshot) { this.hasBoard = false; this.renderSnapshot(this.currentSnapshot); }
+  }
+
+  /** Big-win cinematic for a tier (banner + bloom + chromatic glitch). */
+  async debugBigWin(intensity: "mid" | "high" | "grand"): Promise<void> {
+    const title = intensity === "grand" ? "GRAND WIN" : intensity === "high" ? "MEGA WIN" : "BIG WIN";
+    const amount = intensity === "grand" ? "5,000x" : intensity === "high" ? "250x" : "25x";
+    void this.board.highlight(this.allPositions(), false);
+    this.effects.cashRain(this.layout.board, false);
+    this.effects.screenShake(this.root, false);
+    await this.effects.banner(title, amount, this.layout.board, false, intensity);
+  }
+
+  /** Single dispatcher for the dev feature tester. */
+  async debugPlay(action: string): Promise<void> {
+    const turbo = false;
+    const board = this.layout.board;
+    const pos = this.allPositions();
+    const [kind, arg] = action.split(":") as [string, string | undefined];
+
+    switch (kind) {
+      case "reset":
+        this.debugReset();
+        return;
+
+      case "win": {
+        // Show one symbol's win celebration across the whole board.
+        this.bonus.hide();
+        this.board.setInstant(this.uniformBoard(arg as SymbolId));
+        this.hasBoard = true;
+        await this.board.highlight(pos, turbo);
+        return;
+      }
+
+      case "tier":
+        await this.debugBigWin((arg ?? "mid") as "mid" | "high" | "grand");
+        return;
+
+      case "fx": {
+        const centers = [pos[0], pos[2], pos[6], pos[8], pos[12]].map((p) => this.board.centerOf(p));
+        if (arg === "clusterLink") await this.effects.clusterLink(centers, 0xffd95c, turbo);
+        else if (arg === "cashSpray") await this.effects.cashSpray(board, pos.slice(0, 6), turbo);
+        else if (arg === "coinBurst") await this.effects.goldCoinBurst(board.x + board.width / 2, board.y + board.height / 2, board, turbo);
+        else if (arg === "siren") await this.effects.sirenSweep(this.layout.boardFrame, turbo);
+        else if (arg === "shake") await this.effects.screenShake(this.root, turbo);
+        else if (arg === "keyBeam") await this.effects.keyBeam(this.board.centerOf(pos[6]), [pos[0], pos[4], pos[19]].map((p) => this.board.centerOf(p)), turbo);
+        else if (arg === "scatterTease") { this.board.setInstant(this.uniformBoard("PHONE_SCATTER")); this.hasBoard = true; await this.board.scatterTease(pos.slice(0, 3), turbo); }
+        return;
+      }
+
+      case "cascade": {
+        // Show the tumble clearly: a VARIED board (so the clear + refill is
+        // visible) with a distinct CASH cluster. It links up, lights, clears,
+        // then survivors drop and fresh symbols cascade in from the top.
+        this.bonus.hide();
+        const pool: SymbolId[] = ["BRASS", "KNIFE", "PISTOL", "AMMO", "DUFFEL", "WATCH", "DIAMOND", "BIKE"];
+        const b: Board = [];
+        let k = 0;
+        for (let c = 0; c < GRID_COLUMNS; c++) {
+          const col: SymbolId[] = [];
+          for (let r = 0; r < GRID_ROWS; r++) col.push(pool[k++ % pool.length]!);
+          b.push(col);
+        }
+        const win: Position[] = [[0, 3], [1, 3], [2, 3], [0, 2], [1, 2], [2, 2], [1, 1]];
+        for (const [c, r] of win) b[c]![r] = "CASH";
+        this.board.setInstant(b);
+        this.hasBoard = true;
+        await wait(350);                                  // see the board first
+        void this.effects.clusterLink(win.map((p) => this.board.centerOf(p)), 0xffd95c, turbo);
+        await this.board.highlight(win, turbo);           // light the combination
+        await wait(300);
+        await this.board.remove(win, turbo);              // clear + gravity refill
+        return;
+      }
+
+      case "heat": {
+        if (arg === "transform") {
+          const b = this.uniformBoard("BRASS");
+          const targets = [pos[0], pos[1], pos[5], pos[6]];
+          for (const [c, r] of targets) b[c]![r] = "CASH";
+          this.board.setInstant(this.uniformBoard("BRASS")); this.hasBoard = true;
+          await this.board.transform(b, targets, turbo);
+        } else if (arg === "megawild") {
+          const b = this.uniformBoard("CASH");
+          const occ: Position[] = [[1, 1], [2, 1], [1, 2], [2, 2]];
+          for (const [c, r] of occ) b[c]![r] = "CAR_WILD";
+          this.board.setInstant(this.uniformBoard("CASH")); this.hasBoard = true;
+          await this.board.megaWild(b, occ, turbo);
+        }
+        return;
+      }
+
+      case "bonus": {
+        if (arg === "intro") { this.bonusActive = true; await this.bonus.intro(turbo); return; }
+        if (arg === "hide") { await this.bonus.fadeOutAndHide(turbo); this.bonusActive = false; return; }
+        await this.ensureBonusVisible();
+        if (arg === "hit") {
+          const grid = this.emptyGrid();
+          grid[0]![3] = { symbol: "SAFE", value: 2 };
+          grid[4]![0] = { symbol: "SAFE", value: 5 };
+          const landed: Position[] = [[1, 1], [2, 2], [3, 1]];
+          grid[1]![1] = { symbol: "SAFE", value: 3 };
+          grid[2]![2] = { symbol: "SAFE", value: 25 };
+          grid[3]![1] = { symbol: "SAFE", value: 1 };
+          await this.bonus.playSpin(grid, landed, 4, 0, turbo, this.runtime.onSafeLand);
+        } else if (arg === "dead") {
+          const grid = this.emptyGrid();
+          grid[0]![3] = { symbol: "SAFE", value: 2 };
+          grid[4]![0] = { symbol: "SAFE", value: 5 };
+          this.runtime.onBonusHeat?.(2);
+          await this.bonus.playSpin(grid, [], 2, 2, turbo);
+        } else if (arg === "crack") {
+          // Land a dynamite with gold neighbours, then detonate it.
+          const grid = this.emptyGrid();
+          grid[1]![1] = { symbol: "SAFE", value: 5 };
+          grid[3]![1] = { symbol: "SAFE", value: 10 };
+          grid[2]![0] = { symbol: "SAFE", value: 3 };
+          grid[2]![2] = { symbol: "SAFE", value: 8 };
+          grid[2]![1] = { symbol: "MASTER_KEY" };
+          await this.bonus.playSpin(grid, [[2, 1]], 4, 0, turbo);
+          await this.bonus.crack([2, 1], [
+            { position: [1, 1], newValue: 10 },
+            { position: [3, 1], newValue: 20 },
+            { position: [2, 0], newValue: 6 },
+            { position: [2, 2], newValue: 16 },
+          ], turbo);
+        } else if (arg === "grand") {
+          await this.bonus.finish(true, 5000, turbo);
+        } else if (arg === "bust") {
+          await this.bonus.finish(false, 42.5, turbo);
+        }
+        return;
+      }
+    }
+  }
+
   async playEvent(event: GameEvent, snapshot: PlaybackSnapshot): Promise<void> {
     this.currentSnapshot = snapshot;
     // Only update the HUD — do NOT resize or rebuild the board
@@ -80,7 +256,7 @@ export class PixiGameScene {
 
     switch (event.type) {
       case "round_start":
-        await this.effects.sirenSweep(this.layout.boardFrame, turbo);
+        // No siren sweep at spin start — keeps the round clean and red-free.
         return;
       case "board_settle": {
         const scatterCols = new Set<number>();
@@ -99,10 +275,14 @@ export class PixiGameScene {
         await this.board.scatterTease(event.positions, turbo);
         await this.effects.banner(snapshot.lastMessage, "", this.layout.board, turbo);
         return;
-      case "cluster_win":
+      case "cluster_win": {
+        // Glowing trails connect the winning symbols so you SEE the combination.
+        const centers = event.positions.map((p) => this.board.centerOf(p));
+        void this.effects.clusterLink(centers, 0xffd95c, turbo);
         await this.board.highlight(event.positions, turbo);
         await this.effects.banner(snapshot.lastMessage, formatMultiplier(event.payout), this.layout.board, turbo);
         return;
+      }
       case "tumble_remove":
         await this.board.remove(event.positions, turbo);
         return;
@@ -110,8 +290,9 @@ export class PixiGameScene {
         await this.board.tumbleTo(event.board, turbo);
         return;
       case "heat_advance":
+        // No red police siren on a win any more — the cluster links carry the
+        // combination feedback; the heat meter still updates in the HUD.
         this.hud.draw(this.layout, snapshot);
-        await this.effects.sirenSweep(this.layout.boardFrame, turbo);
         return;
       case "heat_transform":
         await this.board.transform(event.board, event.positions, turbo);
@@ -124,7 +305,6 @@ export class PixiGameScene {
         return;
       case "global_multiplier_apply":
         this.hud.draw(this.layout, snapshot);
-        await this.effects.sirenSweep(this.layout.boardFrame, turbo);
         await this.effects.banner("Max Heat", `${event.value}x`, this.layout.board, turbo);
         return;
       case "bonus_trigger":
@@ -179,6 +359,8 @@ export class PixiGameScene {
           this.effects.cashRain(this.layout.board, turbo);
           this.effects.screenShake(this.root, turbo);
         }
+        // GPU bloom + chromatic aberration are applied inside effects.banner (on the
+        // mask-free effects layer) based on the win tier.
         await this.effects.banner(tier.title, formatMultiplier(event.payoutMultiplier), this.layout.board, turbo, tier.intensity);
         await wait(turbo ? 40 : 120);
         return;

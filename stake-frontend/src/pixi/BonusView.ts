@@ -16,7 +16,9 @@ import type { Rect } from "./types";
 const FONT = "Impact, 'Arial Black', Arial, sans-serif";
 const keyOf = ([c, r]: Position): string => `${c}:${r}`;
 const HEAT_PERIOD = [0.5, 0.34, 0.22, 0.12]; // seconds per red/blue pulse by heat level
-const POLICE_RED = 0xff1a2e;
+// No red anywhere in the game (per design): the warm strobe channel is amber,
+// paired with blue — reads as emergency lighting without any red.
+const POLICE_RED = 0xffb000;
 const POLICE_BLUE = 0x1a6bff;
 
 // Measured from brinks_truck_frame.png (1024×572): the transparent door opening.
@@ -229,6 +231,7 @@ export class BonusView extends Container {
       this.heat = Math.min(3, deadSpins);
       this.setSpins(respins);
       this.pulseSpinsDead();
+      this.deadSpinBeat();
     }
 
     this.setCollected(this.sumGrid(grid), true);
@@ -295,7 +298,7 @@ export class BonusView extends Container {
     const c = new Container();
     c.position.set(x, y);
     const g = new Graphics();
-    g.roundRect(-30, -18, 60, 36, 9).fill({ color: 0xe11d2a, alpha: 0.96 });
+    g.roundRect(-30, -18, 60, 36, 9).fill({ color: 0x1a6bff, alpha: 0.96 });
     g.roundRect(-30, -18, 60, 36, 9).stroke({ color: 0xffffff, width: 2.5, alpha: 0.9 });
     c.addChild(g);
     const t = new Text({ text, style: new TextStyle({ fill: 0xffffff, fontFamily: FONT, fontSize: 24, fontWeight: "900", letterSpacing: 1 }) });
@@ -357,7 +360,7 @@ export class BonusView extends Container {
     const H = this.rect.height;
     const c = new Container();
     c.position.set(W / 2, H / 2);
-    const accent = filled ? 0xffd95c : 0xff5b5b;
+    const accent = filled ? 0xffd95c : 0xffb000;
     const pw = Math.min(W * 0.62, 560);
     const ph = Math.min(H * 0.42, 260);
 
@@ -481,8 +484,8 @@ export class BonusView extends Container {
     // big door panels left/right with brake-light glow
     g.rect(0, H * 0.12, W * 0.16, H * 0.76).fill({ color: 0x23282f, alpha: 0.9 });
     g.rect(W * 0.84, H * 0.12, W * 0.16, H * 0.76).fill({ color: 0x23282f, alpha: 0.9 });
-    g.rect(W * 0.155, H * 0.45, 4, H * 0.1).fill({ color: 0xff2a2a, alpha: 0.6 });
-    g.rect(W * 0.84, H * 0.45, 4, H * 0.1).fill({ color: 0xff2a2a, alpha: 0.6 });
+    g.rect(W * 0.155, H * 0.45, 4, H * 0.1).fill({ color: 0xffb000, alpha: 0.6 });
+    g.rect(W * 0.84, H * 0.45, 4, H * 0.1).fill({ color: 0xffb000, alpha: 0.6 });
     // CRITICAL: clear the opening interior so the highway shows through
     g.roundRect(o.x, o.y, o.width, o.height, 6).cut();
     return g;
@@ -542,9 +545,9 @@ export class BonusView extends Container {
     const v = Math.max(0, n);
     this.spinsText.text = `${v}`;
     const low = v <= 1;
-    this.spinsText.style.fill = low ? 0xff5b5b : 0xffd95c;
+    this.spinsText.style.fill = low ? 0xffb000 : 0xffd95c;
     this.spinsLabel.text = v === 1 ? "LAST SPIN!" : "SPINS LEFT";
-    this.spinsLabel.style.fill = low ? 0xff5b5b : 0x9fb4d0;
+    this.spinsLabel.style.fill = low ? 0xffb000 : 0x9fb4d0;
   }
 
   /** A new symbol landed — respins reset to full. Make it unmistakable. */
@@ -562,7 +565,7 @@ export class BonusView extends Container {
     if (box) {
       const bx = box.x;
       void tween(380, (p) => { box.x = bx + Math.sin(p * Math.PI * 5) * 6 * (1 - p); }).then(() => (box.x = bx));
-      this.floatCallout(box.x, box.y - 8, "-1 SPIN", 0xff5b5b);
+      this.floatCallout(box.x, box.y - 8, "-1 SPIN", 0xffb000);
     }
   }
 
@@ -704,7 +707,7 @@ export class BonusView extends Container {
       const g = new Graphics();
       const bw = r.w * 0.16;
       for (let i = -1; i <= 1; i++) {
-        g.roundRect(i * bw * 1.2 - bw / 2, -r.h * 0.28, bw, r.h * 0.56, 3).fill(0xcc2b2b);
+        g.roundRect(i * bw * 1.2 - bw / 2, -r.h * 0.28, bw, r.h * 0.56, 3).fill(0xc24a00);
         g.roundRect(i * bw * 1.2 - bw / 2, -r.h * 0.28, bw, r.h * 0.12, 3).fill({ color: 0xff6a00, alpha: 0.6 });
       }
       g.rect(-r.w * 0.24, -r.h * 0.04, r.w * 0.48, r.h * 0.08).fill(0x222222);
@@ -778,16 +781,85 @@ export class BonusView extends Container {
     strip.y = -travel;
     this.gridLayer.addChild(strip);
 
-    return tween(dur, (p) => { strip.y = -travel * (1 - p); }, easeOutCubic).then(() => {
+    // Vertical motion blur so the reel reads as genuinely SPINNING, even when
+    // every open cell ends up empty (a dead spin). Blur decays as it stops.
+    const blurMax = turbo ? 7 : 16;
+    const blur = new BlurFilter({ strength: blurMax, quality: 2 });
+    blur.strengthX = 0;
+    strip.filters = [blur];
+
+    return tween(dur, (p) => {
+      strip.y = -travel * (1 - p);
+      blur.strengthY = blurMax * (1 - p) * (1 - p); // sharp by the time it lands
+    }, easeOutCubic).then(() => {
       strip.destroy({ children: true });
       mask.destroy();
       for (const r of rows) {
         const cell = grid[col][r];
+        const landed = cell.symbol === "SAFE" || cell.symbol === "MASTER_KEY";
         if (cell.symbol === "SAFE") { this.placeCell([col, r], this.buildGoldBar(cell.value ?? 0, col, r)); onLandOne(); }
         else if (cell.symbol === "MASTER_KEY") { this.placeCell([col, r], this.buildDynamite(col, r)); onLandOne(); }
-        // EMPTY → stays clear (reel surface shows).
+        // Every open cell gets a visible "stop" — a hit lands gold; a miss thuds
+        // the empty cell so you always SEE and FEEL the reel stop.
+        this.cellStopFx([col, r], landed);
       }
     });
+  }
+
+  /** A quick impact at a cell when its reel stops: hits flash gold, misses puff
+   *  a soft grey ring so an empty result is never invisible. */
+  private cellStopFx(pos: Position, landed: boolean): void {
+    const rc = this.cellRect(pos[0], pos[1]);
+    const cx = rc.x + rc.w / 2;
+    const cy = rc.y + rc.h / 2;
+    const reach = Math.min(rc.w, rc.h);
+
+    if (landed) {
+      const node = this.cells.get(keyOf(pos));
+      if (node) {
+        const num = node.getChildByLabel("num") as Text | null;
+        void tween(300, (p) => { const s = 1 + Math.sin(Math.min(1, p) * Math.PI) * 0.28; node.scale.set(s); if (num) num.scale.set(s); })
+          .then(() => { node.scale.set(1); if (num) num.scale.set(1); });
+      }
+      const g = new Graphics(); this.fxLayer.addChild(g);
+      void tween(280, (p) => { g.clear(); g.circle(cx, cy, reach * (0.4 + p * 0.45)).stroke({ color: 0xffd95c, width: Math.max(1, 4 * (1 - p)), alpha: (1 - p) * 0.9 }); }).then(() => g.destroy());
+    } else {
+      // Empty stop: a short downward "thud" line + a grey puff ring.
+      const g = new Graphics(); this.fxLayer.addChild(g);
+      void tween(240, (p) => {
+        g.clear();
+        g.circle(cx, cy, reach * (0.3 + p * 0.4)).stroke({ color: 0x4a5a72, width: Math.max(1, 3 * (1 - p)), alpha: (1 - p) * 0.5 });
+        g.rect(rc.x + 3, rc.y + rc.h - 4, rc.w - 6, 3).fill({ color: 0x2a3550, alpha: (1 - p) * 0.6 });
+      }).then(() => g.destroy());
+    }
+  }
+
+  /** Dead spin (no land): a red wash around the opening + a centred "NO HIT" so
+   *  the player clearly registers that the reel spun and missed. */
+  private deadSpinBeat(): void {
+    const o = this.opening();
+    const ring = new Graphics();
+    this.fxLayer.addChild(ring);
+    void tween(420, (p) => {
+      const a = Math.sin(p * Math.PI);
+      ring.clear();
+      ring.roundRect(o.x - 8, o.y - 8, o.width + 16, o.height + 16, 10)
+        .stroke({ color: POLICE_RED, width: 6, alpha: a * 0.8 });
+    }).then(() => ring.destroy());
+
+    const t = new Text({
+      text: "NO HIT",
+      style: new TextStyle({ fill: 0xffb000, fontFamily: FONT, fontSize: Math.min(34, o.width / 7), fontWeight: "900", letterSpacing: 4, stroke: { color: 0x000000, width: 5 }, dropShadow: { color: POLICE_RED, alpha: 0.6, blur: 12, distance: 0, angle: 0 } })
+    });
+    t.anchor.set(0.5);
+    t.position.set(o.x + o.width / 2, o.y + o.height / 2);
+    this.fxLayer.addChild(t);
+    t.scale.set(0.6);
+    void tween(700, (p) => {
+      t.scale.set(0.6 + 0.5 * easeOutBack(Math.min(1, p * 1.8)));
+      t.alpha = p < 0.3 ? p / 0.3 : 1 - (p - 0.3) / 0.7;
+      t.y = o.y + o.height / 2 - 14 * p;
+    }).then(() => t.destroy());
   }
 
   private hitFlash(): void {
