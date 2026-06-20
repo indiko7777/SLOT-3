@@ -30,10 +30,11 @@ export function computeLayout(width: number, height: number): LayoutMetrics {
 
   const leftWidth = Math.max(164, width * 0.15);
   const rightWidth = Math.max(246, width * 0.23);
+  const sideMargin = Math.max(leftWidth, rightWidth);
   const machine: Rect = {
-    x: leftWidth + 24,
+    x: sideMargin + 24,
     y: 60,
-    width: width - leftWidth - rightWidth - 64,
+    width: width - 2 * sideMargin - 48,
     height: height - bottomHeight - 74
   };
   const boardFrame: Rect = { ...machine };

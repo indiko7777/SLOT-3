@@ -1,4 +1,4 @@
-import { Application, Container } from "pixi.js";
+import { Application, Container, Sprite, Graphics, Text, TextStyle } from "pixi.js";
 import { GRID_COLUMNS, GRID_ROWS, type Board, type BonusCell, type GameEvent, type Position, type SymbolId } from "../domain";
 import type { PlaybackSnapshot } from "../playback";
 import { BoardView } from "./BoardView";
@@ -7,8 +7,10 @@ import { EffectsLayer } from "./EffectsLayer";
 import { HudView } from "./HudView";
 import { PaytableView } from "./PaytableView";
 import { computeLayout } from "./layout";
-import { wait } from "./tween";
+import { getExtraTexture } from "./assets";
+import { tween, wait, easeInOutCubic, easeOutBack } from "./tween";
 import type { LayoutMetrics, SceneRuntime } from "./types";
+import { OutlineFilter } from "pixi-filters";
 
 export class PixiGameScene {
   private readonly root = new Container();
@@ -50,10 +52,11 @@ export class PixiGameScene {
     this.hud.draw(this.layout, snapshot);
   }
 
-  /** Full rebuild — only for initial load and post-round idle state */
   renderSnapshot(snapshot: PlaybackSnapshot): void {
     this.currentSnapshot = snapshot;
+    snapshot.collectionCount = this.runtime.getCollectionCount();
     this.resize();
+    this.board.updateCollectionCounter(snapshot.collectionCount);
     this.hud.draw(this.layout, snapshot);
     // Only rebuild the board if we don't already have one showing.
     // After a spin/tumble round the board is already in the correct state
@@ -166,7 +169,7 @@ export class PixiGameScene {
         // visible) with a distinct CASH cluster. It links up, lights, clears,
         // then survivors drop and fresh symbols cascade in from the top.
         this.bonus.hide();
-        const pool: SymbolId[] = ["BRASS", "KNIFE", "PISTOL", "AMMO", "DUFFEL", "WATCH", "DIAMOND", "BIKE"];
+        const pool: SymbolId[] = ["BRASS", "KNIFE", "PISTOL", "AMMO", "DUFFEL", "DIAMOND", "BIKE"];
         const b: Board = [];
         let k = 0;
         for (let c = 0; c < GRID_COLUMNS; c++) {
@@ -244,6 +247,31 @@ export class PixiGameScene {
         }
         return;
       }
+
+      case "collection": {
+        if (arg === "next") {
+          const board = this.currentSnapshot?.board || this.uniformBoard("BRASS");
+          let wildPos: Position = [2, 2];
+          let found = false;
+          for (let col = 0; col < GRID_COLUMNS; col++) {
+            for (let row = 0; row < GRID_ROWS; row++) {
+              if (board[col][row] === "WILD") {
+                wildPos = [col, row];
+                found = true;
+                break;
+              }
+            }
+            if (found) break;
+          }
+          if (!found) {
+            board[2][2] = "WILD";
+            this.board.setInstant(board);
+            this.hasBoard = true;
+          }
+          await this.runCollectionAnimation(wildPos, turbo);
+        }
+        return;
+      }
     }
   }
 
@@ -269,6 +297,7 @@ export class PixiGameScene {
         }
         await this.board.settle(event.board, turbo, scatterCols.size >= 2 ? scatterCols : undefined);
         this.hasBoard = true;
+        await this.checkAndPlayCollectionAnimation(event.board, turbo);
         return;
       }
       case "scatter_tease":
@@ -368,6 +397,325 @@ export class PixiGameScene {
       default:
         return;
     }
+  }
+
+  private async checkAndPlayCollectionAnimation(board: Board, turbo: boolean): Promise<void> {
+    const wildPositions: Position[] = [];
+    for (let col = 0; col < GRID_COLUMNS; col++) {
+      for (let row = 0; row < GRID_ROWS; row++) {
+        if (board[col][row] === "WILD") {
+          wildPositions.push([col, row]);
+        }
+      }
+    }
+    if (wildPositions.length === 0) return;
+    for (const pos of wildPositions) {
+      await this.runCollectionAnimation(pos, turbo);
+    }
+  }
+
+  private async runCollectionAnimation(pos: Position, turbo: boolean): Promise<void> {
+    const symbolView = this.board.getSymbolView(pos);
+    if (!symbolView) return;
+
+    // 1. Increment collection count (1 to 7, wraps for test)
+    const newCount = this.runtime.incrementCollectionCount();
+
+    // 2. Glowing Wild symbol pops out of the reel frame
+    if (symbolView.parent) {
+      symbolView.parent.addChild(symbolView);
+    }
+    const origScaleX = symbolView.scale.x;
+    const origScaleY = symbolView.scale.y;
+
+    await tween(turbo ? 120 : 300, (p) => {
+      const s = 1 + 0.45 * Math.sin(p * Math.PI);
+      symbolView.scale.set(origScaleX * s, origScaleY * s);
+    }, easeOutBack);
+
+    const width = this.layout.width;
+    const height = this.layout.height;
+    const boardCenter = this.board.centerOf(pos);
+    const sourceX = boardCenter.x;
+    const sourceY = boardCenter.y;
+
+    if (this.layout.portrait) {
+      // --- PORTRAIT MODE: POP-UP OVERLAY ---
+      const overlay = new Container();
+      const overlayBg = new Graphics();
+      overlayBg.rect(0, 0, width, height).fill({ color: 0x000000, alpha: 0.85 });
+      overlay.addChild(overlayBg);
+      overlay.alpha = 0;
+      this.root.addChild(overlay);
+
+      const silTex = getExtraTexture("char_silhouette");
+      if (silTex) {
+        const charContainer = new Container();
+        const silSprite = new Sprite(silTex);
+        silSprite.anchor.set(0.5);
+        silSprite.x = 57.5; // Shift shadow right to align with the pieces
+        silSprite.y = 27.5; // Shift shadow down to align with the pieces
+        silSprite.tint = 0x000000;
+        const outline = new OutlineFilter({ thickness: 2, color: 0xffffff, quality: 1.0 });
+        outline.resolution = window.devicePixelRatio || 1;
+        silSprite.filters = [outline];
+        charContainer.addChild(silSprite);
+
+        // Add already-collected pieces
+        for (let i = 1; i < newCount; i++) {
+          const pieceTex = getExtraTexture(`char_piece_${i}`);
+          if (pieceTex) {
+            const pieceSprite = new Sprite(pieceTex);
+            pieceSprite.anchor.set(0.5);
+            charContainer.addChild(pieceSprite);
+          }
+        }
+
+        const silScale = Math.min((width * 0.8) / silTex.width, (height * 0.6) / silTex.height);
+        charContainer.scale.set(silScale);
+        charContainer.position.set(width / 2, height / 2 - 40);
+        overlay.addChild(charContainer);
+
+        // Fade in overlay
+        await tween(200, (p) => {
+          overlay.alpha = p;
+        });
+
+        const pieceTex = getExtraTexture(`char_piece_${newCount}`);
+        if (pieceTex) {
+          const flySprite = new Sprite(pieceTex);
+          flySprite.anchor.set(0.5);
+          flySprite.position.set(sourceX, sourceY);
+          const startScale = 0.25;
+          const endScale = silScale;
+          flySprite.scale.set(startScale);
+          overlay.addChild(flySprite);
+
+          const targetX = charContainer.x;
+          const targetY = charContainer.y;
+
+          await tween(turbo ? 250 : 550, (p) => {
+            flySprite.x = sourceX + (targetX - sourceX) * p;
+            flySprite.y = sourceY + (targetY - sourceY) * p;
+            flySprite.scale.set(startScale + (endScale - startScale) * p);
+            flySprite.rotation = (1 - p) * 0.4;
+          }, easeInOutCubic);
+
+          flySprite.destroy();
+
+          const pieceSprite = new Sprite(pieceTex);
+          pieceSprite.anchor.set(0.5);
+          charContainer.addChild(pieceSprite);
+
+          await this.triggerSnapImpact(targetX, targetY, overlay, newCount);
+
+          if (newCount === 8) {
+            await this.triggerCompletionOverlay(charContainer, silScale, targetX, targetY, overlay);
+          }
+
+          await wait(turbo ? 200 : 500);
+        }
+
+        await tween(300, (p) => {
+          overlay.alpha = 1 - p;
+        });
+        overlay.destroy({ children: true });
+      }
+    } else {
+      // --- LANDSCAPE MODE: PERSISTENT FILL ---
+      const artRect = this.layout.artPanel;
+      if (artRect) {
+        const silTex = getExtraTexture("char_silhouette");
+        if (silTex) {
+          const boxW = artRect.width - 24;
+          const boxH = artRect.height - 84;
+          const endScale = Math.min(boxW / silTex.width, boxH / silTex.height);
+          const targetX = artRect.x + artRect.width / 2;
+          const targetY = artRect.y + 60 + (artRect.height - 60) / 2;
+
+          const pieceTex = getExtraTexture(`char_piece_${newCount}`);
+          if (pieceTex) {
+            const flySprite = new Sprite(pieceTex);
+            flySprite.anchor.set(0.5);
+            flySprite.position.set(sourceX, sourceY);
+            const startScale = 0.25;
+            flySprite.scale.set(startScale);
+            this.root.addChild(flySprite);
+
+            await tween(turbo ? 250 : 550, (p) => {
+              flySprite.x = sourceX + (targetX - sourceX) * p;
+              flySprite.y = sourceY + (targetY - sourceY) * p;
+              flySprite.scale.set(startScale + (endScale - startScale) * p);
+              flySprite.rotation = (1 - p) * 0.4;
+            }, easeInOutCubic);
+
+            flySprite.destroy();
+
+            await this.triggerSnapImpact(targetX, targetY, this.root, newCount);
+
+            if (newCount === 8) {
+              const celebrationContainer = new Container();
+              const fullTex = getExtraTexture("char_full");
+              if (fullTex) {
+                const fullSprite = new Sprite(fullTex);
+                fullSprite.anchor.set(0.5);
+                fullSprite.scale.set(endScale);
+                fullSprite.position.set(targetX, targetY);
+                celebrationContainer.addChild(fullSprite);
+                this.root.addChild(celebrationContainer);
+
+                // Update state beforehand so HUD is drawn fully under the FX
+                if (this.currentSnapshot) {
+                  this.currentSnapshot.collectionCount = newCount;
+                  this.hud.draw(this.layout, this.currentSnapshot);
+                }
+
+                await this.triggerCompletionOverlay(celebrationContainer, endScale, targetX, targetY, this.root);
+                await wait(800);
+                celebrationContainer.destroy({ children: true });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    this.board.updateCollectionCounter(newCount);
+
+    if (this.currentSnapshot) {
+      this.currentSnapshot.collectionCount = newCount;
+      this.hud.draw(this.layout, this.currentSnapshot);
+    }
+
+    await tween(100, (p) => {
+      symbolView.scale.set(origScaleX * (1.45 - 0.45 * p), origScaleY * (1.45 - 0.45 * p));
+    });
+    symbolView.scale.set(origScaleX, origScaleY);
+  }
+
+  private async triggerSnapImpact(x: number, y: number, parentContainer: Container, count: number): Promise<void> {
+    this.effects.screenShake(this.root, false);
+
+    const flash = new Graphics();
+    flash.rect(0, 0, this.layout.width, this.layout.height).fill({ color: 0xffffff, alpha: 0.5 });
+    parentContainer.addChild(flash);
+    void tween(200, (p) => {
+      flash.alpha = 0.5 * (1 - p);
+    }).then(() => flash.destroy());
+
+    const particlesContainer = new Container();
+    parentContainer.addChild(particlesContainer);
+
+    const particles: Array<{ sprite: Graphics; vx: number; vy: number; scaleSpeed: number }> = [];
+    const colors = [0xffd95c, 0x65dfff, 0xffffff];
+    for (let i = 0; i < 24; i++) {
+      const p = new Graphics();
+      const color = colors[Math.floor(Math.random() * colors.length)]!;
+      const r = 3 + Math.random() * 5;
+      p.circle(0, 0, r).fill({ color });
+      p.x = x;
+      p.y = y;
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 2 + Math.random() * 5;
+      particlesContainer.addChild(p);
+      particles.push({
+        sprite: p,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        scaleSpeed: 0.02 + Math.random() * 0.03
+      });
+    }
+
+    await tween(400, (progress) => {
+      for (const p of particles) {
+        p.sprite.x += p.vx;
+        p.sprite.y += p.vy;
+        p.sprite.alpha = 1 - progress;
+        p.sprite.scale.set(Math.max(0, 1 - progress * p.scaleSpeed * 10));
+      }
+    });
+
+    particlesContainer.destroy({ children: true });
+  }
+
+  private async triggerCompletionOverlay(
+    charContainer: Container,
+    scale: number,
+    targetX: number,
+    targetY: number,
+    parentContainer: Container
+  ): Promise<void> {
+    const fullTex = getExtraTexture("char_full");
+    if (!fullTex) return;
+
+    const fullSprite = new Sprite(fullTex);
+    fullSprite.anchor.set(0.5);
+    fullSprite.alpha = 0;
+    charContainer.addChild(fullSprite);
+
+    await tween(400, (p) => {
+      fullSprite.alpha = p;
+    });
+
+    const sweepContainer = new Container();
+    parentContainer.addChild(sweepContainer);
+
+    const particles: Array<{ sprite: Graphics; vx: number; vy: number; rotSpeed: number }> = [];
+    for (let i = 0; i < 45; i++) {
+      const p = new Graphics();
+      const r = 4 + Math.random() * 6;
+      p.poly([0, -r, r / 2, -r / 2, r, 0, r / 2, r / 2, 0, r, -r / 2, r / 2, -r, 0, -r / 2, -r / 2]).fill({ color: 0xffd95c });
+      p.x = targetX;
+      p.y = targetY;
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 3 + Math.random() * 8;
+      sweepContainer.addChild(p);
+      particles.push({
+        sprite: p,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        rotSpeed: 0.05 + Math.random() * 0.1
+      });
+    }
+
+    const textGlow = new Text({
+      text: "BEACH GIRL COMPLETED!",
+      style: new TextStyle({
+        fill: 0xffd95c,
+        fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
+        fontSize: 36,
+        fontWeight: "900",
+        letterSpacing: 2,
+        dropShadow: { color: 0x000000, alpha: 0.8, blur: 8, distance: 0 }
+      })
+    });
+    textGlow.anchor.set(0.5);
+    textGlow.position.set(this.layout.width / 2, this.layout.height / 2 - 140);
+    textGlow.scale.set(0.2);
+    textGlow.alpha = 0;
+    parentContainer.addChild(textGlow);
+
+    void tween(400, (p) => {
+      textGlow.alpha = p;
+      textGlow.scale.set(0.2 + 0.8 * p);
+    }, easeOutBack);
+
+    await tween(1200, (p) => {
+      for (const pt of particles) {
+        pt.sprite.x += pt.vx;
+        pt.sprite.y += pt.vy * 0.8 + 2.0;
+        pt.sprite.rotation += pt.rotSpeed;
+        pt.sprite.alpha = Math.max(0, 1.2 - p);
+      }
+      textGlow.style.fill = p % 0.2 < 0.1 ? 0xffffff : 0xffd95c;
+    });
+
+    void tween(300, (p) => {
+      textGlow.alpha = 1 - p;
+    }).then(() => {
+      textGlow.destroy();
+      sweepContainer.destroy({ children: true });
+    });
   }
 }
 

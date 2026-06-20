@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Heat Chase: Grand Escape — Stake Engine front-end (Pixi) + RGS client",
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 5175",
+    "dev": "vite --host 127.0.0.1 --port 5176",
     "mock-rgs": "tsx mock-rgs/server.ts",
     "dev:local": "concurrently -k -n RGS,WEB -c cyan,magenta \"npm:mock-rgs\" \"npm:dev\"",
     "build": "tsc && vite build",

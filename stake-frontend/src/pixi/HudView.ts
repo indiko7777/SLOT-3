@@ -5,6 +5,7 @@ import { getExtraTexture } from "./assets";
 import { makeText } from "./text";
 import { ambientTicker } from "./tween";
 import type { LayoutMetrics, Rect, SceneRuntime } from "./types";
+import { OutlineFilter } from "pixi-filters";
 
 export class HudView extends Container {
   private ambientCbs: Array<(dt: number, elapsed: number) => void> = [];
@@ -124,12 +125,12 @@ export class HudView extends Container {
       const scaleY = layout.height / bgTex.height;
       const scale = Math.max(scaleX, scaleY);
       sprite.scale.set(scale);
-      sprite.anchor.set(0.5, 0.5);
-      sprite.position.set(layout.width / 2, layout.height / 2);
+      sprite.anchor.set(0, 1); // Anchor at bottom-left so logo is fully visible
+      sprite.position.set(0, layout.height);
       this.addChild(sprite);
       // Dim overlay so UI remains readable
       const dim = new Graphics();
-      dim.rect(0, 0, layout.width, layout.height).fill({ color: 0x000000, alpha: 0.35 });
+      dim.rect(0, 0, layout.width, layout.height).fill({ color: 0x000000, alpha: 0.15 });
       this.addChild(dim);
     } else {
       // Fallback procedural background
@@ -158,19 +159,6 @@ export class HudView extends Container {
     this.panelButton(rect.x, rect.y, panelWidth, 112, "BUY", TEXT.buy, "100.00x", "buy");
     this.panelButton(rect.x, rect.y + 124, panelWidth, 124, "BUY", TEXT.superBuy, "500.00x", "super_buy");
     this.panelButton(rect.x, rect.y + 262, panelWidth, 134, TEXT.ante, this.runtime.isAnteEnabled() ? "ACTIVE" : "+50%", this.runtime.isAnteEnabled() ? "ON" : "OFF", "ante");
-
-    const scanner = new Graphics();
-    scanner.roundRect(rect.x, rect.y + 412, panelWidth, Math.max(80, rect.height - 412), 6).fill(0x061a38).stroke({ color: 0x65dfff, alpha: 0.65, width: 2 });
-    this.addChild(scanner);
-
-    this.addAmbient((_dt, elapsed) => {
-      const lineY = rect.y + 418 + (Math.sin(elapsed * 1.5) * 0.5 + 0.5) * Math.max(60, rect.height - 432);
-      scanner.clear();
-      scanner.roundRect(rect.x, rect.y + 412, panelWidth, Math.max(80, rect.height - 412), 6)
-        .fill(0x061a38).stroke({ color: 0x65dfff, alpha: 0.65, width: 2 });
-      scanner.moveTo(rect.x + 8, lineY).lineTo(rect.x + panelWidth - 8, lineY);
-      scanner.stroke({ color: 0x65dfff, alpha: 0.4, width: 1 });
-    });
   }
 
   /** Shrink a text object uniformly so it never spills past maxWidth (never enlarges). */
@@ -194,15 +182,11 @@ export class HudView extends Container {
     glow.alpha = 0.8;
     panel.addChild(glow);
 
-    // Dark body with faux gradient
+    // Dark body
     const bg = new Graphics();
-    bg.roundRect(0, 0, width, height, 8).fill(0x07152e);
-    bg.roundRect(0, 0, width, height * 0.5, 8).fill({ color: 0x0d2449, alpha: 0.5 });
+    bg.roundRect(0, 0, width, height, 8).fill({ color: 0x07152e, alpha: 0.5 });
     bg.roundRect(0, 0, width, height, 8).stroke({ color: glowColor, width: 2.5, alpha: 0.75 });
     panel.addChild(bg);
-
-    // Top glass reflection
-    bg.roundRect(8, 3, width - 16, 1.5, 1).fill({ color: 0xffffff, alpha: 0.06 });
 
     // Inner width available for text (account for the rounded body padding)
     const textMaxWidth = width - 16;
@@ -283,26 +267,19 @@ export class HudView extends Container {
 
   private drawBoardFrame(rect: Rect): void {
     const frame = new Graphics();
-    // Dark metallic frame background
-    frame.roundRect(rect.x, rect.y, rect.width, rect.height, 10).fill(0x080c1c);
-    // Outer glow edge — subtle neon
+    // Fully transparent interior — background shows through
+    // Outer neon edge border only
+    frame.roundRect(rect.x - 2, rect.y - 2, rect.width + 4, rect.height + 4, 12)
+      .stroke({ color: 0x48e5ff, width: 2, alpha: 0.45 });
     frame.roundRect(rect.x, rect.y, rect.width, rect.height, 10)
-      .stroke({ color: 0x48e5ff, alpha: 0.3, width: 2 });
-    // Inner subtle edge
-    frame.roundRect(rect.x + 4, rect.y + 4, rect.width - 8, rect.height - 8, 7)
-      .stroke({ color: 0x48e5ff, alpha: 0.08, width: 1 });
-    // Top reflection strip
-    frame.roundRect(rect.x + 6, rect.y + 2, rect.width - 12, 6, 3)
-      .fill({ color: 0xffffff, alpha: 0.04 });
+      .stroke({ color: 0x48e5ff, width: 1, alpha: 0.25 });
     this.addChild(frame);
   }
 
   private drawControls(rect: Rect, snapshot: PlaybackSnapshot): void {
-    // Bar background with top highlight
+    // Bar background
     const bar = new Graphics();
-    bar.rect(rect.x, rect.y, rect.width, rect.height).fill(0x070a18);
-    bar.rect(rect.x, rect.y, rect.width, 1).fill({ color: 0xffdf65, alpha: 0.10 });
-    bar.rect(rect.x, rect.y + 1, rect.width, 1).fill({ color: 0x48e5ff, alpha: 0.06 });
+    bar.rect(rect.x, rect.y, rect.width, rect.height).fill({ color: 0x070a18, alpha: 0.5 });
     this.addChild(bar);
 
     // Small utility buttons
@@ -425,6 +402,61 @@ export class HudView extends Container {
         for (const s of filledStars) s.alpha = a;
       });
     }
+
+    this.drawCharacter(rect, _snapshot.collectionCount);
+  }
+
+  private drawCharacter(rect: Rect, count: number): void {
+    const silTex = getExtraTexture("char_silhouette");
+    if (!silTex) return;
+
+    const assembly = new Container();
+
+    // Silhouette Sprite
+    const silSprite = new Sprite(silTex);
+    silSprite.anchor.set(0.5);
+    silSprite.x = 57.5; // Shift shadow right to align with the pieces
+    silSprite.y = 27.5; // Shift shadow down to align with the pieces
+    silSprite.tint = 0x000000;
+    const outline = new OutlineFilter({ thickness: 2, color: 0xffffff, quality: 1.0 });
+    outline.resolution = window.devicePixelRatio || 1;
+    silSprite.filters = [outline];
+    assembly.addChild(silSprite);
+
+    // Add collected pieces
+    // Order: 1: Right Feet, 2: Left Feet, 3: Legs, 4: Stomach, 5: Phonearm, 6: Chest, 7: Left Arm (rightarm1), 8: Head
+    for (let i = 1; i <= Math.min(8, count); i++) {
+      const pieceTex = getExtraTexture(`char_piece_${i}`);
+      if (pieceTex) {
+        const pieceSprite = new Sprite(pieceTex);
+        pieceSprite.anchor.set(0.5);
+        assembly.addChild(pieceSprite);
+      }
+    }
+
+    // If complete (8), draw the full image instead of separate layers to avoid seam lines
+    if (count >= 8) {
+      const fullTex = getExtraTexture("char_full");
+      if (fullTex) {
+        const fullSprite = new Sprite(fullTex);
+        fullSprite.anchor.set(0.5);
+        assembly.addChild(fullSprite);
+      }
+    }
+
+    // Fit inside the box panel
+    const boxW = rect.width - 24;
+    const boxH = rect.height - 84;
+    const scale = Math.min(boxW / silTex.width, boxH / silTex.height);
+    assembly.scale.set(scale);
+
+    // Center in the box
+    assembly.position.set(
+      rect.x + rect.width / 2,
+      rect.y + 60 + (rect.height - 60) / 2
+    );
+
+    this.addChild(assembly);
   }
 
   /** Generate points for a 5-pointed star polygon */
@@ -451,7 +483,7 @@ export class HudView extends Container {
   private smallButton(x: number, y: number, size: number, label: string, action: string): void {
     const button = new Container();
     const g = new Graphics();
-    g.circle(size / 2, size / 2, size / 2).fill(0x0a1020).stroke({ color: 0x3a5a7a, width: 1.5 });
+    g.circle(size / 2, size / 2, size / 2).fill({ color: 0x0a1020, alpha: 0.5 }).stroke({ color: 0x3a5a7a, width: 1.5 });
     button.addChild(g);
     button.addChild(makeText(label, Math.min(18, size * 0.42), 0x8a9ab8, size / 2, size * 0.24, "center"));
     button.position.set(x, y);
@@ -466,7 +498,7 @@ export class HudView extends Container {
   private betButton(x: number, y: number, size: number, label: string, action: string): void {
     const button = new Container();
     const g = new Graphics();
-    g.circle(size / 2, size / 2, size / 2).fill(0x0a1428).stroke({ color: 0x48e5ff, width: 2, alpha: 0.6 });
+    g.circle(size / 2, size / 2, size / 2).fill({ color: 0x0a1428, alpha: 0.5 }).stroke({ color: 0x48e5ff, width: 2, alpha: 0.6 });
     button.addChild(g);
     const txt = new Text({
       text: label,
@@ -501,13 +533,13 @@ export class HudView extends Container {
 
     // Outer ring
     const outer = new Graphics();
-    outer.circle(R, R, R).fill(0x0a1428);
+    outer.circle(R, R, R).fill({ color: 0x0a1428, alpha: 0.5 });
     outer.circle(R, R, R).stroke({ color: isPlaying ? 0x3a4a5c : 0x48e5ff, width: 4 });
     button.addChild(outer);
 
     // Inner disc
     const inner = new Graphics();
-    inner.circle(R, R, R - 8).fill(0x0c1530);
+    inner.circle(R, R, R - 8).fill({ color: 0x0c1530, alpha: 0.5 });
     inner.circle(R, R, R - 8).stroke({ color: isPlaying ? 0x2a3a4c : 0x48e5ff, width: 1.5, alpha: 0.4 });
     button.addChild(inner);
 

@@ -16,7 +16,7 @@ export const SYMBOL_ASSETS: Record<SymbolId, SymbolSkin> = {
   AMMO: { color: 0x222346, stroke: 0x72dfff, text: 0xa9f060, label: "AM", assetKey: "symbols/ammo.png" },
   DUFFEL: { color: 0x20274b, stroke: 0x72dfff, text: 0xa9f060, label: "DB", assetKey: "symbols/duffel.png" },
   CASH: { color: 0x362615, stroke: 0xffdf65, text: 0xffdf65, label: "$$", assetKey: "symbols/cash.png" },
-  WATCH: { color: 0x332919, stroke: 0xffdf65, text: 0xffdf65, label: "GW", assetKey: "symbols/watch.png" },
+  WILD: { color: 0x5f401a, stroke: 0xffdf65, text: 0xffffff, label: "WD", assetKey: "symbols/wild_symbole.png" },
   DIAMOND: { color: 0x302719, stroke: 0xffdf65, text: 0xffdf65, label: "DM", assetKey: "symbols/diamond.png" },
   BIKE: { color: 0x332919, stroke: 0xffdf65, text: 0xffdf65, label: "SB", assetKey: "symbols/bike.png" },
   CAR_WILD: { color: 0x063957, stroke: 0x65f8ff, text: 0xffffff, label: "W", assetKey: "symbols/cyan_car_wild.png" },
@@ -53,6 +53,16 @@ let loaded = false;
 const EXTRA_ASSETS: Record<string, string> = {
   "getaway_car_scene": "getaway_car_scene.png",
   "wanted_star": "wanted_star.png",
+  "char_silhouette": "bodycharachter1/silhouette_image1.png.png",
+  "char_piece_1": "bodycharachter1/rightfoot1.png.png",
+  "char_piece_2": "bodycharachter1/leftfoot1.png.png",
+  "char_piece_3": "bodycharachter1/legs1.png.png",
+  "char_piece_4": "bodycharachter1/stomach1.png.png",
+  "char_piece_5": "bodycharachter1/phonearm1.png.png",
+  "char_piece_6": "bodycharachter1/chest1.png.png",
+  "char_piece_7": "bodycharachter1/rightarm1.png.png",
+  "char_piece_8": "bodycharachter1/head1.png.png",
+  "char_full": "bodycharachter1/full_image1.png.png",
 };
 
 /** Optional images — loaded per-file so a missing one never blocks the game.
@@ -66,58 +76,162 @@ const OPTIONAL_ASSETS: Record<string, string> = {
 
 /** Background images — loaded separately so a missing file doesn't block the game */
 const BG_ASSETS: Record<string, string> = {
-  "bg_base": "chase_base.png",
+  "bg_base": "slot3_bg.png",
   "bg_max_heat": "chase_max_heat.png",
   "bg_bonus": "vault_bonus.png",
+  "bg_slot3": "slot3_bg.png",
 };
+
+function removeBlackBackground(texture: Texture, isKnuckles = false): Texture {
+  const source = (texture.source as any).resource;
+  if (!source) return texture;
+
+  const canvas = document.createElement("canvas");
+  const width = Math.round(texture.width || (source as HTMLImageElement).naturalWidth || (source as HTMLImageElement).width || 0);
+  const height = Math.round(texture.height || (source as HTMLImageElement).naturalHeight || (source as HTMLImageElement).height || 0);
+  // Guard: if dimensions are 0 the texture isn't decoded yet — return original safely
+  if (width <= 0 || height <= 0) return texture;
+  canvas.width = width;
+  canvas.height = height;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return texture;
+
+  ctx.drawImage(source, 0, 0, width, height);
+
+  const imgData = ctx.getImageData(0, 0, width, height);
+  const data = imgData.data;
+
+  if (isKnuckles) {
+    // For brass knuckles, key out ALL near-black pixels (including inside the rings)
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i]!;
+      const g = data[i + 1]!;
+      const b = data[i + 2]!;
+      if (r < 35 && g < 35 && b < 35) {
+        data[i + 3] = 0;
+      }
+    }
+  } else {
+    // Flood fill from borders
+    const visited = new Uint8Array(width * height);
+    const queue: number[] = [];
+
+    const isNearBlack = (x: number, y: number): boolean => {
+      const idx = (y * width + x) * 4;
+      const r = data[idx]!;
+      const g = data[idx + 1]!;
+      const b = data[idx + 2]!;
+      return r < 35 && g < 35 && b < 35;
+    };
+
+    // Add border pixels to queue
+    for (let x = 0; x < width; x++) {
+      if (isNearBlack(x, 0)) {
+        const idx = 0 * width + x;
+        visited[idx] = 1;
+        queue.push(x, 0);
+      }
+      if (isNearBlack(x, height - 1)) {
+        const idx = (height - 1) * width + x;
+        visited[idx] = 1;
+        queue.push(x, height - 1);
+      }
+    }
+    for (let y = 1; y < height - 1; y++) {
+      if (isNearBlack(0, y)) {
+        const idx = y * width + 0;
+        visited[idx] = 1;
+        queue.push(0, y);
+      }
+      if (isNearBlack(width - 1, y)) {
+        const idx = y * width + (width - 1);
+        visited[idx] = 1;
+        queue.push(width - 1, y);
+      }
+    }
+
+    // BFS flood fill
+    let head = 0;
+    while (head < queue.length) {
+      const cx = queue[head++]!;
+      const cy = queue[head++]!;
+
+      const idx = (cy * width + cx) * 4;
+      data[idx + 3] = 0; // Set alpha to 0 (fully transparent)
+
+      const neighbors = [
+        [cx + 1, cy],
+        [cx - 1, cy],
+        [cx, cy + 1],
+        [cx, cy - 1],
+      ];
+
+      for (const [nx, ny] of neighbors) {
+        if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+          const nidx = ny * width + nx;
+          if (visited[nidx] === 0 && isNearBlack(nx, ny)) {
+            visited[nidx] = 1;
+            queue.push(nx, ny);
+          }
+        }
+      }
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  return Texture.from(canvas);
+}
 
 export async function loadSymbolTextures(): Promise<void> {
   if (loaded) return;
 
   const entries = Object.values(SYMBOL_ASSETS);
-  const bundles: Record<string, string> = {};
-  for (const skin of entries) {
-    bundles[skin.assetKey] = BASE_PATH + skin.assetKey;
-  }
-  for (const [key, file] of Object.entries(EXTRA_ASSETS)) {
-    bundles[key] = BASE_PATH + file;
-  }
 
-  const textures = await Assets.load(Object.values(bundles));
+  // Load each symbol texture individually so a single bad file never poisons the batch.
+  await Promise.all(
+    entries.map(async (skin) => {
+      try {
+        const url = BASE_PATH + skin.assetKey;
+        const tex = await Assets.load<Texture>(url);
+        if (tex instanceof Texture) {
+          const isKnuckles = skin.assetKey.includes("brass_knuckles");
+          const processed = removeBlackBackground(tex, isKnuckles);
+          textureCache.set(skin.assetKey, processed);
+        }
+      } catch (err) {
+        console.warn(`[assets] Failed to load symbol texture: ${skin.assetKey}`, err);
+      }
+    })
+  );
 
-  for (const skin of entries) {
-    const url = BASE_PATH + skin.assetKey;
-    const tex = textures[url] ?? textures[skin.assetKey];
-    if (tex instanceof Texture) {
-      textureCache.set(skin.assetKey, tex);
-    }
-  }
-  for (const [key, file] of Object.entries(EXTRA_ASSETS)) {
-    const url = BASE_PATH + file;
-    const tex = textures[url] ?? textures[key];
-    if (tex instanceof Texture) {
-      textureCache.set(key, tex);
-    }
-  }
+  // Extra images (silhouette, character pieces, etc.) — also isolated.
+  await Promise.all(
+    Object.entries(EXTRA_ASSETS).map(async ([key, file]) => {
+      try {
+        const url = BASE_PATH + file;
+        const tex = await Assets.load<Texture>(url);
+        if (tex instanceof Texture) textureCache.set(key, tex);
+      } catch (err) {
+        console.warn(`[assets] Failed to load extra texture: ${file}`, err);
+      }
+    })
+  );
 
   loaded = true;
 
-  // Load backgrounds + optional bonus art separately — failures are ignored
-  // so a missing file just falls back to procedural rendering.
+  // Backgrounds + optional bonus art — failures are silently ignored.
   for (const [key, file] of [...Object.entries(BG_ASSETS), ...Object.entries(OPTIONAL_ASSETS)]) {
     try {
       const url = BASE_PATH + file;
-      const tex = await Assets.load(url);
-      if (tex instanceof Texture) {
-        textureCache.set(key, tex);
-      }
+      const tex = await Assets.load<Texture>(url);
+      if (tex instanceof Texture) textureCache.set(key, tex);
     } catch {
-      // Missing file is fine — the procedural fallback will be used
+      // Missing file — procedural fallback will be used
     }
   }
 
-  // Load win sprite-sheet atlases per-file. A missing atlas just means that
-  // symbol uses the procedural glow — never blocks the game.
+  // Win sprite-sheet atlases — missing ones just use procedural glow.
   for (const [id, file] of Object.entries(ANIM_ASSETS) as [SymbolId, string][]) {
     try {
       const sheet = await Assets.load<Spritesheet>(BASE_PATH + file);

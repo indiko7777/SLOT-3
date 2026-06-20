@@ -12,7 +12,7 @@ export type SymbolId =
   | "AMMO"
   | "DUFFEL"
   | "CASH"
-  | "WATCH"
+  | "WILD"
   | "DIAMOND"
   | "BIKE"
   | "CAR_WILD"
@@ -82,13 +82,12 @@ export const SYMBOLS: Record<SymbolId, SymbolDefinition> = {
     role: "Highest transformation target",
     baseClusterPay: 0.5
   },
-  WATCH: {
-    id: "WATCH",
-    label: "Gold Watch",
-    shortLabel: "GW",
-    tier: "premium",
-    role: "Premium cluster pay",
-    baseClusterPay: 0.65
+  WILD: {
+    id: "WILD",
+    label: "Wild Symbol",
+    shortLabel: "WD",
+    tier: "special",
+    role: "Wild symbol triggering collection"
   },
   DIAMOND: {
     id: "DIAMOND",

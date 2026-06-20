@@ -116,8 +116,14 @@ export class SymbolView extends Container {
   private fitInCell(sprite: Sprite | AnimatedSprite): void {
     const w = this.widthValue;
     const h = this.heightValue;
+    if (w <= 0 || h <= 0) return;
+    const tw = sprite.texture.width;
+    const th = sprite.texture.height;
+    // Guard: if texture hasn't uploaded yet its dimensions can be 0, producing NaN/Infinity
+    if (tw <= 0 || th <= 0) return;
     const padding = 6;
-    const scale = Math.min((w - padding * 2) / sprite.texture.width, (h - padding * 2) / sprite.texture.height);
+    const scale = Math.min((w - padding * 2) / tw, (h - padding * 2) / th);
+    if (!isFinite(scale) || scale <= 0) return;
     sprite.scale.set(scale);
     sprite.position.set(w / 2, h / 2);
   }

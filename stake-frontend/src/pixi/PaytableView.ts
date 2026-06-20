@@ -21,7 +21,7 @@ const SYMBOL_GROUPS: SymbolGroup[] = [
   {
     title: "PREMIUM",
     titleColor: 0xffdf65,
-    symbols: ["BIKE", "DIAMOND", "WATCH", "CASH"],
+    symbols: ["BIKE", "DIAMOND", "CASH"],
   },
   {
     title: "MID",
@@ -230,6 +230,12 @@ export class PaytableView extends Container {
     const wildRow = this.buildSpecialRow("CAR_WILD", "Cyan Sports Car", "WILD - Substitutes for all symbols", innerW);
     wildRow.position.set(0, yOffset);
     this.contentContainer.addChild(wildRow);
+    yOffset += this.getSpecialRowHeight(innerW) + 6;
+
+    // BEACH GIRL WILD
+    const collectionWildRow = this.buildSpecialRow("WILD", "Beach Girl Wild", "WILD - Substitutes and triggers Visual Collection", innerW);
+    collectionWildRow.position.set(0, yOffset);
+    this.contentContainer.addChild(collectionWildRow);
     yOffset += this.getSpecialRowHeight(innerW) + 6;
 
     // SCATTER

@@ -14,10 +14,10 @@ const winRound: RoundRecord = {
     {
       type: "board_settle",
       board: [
-        ["BRASS", "BRASS", "WATCH", "KNIFE"],
+        ["BRASS", "BRASS", "CASH", "KNIFE"],
         ["BRASS", "DUFFEL", "DIAMOND", "AMMO"],
         ["BRASS", "KNIFE", "BIKE", "PISTOL"],
-        ["WATCH", "BRASS", "AMMO", "DUFFEL"],
+        ["CASH", "BRASS", "AMMO", "DUFFEL"],
         ["DIAMOND", "CASH", "PISTOL", "BIKE"]
       ]
     },

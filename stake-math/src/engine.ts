@@ -28,6 +28,7 @@ import {
 import { Rng } from "./rng";
 
 const WILD: SymbolId = "CAR_WILD";
+const WILDS = new Set<SymbolId>(["CAR_WILD", "WILD"]);
 const SCATTER: SymbolId = "PHONE_SCATTER";
 
 interface Cluster {
@@ -277,7 +278,7 @@ function findClusters(board: Board): Cluster[] {
   for (const symbol of PAYABLE_SYMBOLS) {
     const match = (p: Position): boolean => {
       const s = board[p[0]]![p[1]]!;
-      return s === symbol || s === WILD;
+      return s === symbol || WILDS.has(s);
     };
     const seen = new Set<string>();
     for (let c = 0; c < GRID_COLUMNS; c++) {
@@ -397,7 +398,7 @@ function ensureSeedCluster(board: Board, rng: Rng): void {
       ? (["BRASS", "KNIFE"] as SymbolId[])
       : tier === 1
         ? (["PISTOL", "AMMO", "DUFFEL"] as SymbolId[])
-        : (["CASH", "WATCH", "DIAMOND", "BIKE"] as SymbolId[]);
+        : (["CASH", "DIAMOND", "BIKE"] as SymbolId[]);
   const symbol = pool[rng.int(pool.length)]!;
   const size = rng.range(5, 10);
 

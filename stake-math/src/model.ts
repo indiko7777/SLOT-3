@@ -100,7 +100,7 @@ export const CLUSTER_PAY: Record<SymbolId, number> = {
   AMMO: 0.28,
   DUFFEL: 0.36,
   CASH: 0.8,
-  WATCH: 1.05,
+  WILD: 0,
   DIAMOND: 1.5,
   BIKE: 2.1,
   CAR_WILD: 0,
@@ -129,7 +129,6 @@ export const PAYABLE_SYMBOLS: SymbolId[] = [
   "AMMO",
   "DUFFEL",
   "CASH",
-  "WATCH",
   "DIAMOND",
   "BIKE"
 ];
@@ -162,7 +161,7 @@ function baseReels(): Record<SymbolId, number> {
     AMMO: 145,
     DUFFEL: 125,
     CASH: 70,
-    WATCH: 55,
+    WILD: 55,
     DIAMOND: 40,
     BIKE: 26,
     CAR_WILD: 12,

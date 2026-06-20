@@ -45,6 +45,7 @@ let snapshot: PlaybackSnapshot = INITIAL_SNAPSHOT;
 /** Persistent Wanted meter (0–5, fractional). Climbs on base-game wins; at 5 it
  *  triggers a FREE Getaway and resets. (3 scatters still trigger it directly.) */
 let wantedMeter = 0;
+let collectionCount = 0;
 
 /** How much a winning base spin raises the Wanted meter (bigger win → more). */
 function wantedGain(winX: number): number {
@@ -112,6 +113,15 @@ async function boot(): Promise<void> {
     getCredit: () => balance,
     getCurrency: () => currency,
     getWantedLevel: () => wantedMeter,
+    getCollectionCount: () => collectionCount,
+    incrementCollectionCount: () => {
+      if (collectionCount >= 8) collectionCount = 0;
+      collectionCount++;
+      return collectionCount;
+    },
+    resetCollectionCount: () => {
+      collectionCount = 0;
+    },
     onAction: handleAction,
     onSafeLand: (index, total) => {
       if (!muted) audioBus.fireSafeLand(index, total);
@@ -322,10 +332,10 @@ const PREVIEW_RECORD: RoundRecord = {
     {
       type: "board_settle",
       board: [
-        ["BIKE", "CASH", "WATCH", "KNIFE"],
+        ["BIKE", "CASH", "CASH", "KNIFE"],
         ["PISTOL", "DIAMOND", "DUFFEL", "AMMO"],
         ["CASH", "BRASS", "CAR_WILD", "PISTOL"],
-        ["WATCH", "AMMO", "DIAMOND", "DUFFEL"],
+        ["CASH", "AMMO", "DIAMOND", "DUFFEL"],
         ["DIAMOND", "CASH", "PISTOL", "BIKE"]
       ]
     }

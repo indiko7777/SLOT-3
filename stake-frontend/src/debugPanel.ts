@@ -17,7 +17,7 @@ const GROUPS: Group[] = [
       { label: "Ammo", action: "win:AMMO" },
       { label: "Duffel", action: "win:DUFFEL" },
       { label: "Cash", action: "win:CASH" },
-      { label: "Watch", action: "win:WATCH" },
+      { label: "Wild (Collection)", action: "win:WILD" },
       { label: "Diamond", action: "win:DIAMOND" },
       { label: "Bike", action: "win:BIKE" },
       { label: "Car (Wild)", action: "win:CAR_WILD" },
@@ -62,9 +62,14 @@ const GROUPS: Group[] = [
       { label: "Dynamite crack", action: "bonus:crack" },
       { label: "Grand Escape", action: "bonus:grand" },
       { label: "Busted", action: "bonus:bust" },
-      { label: "Hide bonus", action: "bonus:hide" },
     ],
   },
+  {
+    title: "Beach Girl Collection",
+    buttons: [
+      { label: "Trigger Next Piece", action: "collection:next" }
+    ]
+  }
 ];
 
 export function mountDebugPanel(onAction: (action: string) => void): void {

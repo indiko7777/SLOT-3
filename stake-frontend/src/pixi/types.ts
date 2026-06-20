@@ -11,6 +11,10 @@ export interface SceneRuntime {
   getCurrency(): string;
   /** Persistent Wanted meter, 0–5 (fractional). At 5 the Getaway triggers free. */
   getWantedLevel(): number;
+  /** Beach Girl collection count, 0-7 */
+  getCollectionCount(): number;
+  incrementCollectionCount(): number;
+  resetCollectionCount(): void;
   onAction(action: string): Promise<void>;
   onSafeLand?: (index: number, total: number) => void;
   /** Bonus heat level 0–3 (consecutive dead spins); drives siren/helicopter audio. */

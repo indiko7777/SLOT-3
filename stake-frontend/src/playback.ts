@@ -16,6 +16,7 @@ export interface PlaybackSnapshot {
   scatterPositions: Position[];
   respins: number;
   capApplied: boolean;
+  collectionCount: number;
 }
 
 export const INITIAL_SNAPSHOT: PlaybackSnapshot = {
@@ -33,7 +34,8 @@ export const INITIAL_SNAPSHOT: PlaybackSnapshot = {
   cracked: [],
   scatterPositions: [],
   respins: 3,
-  capApplied: false
+  capApplied: false,
+  collectionCount: 0
 };
 
 export function applyEvent(snapshot: PlaybackSnapshot, event: GameEvent, record: RoundRecord): PlaybackSnapshot {
@@ -209,8 +211,8 @@ export function eventDelay(event: GameEvent, turbo: boolean): number {
 
 export function symbolTone(symbol: SymbolId): string {
   if (symbol === "BRASS" || symbol === "KNIFE") return "low";
-  if (symbol === "CASH" || symbol === "WATCH" || symbol === "DIAMOND" || symbol === "BIKE") return "premium";
-  if (symbol === "CAR_WILD") return "wild";
+  if (symbol === "CASH" || symbol === "DIAMOND" || symbol === "BIKE") return "premium";
+  if (symbol === "CAR_WILD" || symbol === "WILD") return "wild";
   if (symbol === "PHONE_SCATTER") return "scatter";
   if (symbol === "SAFE" || symbol === "MASTER_KEY") return "bonus";
   return "mid";
