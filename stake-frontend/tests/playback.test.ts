@@ -63,4 +63,19 @@ describe("event-driven playback", () => {
     expect(finalSnapshot.roundWin).toBe(5000);
     expect(finalSnapshot.capApplied).toBe(true);
   });
+
+  it("carries over collectionCount across round_start", () => {
+    const initialWithCollection = {
+      ...INITIAL_SNAPSHOT,
+      collectionCount: 4
+    };
+    const startEvent = {
+      type: "round_start",
+      mode: "base",
+      boardSeedLabel: "x",
+      turboProfile: "normal"
+    } as any;
+    const snapshotAfterStart = applyEvent(initialWithCollection, startEvent, record);
+    expect(snapshotAfterStart.collectionCount).toBe(4);
+  });
 });

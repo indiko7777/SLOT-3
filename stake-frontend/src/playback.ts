@@ -53,6 +53,7 @@ export function applyEvent(snapshot: PlaybackSnapshot, event: GameEvent, record:
         ...INITIAL_SNAPSHOT,
         state: "spinning",
         modeLabel: event.mode,
+        collectionCount: snapshot.collectionCount,
         lastMessage: `Dispatch locked: ${event.boardSeedLabel}`
       };
     case "board_settle":

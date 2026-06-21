@@ -228,7 +228,10 @@ async function playRound(modeKey: string, free = false): Promise<void> {
 
   isPlaying = true;
   activeModeKey = modeKey;
-  snapshot = INITIAL_SNAPSHOT;
+  snapshot = {
+    ...INITIAL_SNAPSHOT,
+    collectionCount
+  };
   scene.resetRound(snapshot);
 
   let hadBonus = false;
