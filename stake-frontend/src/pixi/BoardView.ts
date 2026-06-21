@@ -335,6 +335,7 @@ export class BoardView extends Container {
    * grid-aligned. Pure position math — no filters, no precomputed mega-strip.
    */
   private async spinReels(finalBoard: Board, turbo: boolean, scatterCols?: Set<number>): Promise<void> {
+    console.log("[BoardView] spinReels starting. finalBoard:", JSON.stringify(finalBoard));
     const cellStep = this.cellHeight + this.gap;
 
     // Reel geometry. A couple of cells live above the viewport (feed-in buffer)
@@ -465,8 +466,9 @@ export class BoardView extends Container {
     const land: Promise<void>[] = [];
     for (const reel of reels) {
       for (let row = 0; row < VISIBLE; row++) {
-        const id = finalBoard[reel.col]![row]!;
-        const view = new SymbolView(id);
+        const id = finalBoard[reel.col]?.[row];
+        console.log(`[BoardView] Handoff cell col=${reel.col} row=${row} symbolId=${id}`);
+        const view = new SymbolView(id as SymbolId);
         view.layout(this.cellWidth, this.cellHeight);
         view.position.set(this.cellX(reel.col), this.cellY(row));
         this.symbols.set(keyOf([reel.col, row]), view);

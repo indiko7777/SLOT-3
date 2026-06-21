@@ -141,6 +141,8 @@ async function boot(): Promise<void> {
   // DEV-only on-screen feature tester (stripped from production builds): fire any
   // win / combination / bonus animation from a button panel — no spinning needed.
   if (import.meta.env.DEV) {
+    (window as any).scene = scene;
+    (window as any).pixi = pixi;
     const { mountDebugPanel } = await import("./debugPanel");
     mountDebugPanel((action) => { void scene?.debugPlay(action); });
   }
