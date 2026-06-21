@@ -60,6 +60,7 @@ export class BonusView extends Container {
 
   private heat = 0;          // 0 = baseline … 3 = max
   private busted = false;
+  private spinPips: Graphics[] = [];
   private readonly cells = new Map<string, Container>();
 
   constructor() {
@@ -407,6 +408,7 @@ export class BonusView extends Container {
     this.truck = this.stars = null;
     this.collectedText = this.spinsLabel = this.spinsText = null;
     this.spinsBox = null;
+    this.spinPips = [];
     this.resultCard = null;
   }
 
@@ -526,6 +528,23 @@ export class BonusView extends Container {
     sVal.position.set(0, 16);
     box.addChild(sVal);
     this.spinsText = sVal;
+
+    // Pip row — one dot per possible respin, filled=remaining, empty=spent
+    this.spinPips = [];
+    const pipSize = 6;
+    const pipGap = 6;
+    const pipsRow = new Container();
+    const pipsW = MAX_RESPINS * (pipSize * 2 + pipGap) - pipGap;
+    for (let i = 0; i < MAX_RESPINS; i++) {
+      const pip = new Graphics();
+      pip.x = -pipsW / 2 + i * (pipSize * 2 + pipGap) + pipSize;
+      pip.y = 0;
+      pipsRow.addChild(pip);
+      this.spinPips.push(pip);
+    }
+    pipsRow.y = 16 + Math.min(56, W / 14) + 8;
+    box.addChild(pipsRow);
+
     this.setSpins(MAX_RESPINS);
 
     // COLLECTED total, bottom-centre
@@ -548,6 +567,19 @@ export class BonusView extends Container {
     this.spinsText.style.fill = low ? 0xffb000 : 0xffd95c;
     this.spinsLabel.text = v === 1 ? "LAST SPIN!" : "SPINS LEFT";
     this.spinsLabel.style.fill = low ? 0xffb000 : 0x9fb4d0;
+    this.updateSpinPips(v);
+  }
+
+  private updateSpinPips(n: number): void {
+    const v = Math.max(0, n);
+    this.spinPips.forEach((pip, i) => {
+      pip.clear();
+      if (i < v) {
+        pip.circle(0, 0, 6).fill(0xffd95c);
+      } else {
+        pip.circle(0, 0, 6).fill(0x111e36).stroke({ color: 0xffd95c, width: 1.5, alpha: 0.3 });
+      }
+    });
   }
 
   /** A new symbol landed — respins reset to full. Make it unmistakable. */
@@ -555,17 +587,16 @@ export class BonusView extends Container {
     const box = this.spinsBox;
     if (box) {
       void tween(440, (p) => box.scale.set(1 + Math.sin(Math.min(1, p) * Math.PI) * 0.32)).then(() => box.scale.set(1));
-      this.floatCallout(box.x, box.y - 8, "SPINS RESET", 0xffd95c);
+      this.floatCallout(box.x, box.y - 8, "RESET!", 0xffd95c);
     }
   }
 
-  /** A dead spin — one respin spent. Shake + "-1" so the player feels it. */
+  /** A dead spin — one respin spent. Shake the box so the player feels it. */
   private pulseSpinsDead(): void {
     const box = this.spinsBox;
     if (box) {
       const bx = box.x;
       void tween(380, (p) => { box.x = bx + Math.sin(p * Math.PI * 5) * 6 * (1 - p); }).then(() => (box.x = bx));
-      this.floatCallout(box.x, box.y - 8, "-1 SPIN", 0xffb000);
     }
   }
 
@@ -656,6 +687,12 @@ export class BonusView extends Container {
   private buildGoldBar(value: number, col: number, row: number, hideNumber = false): Container {
     const r = this.cellRect(col, row);
     const c = new Container();
+
+    // Solid cell background so no transparent gaps appear at edges when locked
+    const cellBg = new Graphics();
+    cellBg.roundRect(-r.w / 2 + 1, -r.h / 2 + 1, r.w - 2, r.h - 2, 3).fill(REEL_BG);
+    c.addChild(cellBg);
+
     const tex = getExtraTexture("gold_bar");
     if (tex) {
       const s = new Sprite(tex);
@@ -773,13 +810,14 @@ export class BonusView extends Container {
     // filler screens above (all rows → a continuously-filled reel; masked to open rows)
     for (let k = 1; k <= screens; k++) for (let r = 0; r < GRID_ROWS; r++) addFace(r, k, false);
 
-    // mask = the open rows only, so locked rows keep showing their sticky overlay
+    // mask = the open rows only, so locked rows keep showing their sticky overlay.
+    // Insert strip + mask at z-index 0 so previously locked gold bars render on top.
     const mask = new Graphics();
     for (const r of rows) { const rc = this.cellRect(col, r); mask.rect(rc.x, rc.y, rc.w, rc.h).fill(0xffffff); }
-    this.gridLayer.addChild(mask);
+    this.gridLayer.addChildAt(mask, 0);
     strip.mask = mask;
     strip.y = -travel;
-    this.gridLayer.addChild(strip);
+    this.gridLayer.addChildAt(strip, 0);
 
     // Vertical motion blur so the reel reads as genuinely SPINNING, even when
     // every open cell ends up empty (a dead spin). Blur decays as it stops.

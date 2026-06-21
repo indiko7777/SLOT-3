@@ -1,4 +1,4 @@
-import { Container, Graphics, Sprite, Text, TextStyle } from "pixi.js";
+import { BlurFilter, Container, Graphics, Sprite, Text, TextStyle } from "pixi.js";
 import { GRID_COLUMNS, GRID_ROWS, type Board, type Position, type SymbolId } from "../domain";
 import { SYMBOL_ASSETS, getSymbolTexture } from "./assets";
 import { SymbolView } from "./SymbolView";
@@ -81,7 +81,15 @@ export class BoardView extends Container {
   async settle(board: Board, turbo: boolean, scatterCols?: Set<number>): Promise<void> {
     this.stopAmbient();
     this.currentBoard = board;
-    await this.spinReels(board, turbo, scatterCols);
+    try {
+      await this.spinReels(board, turbo, scatterCols);
+    } catch (err) {
+      // If the spin animation fails mid-flight (e.g. WebGL context loss),
+      // this.symbols was cleared but never repopulated → grid appears blank.
+      // Rebuild instantly so the player always sees a valid board.
+      console.error("[BoardView] spinReels failed — falling back to instant settle:", err);
+      this.rebuildSymbols(board);
+    }
     this.startAmbient();
   }
 
@@ -372,8 +380,10 @@ export class BoardView extends Container {
       strip: Container;
       finalViews: Map<string, SymbolView>;
       scrollDist: number;
+      blur: BlurFilter;
     }
     const reels: ReelData[] = [];
+    const blurMax = turbo ? 8 : 22;
 
     for (let col = 0; col < GRID_COLUMNS; col++) {
       const strip = new Container();
@@ -403,8 +413,10 @@ export class BoardView extends Container {
 
       const scrollDist = fillerStartY + totalFiller * cellStep;
       strip.y = -scrollDist; // start strip well above the viewport
+      const blur = new BlurFilter({ strengthX: 0, strengthY: blurMax, quality: 2 });
+      strip.filters = [blur];
       this.reelContainer.addChild(strip);
-      reels.push({ strip, finalViews, scrollDist });
+      reels.push({ strip, finalViews, scrollDist, blur });
     }
 
     // ── 4. Shared spin phase: old symbols exit downward, strips scroll up ────
@@ -451,23 +463,27 @@ export class BoardView extends Container {
 
       reelPromises.push((async () => {
         if (delay > 0) {
-          // Crawl during anticipation stagger
+          // Crawl during anticipation stagger — blur stays near max
           const crawlDist = remaining * 0.55;
           await tween(delay, (p) => {
             reel.strip.y = currentY + crawlDist * p;
+            reel.blur.strengthY = blurMax * Math.max(0.4, 1 - p * 0.3);
           }, linear);
-          // Snap to final position with bounce overshoot
+          // Snap to final position with bounce — blur fades out
           const postY = currentY + crawlDist;
           const finalDist = 0 - postY;
           await tween(decelDur, (p) => {
             reel.strip.y = postY + finalDist * p;
+            reel.blur.strengthY = blurMax * (1 - p) * (1 - p) * 0.5;
           }, easeOutBack);
         } else {
           await tween(decelDur, (p) => {
             reel.strip.y = currentY + remaining * p;
+            reel.blur.strengthY = blurMax * (1 - p) * (1 - p) * 0.5;
           }, easeOutBack);
         }
         reel.strip.y = 0;
+        reel.blur.strengthY = 0;
         this.onReelStop?.(col, GRID_COLUMNS);
       })());
     }
@@ -505,7 +521,6 @@ export class BoardView extends Container {
 
   private createSpinTile(id: SymbolId): Container {
     const c = new Container();
-
     const tex = getSymbolTexture(id);
     if (tex && tex.width > 0 && tex.height > 0) {
       const sprite = new Sprite(tex);
@@ -521,9 +536,9 @@ export class BoardView extends Container {
         c.addChild(sprite);
       }
     }
-
     return c;
   }
+
 
 
   private startAmbient(): void {

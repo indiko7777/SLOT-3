@@ -10,6 +10,7 @@
     "dev:local": "concurrently -k -n RGS,WEB -c cyan,magenta \"npm:mock-rgs\" \"npm:dev\"",
     "build": "tsc && vite build",
     "test": "vitest run",
+    "strip-bg": "node tools/asset-pipeline/strip-bg.mjs",
     "check": "npm run test && npm run build"
   },
   "dependencies": {

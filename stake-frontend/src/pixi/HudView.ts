@@ -246,22 +246,29 @@ export class HudView extends Container {
       glow.alpha = 0.08 + breath * 0.14;
     });
 
+    // Scale visual children (glow + bg), not the panel container itself.
+    // This keeps the hit area stable so pointerup always routes back to `panel`.
+    const scaleTarget = (s: number) => { glow.scale.set(s); bg.scale.set(s); };
+
     panel.on("pointerover", () => {
       if (!this.runtime.isPlaying()) {
-        panel.scale.set(1.04);
+        scaleTarget(1.04);
         glow.alpha = 0.4;
       }
     });
     panel.on("pointerout", () => {
-      panel.scale.set(1);
+      scaleTarget(1);
     });
     panel.on("pointerdown", () => {
-      if (!this.runtime.isPlaying()) panel.scale.set(0.96);
+      if (!this.runtime.isPlaying()) scaleTarget(0.96);
     });
     panel.on("pointerup", () => {
-      panel.scale.set(1);
+      scaleTarget(1);
+      void this.runtime.onAction(action);
     });
-    panel.on("pointertap", () => void this.runtime.onAction(action));
+    panel.on("pointerupoutside", () => {
+      scaleTarget(1);
+    });
     this.addChild(panel);
   }
 
@@ -526,22 +533,28 @@ export class HudView extends Container {
     const button = new Container();
     const R = 44;
 
+    // `visual` is the element that scales on press.
+    // Keeping it separate from `button` (the hit-area container) means the
+    // interactive bounds never change mid-press, so Pixi always routes pointerup
+    // back to `button` even if the pointer drifted slightly during the press.
+    const visual = new Container();
+
     // Halo glow behind
     const halo = new Graphics();
     halo.circle(R, R, R + 10).fill({ color: 0x48e5ff, alpha: isPlaying ? 0 : 0.08 });
-    button.addChild(halo);
+    visual.addChild(halo);
 
     // Outer ring
     const outer = new Graphics();
     outer.circle(R, R, R).fill({ color: 0x0a1428, alpha: 0.5 });
     outer.circle(R, R, R).stroke({ color: isPlaying ? 0x3a4a5c : 0x48e5ff, width: 4 });
-    button.addChild(outer);
+    visual.addChild(outer);
 
     // Inner disc
     const inner = new Graphics();
     inner.circle(R, R, R - 8).fill({ color: 0x0c1530, alpha: 0.5 });
     inner.circle(R, R, R - 8).stroke({ color: isPlaying ? 0x2a3a4c : 0x48e5ff, width: 1.5, alpha: 0.4 });
-    button.addChild(inner);
+    visual.addChild(inner);
 
     // SPIN text — Impact
     const spinText = new Text({
@@ -557,8 +570,9 @@ export class HudView extends Container {
     });
     spinText.anchor.set(0.5, 0.5);
     spinText.position.set(R, R);
-    button.addChild(spinText);
+    visual.addChild(spinText);
 
+    button.addChild(visual);
     button.position.set(x, y);
     button.eventMode = "static";
     button.cursor = isPlaying ? "default" : "pointer";
@@ -571,21 +585,26 @@ export class HudView extends Container {
       });
 
       button.on("pointerover", () => {
-        button.scale.set(1.08);
+        visual.scale.set(1.08);
         halo.alpha = 0.20;
       });
       button.on("pointerout", () => {
-        button.scale.set(1);
+        visual.scale.set(1);
       });
       button.on("pointerdown", () => {
-        button.scale.set(0.94);
+        visual.scale.set(0.94);
       });
+      // Use pointerup (not pointertap) so the action fires reliably even when
+      // the pointer drifted a few pixels between down and up.
       button.on("pointerup", () => {
-        button.scale.set(1);
+        visual.scale.set(1);
+        void this.runtime.onAction("spin");
+      });
+      button.on("pointerupoutside", () => {
+        visual.scale.set(1);
       });
     }
 
-    button.on("pointertap", () => void this.runtime.onAction("spin"));
     this.addChild(button);
   }
 }

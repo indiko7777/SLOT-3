@@ -82,123 +82,16 @@ const BG_ASSETS: Record<string, string> = {
   "bg_slot3": "slot3_bg.png",
 };
 
-function removeBlackBackground(texture: Texture, isKnuckles = false): Texture {
-  const source = (texture.source as any).resource;
-  if (!source) return texture;
-
-  const canvas = document.createElement("canvas");
-  const width = Math.round(texture.width || (source as HTMLImageElement).naturalWidth || (source as HTMLImageElement).width || 0);
-  const height = Math.round(texture.height || (source as HTMLImageElement).naturalHeight || (source as HTMLImageElement).height || 0);
-  // Guard: if dimensions are 0 the texture isn't decoded yet — return original safely
-  if (width <= 0 || height <= 0) return texture;
-  canvas.width = width;
-  canvas.height = height;
-
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return texture;
-
-  ctx.drawImage(source, 0, 0, width, height);
-
-  const imgData = ctx.getImageData(0, 0, width, height);
-  const data = imgData.data;
-
-  if (isKnuckles) {
-    // For brass knuckles, key out ALL near-black pixels (including inside the rings)
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i]!;
-      const g = data[i + 1]!;
-      const b = data[i + 2]!;
-      if (r < 35 && g < 35 && b < 35) {
-        data[i + 3] = 0;
-      }
-    }
-  } else {
-    // Flood fill from borders
-    const visited = new Uint8Array(width * height);
-    const queue: number[] = [];
-
-    const isNearBlack = (x: number, y: number): boolean => {
-      const idx = (y * width + x) * 4;
-      const r = data[idx]!;
-      const g = data[idx + 1]!;
-      const b = data[idx + 2]!;
-      return r < 35 && g < 35 && b < 35;
-    };
-
-    // Add border pixels to queue
-    for (let x = 0; x < width; x++) {
-      if (isNearBlack(x, 0)) {
-        const idx = 0 * width + x;
-        visited[idx] = 1;
-        queue.push(x, 0);
-      }
-      if (isNearBlack(x, height - 1)) {
-        const idx = (height - 1) * width + x;
-        visited[idx] = 1;
-        queue.push(x, height - 1);
-      }
-    }
-    for (let y = 1; y < height - 1; y++) {
-      if (isNearBlack(0, y)) {
-        const idx = y * width + 0;
-        visited[idx] = 1;
-        queue.push(0, y);
-      }
-      if (isNearBlack(width - 1, y)) {
-        const idx = y * width + (width - 1);
-        visited[idx] = 1;
-        queue.push(width - 1, y);
-      }
-    }
-
-    // BFS flood fill
-    let head = 0;
-    while (head < queue.length) {
-      const cx = queue[head++]!;
-      const cy = queue[head++]!;
-
-      const idx = (cy * width + cx) * 4;
-      data[idx + 3] = 0; // Set alpha to 0 (fully transparent)
-
-      const neighbors = [
-        [cx + 1, cy],
-        [cx - 1, cy],
-        [cx, cy + 1],
-        [cx, cy - 1],
-      ];
-
-      for (const [nx, ny] of neighbors) {
-        if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-          const nidx = ny * width + nx;
-          if (visited[nidx] === 0 && isNearBlack(nx, ny)) {
-            visited[nidx] = 1;
-            queue.push(nx, ny);
-          }
-        }
-      }
-    }
-  }
-
-  ctx.putImageData(imgData, 0, 0);
-  return Texture.from(canvas);
-}
-
 export async function loadSymbolTextures(): Promise<void> {
   if (loaded) return;
 
-  const entries = Object.values(SYMBOL_ASSETS);
-
-  // Load each symbol texture individually so a single bad file never poisons the batch.
+  // All symbol PNGs have been pre-processed by tools/asset-pipeline/strip-bg.mjs —
+  // black backgrounds removed at build time. Just load them directly.
   await Promise.all(
-    entries.map(async (skin) => {
+    Object.values(SYMBOL_ASSETS).map(async (skin) => {
       try {
-        const url = BASE_PATH + skin.assetKey;
-        const tex = await Assets.load<Texture>(url);
-        if (tex instanceof Texture) {
-          const isKnuckles = skin.assetKey.includes("brass_knuckles");
-          const processed = removeBlackBackground(tex, isKnuckles);
-          textureCache.set(skin.assetKey, processed);
-        }
+        const tex = await Assets.load<Texture>(BASE_PATH + skin.assetKey);
+        if (tex instanceof Texture) textureCache.set(skin.assetKey, tex);
       } catch (err) {
         console.warn(`[assets] Failed to load symbol texture: ${skin.assetKey}`, err);
       }

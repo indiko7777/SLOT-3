@@ -5,7 +5,7 @@
       "name": "heat-chase",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "stake-frontend", "run", "dev:local"],
-      "port": 5175
+      "port": 5176
     }
   ]
 }

@@ -40,7 +40,7 @@ export class SymbolView extends Container {
     const tex = getSymbolTexture(id);
     this.animation = getSymbolAnimation(id);
 
-    if (tex) {
+    if (tex && tex.width > 0 && tex.height > 0) {
       this.sprite = new Sprite(tex);
       this.sprite.anchor.set(0.5);
     } else {
@@ -218,10 +218,7 @@ export class SymbolView extends Container {
       if (fx) {
         const s = baseScale * (1 + popAmt * Math.sin(p * Math.PI));
         fx.scale.set(s);
-        fx.skew.x = tiltAmt * Math.sin(p * Math.PI * 2) * (1 - p); // quick parallax wobble
-        fx.tint = p < 0.5
-          ? lerpColor(0xffffff, lighten(accent), p * 2)
-          : lerpColor(lighten(accent), 0xffffff, (p - 0.5) * 2);
+        fx.skew.x = tiltAmt * Math.sin(p * Math.PI * 2) * (1 - p);
       } else {
         this.scale.set(1 + popAmt * Math.sin(p * Math.PI));
       }
@@ -237,7 +234,7 @@ export class SymbolView extends Container {
     await sweep;
 
     // Reset to clean idle state.
-    if (fx) { fx.tint = 0xffffff; fx.skew.x = 0; fx.scale.set(baseScale); }
+    if (fx) { fx.skew.x = 0; fx.scale.set(baseScale); }
     this.scale.set(1);
     this.winGlow.alpha = 0;
     this.shimmer.alpha = 0;
@@ -317,17 +314,3 @@ export class SymbolView extends Container {
   }
 }
 
-/** Push a colour toward white (for a bright flash tint). */
-function lighten(c: number): number {
-  return lerpColor(c, 0xffffff, 0.55);
-}
-
-/** Linearly interpolate between two RGB colors */
-function lerpColor(a: number, b: number, t: number): number {
-  const ar = (a >> 16) & 0xff, ag = (a >> 8) & 0xff, ab = a & 0xff;
-  const br = (b >> 16) & 0xff, bg = (b >> 8) & 0xff, bb = b & 0xff;
-  const r = Math.round(ar + (br - ar) * t);
-  const g = Math.round(ag + (bg - ag) * t);
-  const bl = Math.round(ab + (bb - ab) * t);
-  return (r << 16) | (g << 8) | bl;
-}

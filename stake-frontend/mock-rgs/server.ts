@@ -258,5 +258,5 @@ function jurisdiction(): Record<string, unknown> {
 
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`[mock-rgs] listening on http://127.0.0.1:${PORT}`);
-  console.log(`[mock-rgs] open the game at http://127.0.0.1:5175/`);
+  console.log(`[mock-rgs] open the game at http://127.0.0.1:5176/`);
 });
