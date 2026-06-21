@@ -6,6 +6,7 @@ import { BonusView } from "./BonusView";
 import { EffectsLayer } from "./EffectsLayer";
 import { HudView } from "./HudView";
 import { PaytableView } from "./PaytableView";
+import { SymbolView } from "./SymbolView";
 import { computeLayout } from "./layout";
 import { getExtraTexture } from "./assets";
 import { tween, wait, easeInOutCubic, easeOutBack } from "./tween";
@@ -24,6 +25,7 @@ export class PixiGameScene {
   private hasBoard = false;
   private bonusDeadSpins = 0;
   private bonusActive = false;
+  private readonly collectedWilds = new Set<SymbolView>();
 
   constructor(private readonly app: Application, private readonly runtime: SceneRuntime) {
     this.layout = computeLayout(app.screen.width, app.screen.height);
@@ -45,6 +47,7 @@ export class PixiGameScene {
   }
 
   resetRound(snapshot: PlaybackSnapshot): void {
+    this.collectedWilds.clear();
     this.currentSnapshot = snapshot;
     this.bonus.hide();
     // DON'T rebuild the board here — the spin animation will handle it.
@@ -112,6 +115,7 @@ export class PixiGameScene {
 
   /** Restore a clean idle base board (used by the panel's Reset). */
   private debugReset(): void {
+    this.collectedWilds.clear();
     this.bonus.hide();
     this.bonusActive = false;
     if (this.currentSnapshot) { this.hasBoard = false; this.renderSnapshot(this.currentSnapshot); }
@@ -319,6 +323,7 @@ export class PixiGameScene {
         return;
       case "tumble_drop":
         await this.board.tumbleTo(event.board, turbo);
+        await this.checkAndPlayCollectionAnimation(event.board, turbo);
         return;
       case "heat_advance":
         // No red police siren on a win any more — the cluster links carry the
@@ -406,7 +411,11 @@ export class PixiGameScene {
     for (let col = 0; col < GRID_COLUMNS; col++) {
       for (let row = 0; row < GRID_ROWS; row++) {
         if (board[col][row] === "WILD") {
-          wildPositions.push([col, row]);
+          const symbolView = this.board.getSymbolView([col, row]);
+          if (symbolView && !this.collectedWilds.has(symbolView)) {
+            wildPositions.push([col, row]);
+            this.collectedWilds.add(symbolView);
+          }
         }
       }
     }
