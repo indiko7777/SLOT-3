@@ -313,7 +313,9 @@ export class PixiGameScene {
         return;
       }
       case "tumble_remove":
-        await this.board.remove(event.positions, turbo);
+        // Clear winning symbols and leave the holes — tumble_drop refills them
+        // from the authoritative RGS board so symbols fall down with no blanks.
+        await this.board.clearWins(event.positions, turbo);
         return;
       case "tumble_drop":
         await this.board.tumbleTo(event.board, turbo);

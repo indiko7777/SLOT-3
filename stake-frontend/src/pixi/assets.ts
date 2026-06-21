@@ -142,6 +142,7 @@ export async function loadSymbolTextures(): Promise<void> {
 
 export function getSymbolTexture(id: SymbolId): Texture | null {
   const skin = SYMBOL_ASSETS[id];
+  if (!skin) return null; // unknown / undefined id → caller falls back, never throws
   return textureCache.get(skin.assetKey) ?? null;
 }
 

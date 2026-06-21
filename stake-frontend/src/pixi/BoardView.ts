@@ -1,16 +1,35 @@
-import { BlurFilter, Container, Graphics, Sprite, Text, TextStyle } from "pixi.js";
+import { Container, Graphics, Sprite, Text, TextStyle } from "pixi.js";
 import { GRID_COLUMNS, GRID_ROWS, type Board, type Position, type SymbolId } from "../domain";
-import { SYMBOL_ASSETS, getSymbolTexture } from "./assets";
+import { getSymbolTexture } from "./assets";
 import { SymbolView } from "./SymbolView";
-import { tween, wait, easeOutCubic, easeOutBounce, easeInCubic, linear, ambientTicker } from "./tween";
+import { tween, wait, easeOutQuad, easeOutBounce, linear, ambientTicker } from "./tween";
 import type { Rect } from "./types";
 
+/** Symbols that may appear as spinning filler. All have loaded textures, so a
+ *  reel cell is never blank. Special symbols (wild/scatter/safe/key) only ever
+ *  arrive as final results, never as random filler. */
 const ALL_SYMBOLS: SymbolId[] = ["BRASS", "KNIFE", "PISTOL", "AMMO", "DUFFEL", "CASH", "DIAMOND", "BIKE"];
 
-const easeOutBack: (t: number) => number = (t) => {
-  const c = 1.2;
-  return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2);
-};
+function randomSymbol(): SymbolId {
+  return ALL_SYMBOLS[(Math.random() * ALL_SYMBOLS.length) | 0]!;
+}
+
+/** One lightweight scrolling reel cell — a single re-textured sprite. */
+interface ReelCell {
+  container: Container;
+  sprite: Sprite | null;
+  y: number;
+}
+
+/** Per-column reel state for the treadmill spin. */
+interface Reel {
+  col: number;
+  cells: ReelCell[];
+  scroll: number;       // cumulative downward travel (px)
+  wrapCount: number;    // number of cells recycled to the top so far
+  feed: Map<number, SymbolId>; // wrapIndex → forced symbol (used to land finals)
+  state: "spin" | "decel" | "stopped";
+}
 
 export class BoardView extends Container {
   private readonly background = new Graphics();
@@ -27,7 +46,6 @@ export class BoardView extends Container {
   private ambientCb: ((dt: number, elapsed: number) => void) | null = null;
   private onReelStop?: (col: number, total: number) => void;
   private onAnticipation?: () => void;
-  private preSpinRAF: number | null = null;
 
   /** Wire audio cues fired during the reel spin (reel stops, anticipation riser). */
   setAudioHooks(hooks: { onReelStop?: (col: number, total: number) => void; onAnticipation?: () => void }): void {
@@ -93,36 +111,6 @@ export class BoardView extends Container {
     this.startAmbient();
   }
 
-  /**
-   * Call this immediately when the user clicks Spin (before the network call).
-   * Applies a vertical motion blur + subtle oscillation so the board looks live.
-   * The real spinReels() cancels this automatically when it starts.
-   */
-  startPreSpinVisual(turbo: boolean): void {
-    this.stopPreSpinVisual();
-    const { BlurFilter } = (window as any).__PIXI__ ?? {};
-    // Apply vertical blur to all symbols to signal motion
-    for (const s of this.symbols.values()) s.setSpinBlur(turbo ? 4 : 10);
-    // Oscillate the entire reel container slightly to sell the motion
-    let t = 0;
-    const baseY = this.reelContainer.y;
-    const loop = () => {
-      t += 0.07;
-      this.reelContainer.y = baseY + Math.sin(t) * 2;
-      this.preSpinRAF = requestAnimationFrame(loop);
-    };
-    this.preSpinRAF = requestAnimationFrame(loop);
-  }
-
-  private stopPreSpinVisual(): void {
-    if (this.preSpinRAF !== null) {
-      cancelAnimationFrame(this.preSpinRAF);
-      this.preSpinRAF = null;
-    }
-    this.reelContainer.y = 0;
-    for (const s of this.symbols.values()) s.setSpinBlur(0);
-  }
-
   async highlight(positions: Position[], turbo: boolean): Promise<void> {
     this.markPositions(positions, "highlight");
     await Promise.all(
@@ -137,8 +125,10 @@ export class BoardView extends Container {
     await wait(turbo ? 60 : 200);
   }
 
-  /* ─── REMOVE: flash + collapse winning symbols, then gravity-drop survivors ─── */
-  async remove(positions: Position[], turbo: boolean): Promise<void> {
+  /* ─── CLEAR WINS: flash + vanish winning symbols, leaving gaps behind ─── */
+  // Used by the real cascade (tumble_remove): the holes are filled afterwards by
+  // tumbleTo() using the authoritative RGS board, so we must NOT refill here.
+  async clearWins(positions: Position[], turbo: boolean): Promise<void> {
     this.markPositions(positions, "highlight");
     await Promise.all(
       positions.map((p) => this.symbols.get(keyOf(p))?.vanish(turbo) ?? Promise.resolve())
@@ -147,6 +137,12 @@ export class BoardView extends Container {
       const v = this.symbols.get(keyOf(p));
       if (v) { v.destroy({ children: true }); this.symbols.delete(keyOf(p)); }
     }
+  }
+
+  /* ─── REMOVE: clear winning symbols, then gravity-refill with random ─── */
+  // Self-contained (clear + refill). Used by the debug feature tester only.
+  async remove(positions: Position[], turbo: boolean): Promise<void> {
+    await this.clearWins(positions, turbo);
     await this.collapseColumns(turbo);
   }
 
@@ -329,214 +325,210 @@ export class BoardView extends Container {
     };
   }
 
-  /* ─── REEL SPIN — per-column stopping with scatter anticipation ─── */
+  /* ─── REEL SPIN — continuous treadmill reel, per-column staggered stop ───
+   *
+   * Each column is a vertical "treadmill" of lightweight cells that scroll
+   * downward continuously. A cell that drops past the bottom is recycled to the
+   * top with a fresh symbol, so a column is NEVER blank and NEVER static. To
+   * land the result, the final symbols are fed into the recycle stream at the
+   * exact wrap indices that place them in rows 0..3 when the reel comes to rest
+   * grid-aligned. Pure position math — no filters, no precomputed mega-strip.
+   */
   private async spinReels(finalBoard: Board, turbo: boolean, scatterCols?: Set<number>): Promise<void> {
-    // Cancel any pre-spin visual immediately — real animation takes over
-    this.stopPreSpinVisual();
-
     const cellStep = this.cellHeight + this.gap;
-    const baseFillerCount = turbo ? 10 : 20;
 
-    // ── 1. Sweep ALL current reelContainer children cleanly ──────────────────
-    // Move known symbols into oldWrapper (scrolls them off-screen with the spin)
-    // then destroy any other orphaned objects (e.g. stale strips from a previous run).
-    const oldWrapper = new Container();
-    for (const [, view] of this.symbols) {
-      oldWrapper.addChild(view); // reparents: automatically removes from reelContainer
+    // Reel geometry. A couple of cells live above the viewport (feed-in buffer)
+    // and one below (clean exit). N cells fully tile the column at all times.
+    const ABOVE = 2;
+    const BELOW = 1;
+    const VISIBLE = GRID_ROWS;
+    const N = ABOVE + VISIBLE + BELOW;
+    const topY = this.cellY(0) - ABOVE * cellStep;
+    const wrapSpan = N * cellStep;
+    const STOP_STEPS = ABOVE + 4;                 // cells of travel during decel
+
+    // Tuning. Deceleration time is derived so the reel slows out of full speed
+    // smoothly (no velocity jump at the spin→stop handoff).
+    const velCells = turbo ? 30 : 24;             // full speed, in cells/second
+    const Vmax = cellStep * velCells;             // px/s
+    const accelTime = turbo ? 70 : 150;           // ms ramp-up to full speed
+    const hold = turbo ? 120 : 320;               // ms at full speed before first stop
+    const baseStagger = turbo ? 70 : 130;         // ms between column stops
+    const decelDur = (2000 * STOP_STEPS) / velCells; // ms (easeOutQuad, starts ≈Vmax)
+
+    // ── 1. Snapshot the on-screen board so it scrolls away seamlessly. ──
+    const oldIds: (SymbolId | null)[][] = [];
+    for (let col = 0; col < GRID_COLUMNS; col++) {
+      const colIds: (SymbolId | null)[] = [];
+      for (let row = 0; row < GRID_ROWS; row++) {
+        colIds.push(this.symbols.get(keyOf([col, row]))?.id ?? null);
+      }
+      oldIds.push(colIds);
     }
+
+    // Tear the old board down and empty the container completely.
+    this.symbols.forEach((v) => v.destroy({ children: true }));
     this.symbols.clear();
-
-    // Destroy any remaining stale children (not oldWrapper, whose contents we still need)
-    const stale = [...this.reelContainer.children];
-    for (const child of stale) {
+    for (const child of [...this.reelContainer.children]) {
       this.reelContainer.removeChild(child);
-      if (child !== oldWrapper) child.destroy({ children: true });
+      child.destroy({ children: true });
     }
-    this.reelContainer.addChild(oldWrapper);
 
-    // ── 2. Calculate per-reel stagger delays (scatter anticipation) ──────────
+    // ── 2. Per-reel stop offsets (scatter anticipation slows trailing reels). ──
     let scattersSeen = 0;
     let anticipation = false;
-    const baseStagger = turbo ? 50 : 140;
-    const stopDelays: number[] = [];
-    let cumDelay = 0;
-
+    const stagger: number[] = [];
+    let cum = 0;
     for (let col = 0; col < GRID_COLUMNS; col++) {
-      if (col > 0) cumDelay += anticipation && !turbo ? 500 : baseStagger;
-      stopDelays.push(cumDelay);
-      if (scatterCols?.has(col)) {
-        scattersSeen++;
-        if (scattersSeen >= 2) anticipation = true;
-      }
+      if (col > 0) cum += anticipation && !turbo ? 480 : baseStagger;
+      stagger.push(cum);
+      if (scatterCols?.has(col)) { scattersSeen++; if (scattersSeen >= 2) anticipation = true; }
     }
     if (anticipation && !turbo) this.onAnticipation?.();
 
-    // ── 3. Build per-column filler strips + final symbol views ───────────────
-    // ARCHITECTURE: filler tiles live inside the strip (which scrolls).
-    //               Final symbols live inside the strip too, at their resting
-    //               grid positions (col x, row y). When strip.y reaches 0 they
-    //               are exactly where they should be. We extract them afterward.
-    interface ReelData {
-      strip: Container;
-      finalViews: Map<string, SymbolView>;
-      scrollDist: number;
-      blur: BlurFilter;
-    }
-    const reels: ReelData[] = [];
-    const blurMax = turbo ? 8 : 22;
-
+    // ── 3. Build the reels. The visible rows start showing the OLD symbols so
+    //       the transition into the spin has no pop. ──
+    const reels: Reel[] = [];
     for (let col = 0; col < GRID_COLUMNS; col++) {
-      const strip = new Container();
-      const finalViews = new Map<string, SymbolView>();
+      const cells: ReelCell[] = [];
+      for (let k = 0; k < N; k++) {
+        const container = new Container();
+        container.x = this.cellX(col);
+        const cell: ReelCell = { container, sprite: null, y: topY + k * cellStep };
+        const row = k - ABOVE;
+        const initId = row >= 0 && row < VISIBLE && oldIds[col]![row] ? oldIds[col]![row]! : randomSymbol();
+        this.paintCell(cell, initId);
+        container.y = cell.y;
+        this.reelContainer.addChild(container);
+        cells.push(cell);
+      }
+      reels.push({ col, cells, scroll: 0, wrapCount: 0, feed: new Map(), state: "spin" });
+    }
 
-      // Final symbols sit at their resting grid positions inside the strip.
-      // When strip.y = 0 they are at the correct place.
-      for (let row = 0; row < GRID_ROWS; row++) {
-        const id = finalBoard[col][row];
+    // ── 4. Each reel decelerates onto its result when its stop time arrives. ──
+    const decelPromises: Promise<void>[] = [];
+    const startDecel = (reel: Reel) => {
+      reel.state = "decel";
+      const startScroll = reel.scroll;
+      const F = Math.floor(startScroll / cellStep) + STOP_STEPS; // wrap index at rest
+      const targetScroll = F * cellStep;                          // grid-aligned stop
+      const dist = targetScroll - startScroll;
+      // Feed each final symbol at the wrap index that lands it in its row.
+      for (let row = 0; row < VISIBLE; row++) {
+        reel.feed.set(F - ABOVE - row, finalBoard[reel.col]![row]!);
+      }
+      decelPromises.push(
+        tween(decelDur, (p) => {
+          const target = startScroll + dist * easeOutQuad(p);
+          this.advanceReel(reel, target - reel.scroll, cellStep, wrapSpan);
+        }, linear).then(() => {
+          reel.state = "stopped";
+          this.onReelStop?.(reel.col, GRID_COLUMNS);
+        })
+      );
+    };
+
+    // ── 5. Master loop: ramp up and scroll every free reel until it stops. ──
+    // The frame body is guarded: a stray error must never leave the loop hung
+    // (which would freeze the reels mid-scroll) — we bail to the handoff below,
+    // which always lands the correct final board.
+    await new Promise<void>((resolve) => {
+      let last = performance.now();
+      const start = last;
+      const frame = (now: number) => {
+        try {
+          const dt = Math.min(0.05, (now - last) / 1000);
+          last = now;
+          const elapsed = now - start;
+          const ramp = Math.min(1, elapsed / accelTime);
+          const vel = Vmax * ramp * ramp; // easeIn ramp-up
+          for (const reel of reels) {
+            if (reel.state !== "spin") continue;
+            this.advanceReel(reel, vel * dt, cellStep, wrapSpan);
+            if (elapsed >= accelTime + hold + stagger[reel.col]!) startDecel(reel);
+          }
+          if (reels.some((r) => r.state === "spin")) requestAnimationFrame(frame);
+          else resolve();
+        } catch (err) {
+          console.error("[BoardView] spin frame error — landing immediately:", err);
+          resolve();
+        }
+      };
+      requestAnimationFrame(frame);
+    });
+
+    // Tolerate a rejected decel (never blocks the handoff that lands the board).
+    await Promise.allSettled(decelPromises);
+
+    // ── 6. Hand the resting cells off to real SymbolViews (same art, same spot
+    //       → invisible swap), then play a landing bounce. ──
+    const land: Promise<void>[] = [];
+    for (const reel of reels) {
+      for (let row = 0; row < VISIBLE; row++) {
+        const id = finalBoard[reel.col]![row]!;
         const view = new SymbolView(id);
         view.layout(this.cellWidth, this.cellHeight);
-        view.position.set(this.cellX(col), this.cellY(row));
-        strip.addChild(view);
-        finalViews.set(keyOf([col, row]), view);
-      }
-
-      // Filler tiles scroll through above the final symbols
-      const extraFiller = Math.ceil(stopDelays[col]! / (turbo ? 25 : 55));
-      const totalFiller = baseFillerCount + extraFiller;
-      const fillerStartY = this.cellY(GRID_ROWS - 1) + this.cellHeight + this.gap;
-      for (let i = 0; i < totalFiller; i++) {
-        const id = ALL_SYMBOLS[Math.floor(Math.random() * ALL_SYMBOLS.length)]!;
-        const tile = this.createSpinTile(id);
-        tile.position.set(this.cellX(col), fillerStartY + i * cellStep);
-        strip.addChild(tile);
-      }
-
-      const scrollDist = fillerStartY + totalFiller * cellStep;
-      strip.y = -scrollDist; // start strip well above the viewport
-      const blur = new BlurFilter({ strengthX: 0, strengthY: blurMax, quality: 2 });
-      strip.filters = [blur];
-      this.reelContainer.addChild(strip);
-      reels.push({ strip, finalViews, scrollDist, blur });
-    }
-
-    // ── 4. Shared spin phase: old symbols exit downward, strips scroll up ────
-    const minScroll = Math.min(...reels.map((r) => r.scrollDist));
-    // sharedTravel covers ~75% of the scroll — decel covers the rest.
-    const sharedTravel = minScroll * 0.75;
-    const spinDuration = turbo ? 350 : 900;
-
-    // Accelerate (20%)
-    await tween(spinDuration * 0.20, (p) => {
-      const d = sharedTravel * 0.10 * p;
-      oldWrapper.y = d;
-      for (const r of reels) r.strip.y = -r.scrollDist + d;
-    }, easeInCubic);
-
-    // Constant speed (55%). Destroy oldWrapper once it scrolls off-screen.
-    const afterAccel = sharedTravel * 0.10;
-    const constTravel = sharedTravel * 0.90;
-    let wrapperDestroyed = false;
-    await tween(spinDuration * 0.55, (p) => {
-      const d = afterAccel + constTravel * p;
-      if (!wrapperDestroyed) oldWrapper.y = d;
-      for (const r of reels) r.strip.y = -r.scrollDist + d;
-      // Once oldWrapper scrolls past the board bottom, destroy it
-      if (!wrapperDestroyed && d > this.rect.height + cellStep) {
-        wrapperDestroyed = true;
-        oldWrapper.destroy({ children: true });
-      }
-    }, linear);
-    if (!wrapperDestroyed) {
-      oldWrapper.destroy({ children: true });
-    }
-
-    // ── 5. Per-reel deceleration — each column stops independently ───────────
-    const sharedDist = afterAccel + constTravel;
-    const reelPromises: Promise<void>[] = [];
-
-    for (let col = 0; col < GRID_COLUMNS; col++) {
-      const reel = reels[col]!;
-      const currentY = -reel.scrollDist + sharedDist;
-      const remaining = 0 - currentY;
-      const delay = stopDelays[col]!;
-      const decelDur = turbo ? 110 : 260;
-
-      reelPromises.push((async () => {
-        if (delay > 0) {
-          // Crawl during anticipation stagger — blur stays near max
-          const crawlDist = remaining * 0.55;
-          await tween(delay, (p) => {
-            reel.strip.y = currentY + crawlDist * p;
-            reel.blur.strengthY = blurMax * Math.max(0.4, 1 - p * 0.3);
-          }, linear);
-          // Snap to final position with bounce — blur fades out
-          const postY = currentY + crawlDist;
-          const finalDist = 0 - postY;
-          await tween(decelDur, (p) => {
-            reel.strip.y = postY + finalDist * p;
-            reel.blur.strengthY = blurMax * (1 - p) * (1 - p) * 0.5;
-          }, easeOutBack);
-        } else {
-          await tween(decelDur, (p) => {
-            reel.strip.y = currentY + remaining * p;
-            reel.blur.strengthY = blurMax * (1 - p) * (1 - p) * 0.5;
-          }, easeOutBack);
-        }
-        reel.strip.y = 0;
-        reel.blur.strengthY = 0;
-        this.onReelStop?.(col, GRID_COLUMNS);
-      })());
-    }
-
-    await Promise.all(reelPromises);
-
-    // ── 6. Extract final symbols from strips → register in this.symbols ───────
-    // Reparent each final view to reelContainer BEFORE destroying the strip.
-    // strip.y is 0 here so absolute positions are preserved.
-    const landAnimations: Promise<void>[] = [];
-
-    for (const reel of reels) {
-      // Reparent all final views first (removes them from strip automatically)
-      for (const [key, view] of reel.finalViews) {
+        view.position.set(this.cellX(reel.col), this.cellY(row));
+        this.symbols.set(keyOf([reel.col, row]), view);
         this.reelContainer.addChild(view);
-        this.symbols.set(key, view);
-      }
-      // Strip now contains only filler tiles — safe to destroy
-      reel.strip.destroy({ children: true });
-
-      // Landing bounce
-      for (const [, view] of reel.finalViews) {
         const baseY = view.y;
-        landAnimations.push(
-          tween(turbo ? 55 : 130, (p) => {
+        land.push(
+          tween(turbo ? 60 : 140, (p) => {
             const bounce = Math.sin(p * Math.PI) * 5 * (1 - p);
             view.y = baseY + bounce;
-            view.scale.set(1 + Math.sin(p * Math.PI) * 0.03 * (1 - p));
+            view.scale.set(1 + Math.sin(p * Math.PI) * 0.04 * (1 - p));
           }).then(() => { view.y = baseY; view.scale.set(1); })
         );
       }
+      for (const cell of reel.cells) cell.container.destroy({ children: true });
     }
-    await Promise.all(landAnimations);
+    await Promise.all(land);
   }
 
-  private createSpinTile(id: SymbolId): Container {
-    const c = new Container();
-    const tex = getSymbolTexture(id);
+  /** Advance a reel downward by `dy`, recycling cells past the bottom to the top
+   *  and pulling forced (final) symbols from the feed map as each wrap occurs. */
+  private advanceReel(reel: Reel, dy: number, cellStep: number, wrapSpan: number): void {
+    if (dy === 0) return;
+    reel.scroll += dy;
+    for (const cell of reel.cells) cell.y += dy;
+    // Cells move together and stay grid-aligned, so exactly one cell crosses the
+    // wrap line per cellStep of travel — recycle the lowest cell each time.
+    const targetWraps = Math.floor(reel.scroll / cellStep);
+    while (reel.wrapCount < targetWraps) {
+      reel.wrapCount++;
+      let lowest = reel.cells[0]!;
+      for (const c of reel.cells) if (c.y > lowest.y) lowest = c;
+      lowest.y -= wrapSpan;
+      this.paintCell(lowest, reel.feed.get(reel.wrapCount) ?? randomSymbol());
+    }
+    for (const cell of reel.cells) cell.container.y = cell.y;
+  }
+
+  /** Show `id` in a reel cell, scaling its (re-used) sprite to fill the cell.
+   *  A missing/invalid id is coerced to a valid one so a cell is never blank. */
+  private paintCell(cell: ReelCell, id: SymbolId): void {
+    let tex = getSymbolTexture(id);
+    if (!tex) tex = getSymbolTexture(randomSymbol());
     if (tex && tex.width > 0 && tex.height > 0) {
-      const sprite = new Sprite(tex);
-      sprite.anchor.set(0.5);
+      if (!cell.sprite) {
+        cell.sprite = new Sprite();
+        cell.sprite.anchor.set(0.5);
+        cell.container.addChild(cell.sprite);
+      }
+      cell.sprite.texture = tex;
+      cell.sprite.visible = true;
       const padding = 6;
       const scale = Math.min(
         (this.cellWidth - padding * 2) / tex.width,
         (this.cellHeight - padding * 2) / tex.height
       );
       if (isFinite(scale) && scale > 0) {
-        sprite.scale.set(scale);
-        sprite.position.set(this.cellWidth / 2, this.cellHeight / 2);
-        c.addChild(sprite);
+        cell.sprite.scale.set(scale);
+        cell.sprite.position.set(this.cellWidth / 2, this.cellHeight / 2);
       }
+    } else if (cell.sprite) {
+      cell.sprite.visible = false;
     }
-    return c;
   }
 
 
