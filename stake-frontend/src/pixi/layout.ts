@@ -6,7 +6,15 @@ export function computeLayout(width: number, height: number): LayoutMetrics {
   const bottomBar: Rect = { x: 0, y: height - bottomHeight, width, height: bottomHeight };
 
   if (portrait) {
-    const machine: Rect = { x: 8, y: 48, width: width - 16, height: height - bottomHeight - 186 };
+    // Reserve a strip above the board for the 5 wanted-level stars.
+    // starR ≈ min(18, width/12) → row height ≈ starR*2 + label(14) + padding
+    const starR = Math.min(18, width / 12);
+    const starsH = Math.ceil(starR * 2 + 14 + 12); // stars diameter + label + padding
+    const starsBar: Rect = { x: 0, y: 4, width, height: starsH };
+
+    // Push the machine down by starsH + 4px gap (replacing the old fixed y:48).
+    const machineY = starsBar.y + starsH + 4;
+    const machine: Rect = { x: 8, y: machineY, width: width - 16, height: height - bottomHeight - machineY - 130 };
     const boardFrame: Rect = { x: machine.x, y: machine.y, width: machine.width, height: machine.height };
     const board: Rect = {
       x: boardFrame.x + 12,
@@ -22,6 +30,7 @@ export function computeLayout(width: number, height: number): LayoutMetrics {
       bottomBar,
       leftPanel: { x: 8, y: height - bottomHeight - 122, width: width - 16, height: 110 },
       artPanel: null,
+      starsBar,
       machine,
       boardFrame,
       board
@@ -52,6 +61,7 @@ export function computeLayout(width: number, height: number): LayoutMetrics {
     bottomBar,
     leftPanel: { x: 12, y: 52, width: leftWidth - 24, height: height - bottomHeight - 68 },
     artPanel: { x: width - rightWidth + 12, y: 50, width: rightWidth - 26, height: height - bottomHeight - 58 },
+    starsBar: null,
     machine,
     boardFrame,
     board

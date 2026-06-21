@@ -158,10 +158,22 @@ async function boot(): Promise<void> {
     scene.renderSnapshot(snapshot); // refresh the radio button state
   }, "heat");
 
-  window.addEventListener("resize", () => {
-    scene.resize();
-    scene.renderSnapshot(snapshot);
+  // Observe the canvas directly with ResizeObserver for smooth, continuous,
+  // real-time layout updates. A plain 'resize' event fires lazily (only on
+  // pointer-up in some browsers), causing the layout to snap rather than track.
+  // rAF-debounce prevents calling renderSnapshot faster than one frame at a time.
+  let resizeScheduled = false;
+  const resizeObserver = new ResizeObserver(() => {
+    if (resizeScheduled) return;
+    resizeScheduled = true;
+    requestAnimationFrame(() => {
+      resizeScheduled = false;
+      // renderSnapshot() recomputes layout + redraws HUD + relays the board
+      // all in one pass — no need for a separate scene.resize() call.
+      scene.renderSnapshot(snapshot);
+    });
   });
+  resizeObserver.observe(pixi.canvas);
   window.addEventListener("keydown", (event) => {
     if (event.code === "Space" && !turboDisabled()) {
       event.preventDefault();

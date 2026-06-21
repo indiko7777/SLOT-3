@@ -32,6 +32,8 @@ export class HudView extends Container {
     this.drawBackground(layout, snapshot);
     if (layout.leftPanel) this.drawBuyPanel(layout.leftPanel);
     if (layout.artPanel) this.drawArt(layout.artPanel, snapshot);
+    // Portrait: draw the 5 wanted stars in the dedicated strip above the board.
+    if (layout.starsBar) this.drawWantedStars(layout.starsBar);
     this.drawBoardFrame(layout.boardFrame);
     this.drawControls(layout.bottomBar, snapshot);
   }
@@ -354,45 +356,61 @@ export class HudView extends Container {
   }
 
   private drawArt(rect: Rect, _snapshot: PlaybackSnapshot): void {
-    // === WANTED LEVEL — persistent meter that fills on wins (fractional / half
-    // stars). At 5 stars The Getaway triggers free. Pinned top-right (GTA HUD).
+    this.drawWantedStars(rect);
+    this.drawCharacter(rect, _snapshot.collectionCount);
+  }
 
-    // GTA-style stars: big, bold, tightly spaced
+  /**
+   * Draw the 5 GTA-style wanted-level stars inside `rect`.
+   * Works for both the landscape art panel (full height) and the portrait
+   * starsBar strip (narrow strip above the board).
+   */
+  private drawWantedStars(rect: Rect): void {
     const starR = Math.min(22, rect.width / 11); // outer radius
-    const starIR = starR * 0.42; // inner radius — GTA stars have sharper points
+    const starIR = starR * 0.42;                 // inner radius — sharper GTA points
     const gap = starR * 0.55;
     const totalW = starR * 2 * 5 + gap * 4;
     const startX = rect.x + (rect.width - totalW) / 2 + starR;
-    const starCY = rect.y + starR + 14; // pin the row to the very top of the panel
+    // Centre the stars vertically in the rect, leaving a bit of room for the label above.
+    const labelSize = Math.min(13, rect.width * 0.04);
+    const starCY = rect.y + rect.height / 2 + labelSize * 0.5 + 2;
 
     const meter = Math.max(0, Math.min(5, this.runtime.getWantedLevel()));
-    const GOLD = 0xffd95c;
     const filledStars: Graphics[] = [];
 
-    // "WANTED LEVEL" label above the row
-    this.addChild(makeText("WANTED LEVEL", Math.min(13, rect.width * 0.075), 0x9fb4d0, rect.x + rect.width / 2, rect.y - 6, "center"));
+    // "WANTED LEVEL" label centred above the star row
+    this.addChild(makeText(
+      "WANTED LEVEL",
+      labelSize,
+      0x9fb4d0,
+      rect.x + rect.width / 2,
+      starCY - starR - labelSize - 2,
+      "center"
+    ));
 
     for (let i = 0; i < 5; i++) {
       const sx = startX + i * (starR * 2 + gap);
-      const fill = Math.max(0, Math.min(1, meter - i)); // how full this star is (0..1)
+      // Quantize to 0, 0.5, or 1 — never three-quarters or any other fraction.
+      const rawFill = Math.max(0, Math.min(1, meter - i));
+      const fill = rawFill < 0.25 ? 0 : rawFill < 0.75 ? 0.5 : 1;
       const pts = this.starPoints(sx, starCY, starR, starIR);
 
-      // empty base star
       const base = new Graphics();
       base.poly(pts).fill({ color: 0x0a0e1e, alpha: 0.5 });
       base.poly(pts).stroke({ color: 0x4a5570, width: 2.5, alpha: 0.6 });
       this.addChild(base);
 
-      // gold filled portion, bottom-up — supports partial / half stars
       if (fill > 0) {
         const filled = new Graphics();
-        filled.poly(pts).fill(GOLD);
+        filled.poly(pts).fill(0xffffff);
         filled.poly(pts).stroke({ color: 0xffffff, width: 1.5, alpha: 0.75 });
         this.addChild(filled);
         if (fill < 1) {
-          const h = 2 * starR * fill;
+          // Reveal the leftmost `fill` fraction of the star horizontally (left-to-right fill).
+          // Star bounding box: x ∈ [sx - starR, sx + starR], y ∈ [starCY - starR, starCY + starR]
+          const filledW = 2 * starR * fill;
           const mask = new Graphics();
-          mask.rect(sx - starR, starCY + starR - h, starR * 2, h).fill(0xffffff);
+          mask.rect(sx - starR, starCY - starR, filledW, starR * 2).fill(0xffffff);
           this.addChild(mask);
           filled.mask = mask;
         }
@@ -400,7 +418,7 @@ export class HudView extends Container {
       }
     }
 
-    // Glow pulse that intensifies as the meter approaches 5 (the Getaway).
+
     if (filledStars.length > 0) {
       const near = meter / 5;
       this.addAmbient((_dt, elapsed) => {
@@ -409,8 +427,6 @@ export class HudView extends Container {
         for (const s of filledStars) s.alpha = a;
       });
     }
-
-    this.drawCharacter(rect, _snapshot.collectionCount);
   }
 
   private drawCharacter(rect: Rect, count: number): void {

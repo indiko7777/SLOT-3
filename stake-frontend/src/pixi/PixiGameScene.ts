@@ -38,12 +38,18 @@ export class PixiGameScene {
     this.app.stage.addChild(this.root);
   }
 
-  /** Called on window resize only */
+  /** Called on window resize — recomputes layout and immediately redraws all panels. */
   resize(): void {
     this.layout = computeLayout(this.app.screen.width, this.app.screen.height);
     this.board.layout(this.layout.board);
     // The Getaway bonus is a full-screen POV chase.
     this.bonus.layout({ x: 0, y: 0, width: this.layout.width, height: this.layout.height });
+    // Redraw the HUD so all panels, text, and controls move immediately to their
+    // new positions. Without this the HUD only updates on the next renderSnapshot
+    // call, causing a visible lag where the board and HUD are misaligned.
+    if (this.currentSnapshot) {
+      this.hud.draw(this.layout, this.currentSnapshot);
+    }
   }
 
   resetRound(snapshot: PlaybackSnapshot): void {
@@ -58,7 +64,12 @@ export class PixiGameScene {
   renderSnapshot(snapshot: PlaybackSnapshot): void {
     this.currentSnapshot = snapshot;
     snapshot.collectionCount = this.runtime.getCollectionCount();
-    this.resize();
+    // Recompute layout and re-lay the board out to the new dimensions.
+    // The HUD is also redrawn inside resize() if currentSnapshot is set,
+    // so we don't need a second draw() call — just do it once below.
+    this.layout = computeLayout(this.app.screen.width, this.app.screen.height);
+    this.board.layout(this.layout.board);
+    this.bonus.layout({ x: 0, y: 0, width: this.layout.width, height: this.layout.height });
     this.board.updateCollectionCounter(snapshot.collectionCount);
     this.hud.draw(this.layout, snapshot);
     // Only rebuild the board if we don't already have one showing.

@@ -40,6 +40,8 @@ export interface LayoutMetrics {
   bottomBar: Rect;
   leftPanel: Rect | null;
   artPanel: Rect | null;
+  /** Portrait-only: strip above the reel grid reserved for the 5 wanted stars. */
+  starsBar: Rect | null;
   machine: Rect;
   boardFrame: Rect;
   board: Rect;
