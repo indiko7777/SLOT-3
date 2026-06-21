@@ -1,4 +1,4 @@
-import { BlurFilter, Container, Graphics, Sprite, Text, TextStyle, TilingSprite } from "pixi.js";
+import { BlurFilter, Container, Graphics, Sprite, Text, TextStyle, Texture, TilingSprite } from "pixi.js";
 import { GRID_COLUMNS, GRID_ROWS, type BonusCell, type Position } from "../domain";
 import { getExtraTexture } from "./assets";
 import { tween, wait, easeOutBack, easeOutCubic, linear, ambientTicker } from "./tween";
@@ -40,6 +40,9 @@ export class BonusView extends Container {
   private readonly bgLayer = new Container();
   private readonly truckLayer = new Container();
   private readonly gridLayer = new Container();
+  /** Locked (previously landed) gold bars rendered ABOVE the spinning strip so the
+   *  strip's blur filter never bleeds onto or clips them. */
+  private readonly lockedLayer = new Container();
   private readonly fxLayer = new Container();
   private readonly hudLayer = new Container();
   private readonly police = new Graphics();
@@ -66,7 +69,9 @@ export class BonusView extends Container {
   constructor() {
     super();
     this.visible = false;
-    this.addChild(this.bgLayer, this.truckLayer, this.gridLayer, this.fxLayer, this.police, this.hudLayer);
+    // lockedLayer sits between gridLayer (spinning strip) and fxLayer so
+    // the sticky gold bars are always drawn on top of any reel blur.
+    this.addChild(this.bgLayer, this.truckLayer, this.gridLayer, this.lockedLayer, this.fxLayer, this.police, this.hudLayer);
     // Heavy blur turns the police light sources into soft, natural bloom.
     this.police.filters = [new BlurFilter({ strength: 30, quality: 3 })];
   }
@@ -196,15 +201,16 @@ export class BonusView extends Container {
     this.setCollected(this.sumGrid(grid), false);
   }
 
-  /** One hold-and-spin step. Empty cells spin; gold bars / dynamite slam in. */
   async playSpin(grid: BonusCell[][], landed: Position[], respins: number, deadSpins: number, turbo: boolean, onLand?: (i: number, n: number) => void): Promise<void> {
     if (!this.truck) await this.intro(turbo);
     this.visible = true;
 
     const landedSet = new Set(landed.map(keyOf));
 
-    // Re-draw the persistent (previously locked) gold bars; clear the rest.
+    // Clear the spinning layer; rebuild locked bars into lockedLayer so they
+    // always render ABOVE the spinning strip (prevents blur/clip artefacts).
     this.gridLayer.removeChildren();
+    this.lockedLayer.removeChildren();
     this.cells.clear();
     const spinning: Position[] = [];
     for (let c = 0; c < GRID_COLUMNS; c++)
@@ -212,7 +218,12 @@ export class BonusView extends Container {
         const cell = grid[c][r];
         const prevLocked = cell.symbol === "SAFE" && !landedSet.has(keyOf([c, r]));
         if (prevLocked) {
-          this.placeCell([c, r], this.buildGoldBar(cell.value ?? 0, c, r));
+          // Place in lockedLayer so the spinning strip behind it is never clipped.
+          const node = this.buildGoldBar(cell.value ?? 0, c, r);
+          const rc = this.cellRect(c, r);
+          node.position.set(rc.x + rc.w / 2, rc.y + rc.h / 2);
+          this.lockedLayer.addChild(node);
+          this.cells.set(keyOf([c, r]), node);
         } else {
           spinning.push([c, r]);
         }
@@ -399,6 +410,7 @@ export class BonusView extends Container {
     this.visible = false;
     this.stopAmbient();
     this.gridLayer.removeChildren();
+    this.lockedLayer.removeChildren();
     this.fxLayer.removeChildren();
     this.hudLayer.removeChildren();
     this.truckLayer.removeChildren();
@@ -586,8 +598,9 @@ export class BonusView extends Container {
   private pulseSpinsReset(): void {
     const box = this.spinsBox;
     if (box) {
-      void tween(440, (p) => box.scale.set(1 + Math.sin(Math.min(1, p) * Math.PI) * 0.32)).then(() => box.scale.set(1));
-      this.floatCallout(box.x, box.y - 8, "RESET!", 0xffd95c);
+      // Slower, more dramatic punch so the number change is fully readable.
+      void tween(600, (p) => box.scale.set(1 + Math.sin(Math.min(1, p) * Math.PI) * 0.42)).then(() => box.scale.set(1));
+      this.floatCallout(box.x, box.y - 8, "RESET!", 0xffd95c, 24, 1200);
     }
   }
 
@@ -596,17 +609,19 @@ export class BonusView extends Container {
     const box = this.spinsBox;
     if (box) {
       const bx = box.x;
-      void tween(380, (p) => { box.x = bx + Math.sin(p * Math.PI * 5) * 6 * (1 - p); }).then(() => (box.x = bx));
+      // Slower shake so the number change is visible before it settles.
+      void tween(520, (p) => { box.x = bx + Math.sin(p * Math.PI * 5) * 7 * (1 - p); }).then(() => (box.x = bx));
+      this.floatCallout(box.x, box.y - 8, "-1 SPIN", 0xffb000, 20, 1000);
     }
   }
 
   /** Short floating text near the HUD (does not vibrate with the grid). */
-  private floatCallout(x: number, y: number, text: string, color: number): void {
-    const t = new Text({ text, style: new TextStyle({ fill: color, fontFamily: FONT, fontSize: 18, fontWeight: "900", letterSpacing: 1, stroke: { color: 0x000000, width: 3 } }) });
+  private floatCallout(x: number, y: number, text: string, color: number, fontSize = 18, durationMs = 900): void {
+    const t = new Text({ text, style: new TextStyle({ fill: color, fontFamily: FONT, fontSize, fontWeight: "900", letterSpacing: 1, stroke: { color: 0x000000, width: 3 } }) });
     t.anchor.set(0.5, 1);
     t.position.set(x, y);
     this.hudLayer.addChild(t);
-    void tween(900, (p) => { t.y = y - 28 * p; t.alpha = p < 0.2 ? p / 0.2 : 1 - (p - 0.2) / 0.8; }).then(() => t.destroy());
+    void tween(durationMs, (p) => { t.y = y - 36 * p; t.alpha = p < 0.15 ? p / 0.15 : p > 0.6 ? 1 - (p - 0.6) / 0.4 : 1; }).then(() => t.destroy());
   }
 
   private drawStars(elapsed: number): void {
@@ -754,6 +769,30 @@ export class BonusView extends Container {
     return c;
   }
 
+  /**
+   * An empty reel face — dark cell background with the Heat Chase logo as a
+   * dim watermark (12% opacity) so the reel visually scrolls even on dead spins.
+   * The low alpha makes clear it is NOT a winning symbol.
+   */
+  private buildEmptyFace(col: number, row: number, logoTex: Texture | null): Container {
+    const r = this.cellRect(col, row);
+    const c = new Container();
+    // Dark cell background matching the reel panel
+    const bg = new Graphics();
+    bg.roundRect(-r.w / 2 + 1, -r.h / 2 + 1, r.w - 2, r.h - 2, 3).fill(REEL_BG);
+    c.addChild(bg);
+    // Heat Chase logo watermark — very subtle so it reads as a "filler" pattern
+    if (logoTex) {
+      const logo = new Sprite(logoTex);
+      logo.anchor.set(0.5);
+      logo.alpha = 0.12;
+      const maxDim = Math.min(r.w, r.h) * 0.72;
+      logo.scale.set(Math.min(maxDim / logoTex.width, maxDim / logoTex.height));
+      c.addChild(logo);
+    }
+    return c;
+  }
+
   // ── animation helpers ────────────────────────────────────────────────
   /**
    * Normal reel spin on the open cells. Each cell scrolls a strip of gold/dynamite
@@ -793,6 +832,10 @@ export class BonusView extends Container {
     const screens = turbo ? 3 : 5;
     const travel = colH * screens;
 
+    // Heat Chase logo used as a dim watermark on empty spinning cells so the
+    // reel feels alive even on dead spins. Falls back gracefully if not loaded.
+    const logoTex = getExtraTexture("heat_chase_logo");
+
     const strip = new Container();
     const addFace = (r: number, k: number, finalScreen: boolean): void => {
       let node: Container | null = null;
@@ -800,8 +843,14 @@ export class BonusView extends Container {
         const cell = grid[col][r];
         if (cell.symbol === "SAFE") node = this.buildGoldBar(cell.value ?? 0, col, r);
         else if (cell.symbol === "MASTER_KEY") node = this.buildDynamite(col, r);
+        // EMPTY final result: show the logo watermark so the "stop" is visible.
+        else node = this.buildEmptyFace(col, r, logoTex);
       } else {
-        node = Math.random() < 0.16 ? this.buildDynamite(col, r) : this.buildGoldBar(0, col, r, true);
+        // Filler screen: mix in a few gold/dynamite silhouettes for visual variety,
+        // but mostly logo watermarks so the player sees something scrolling.
+        if (Math.random() < 0.12) node = this.buildDynamite(col, r);
+        else if (Math.random() < 0.18) node = this.buildGoldBar(0, col, r, true);
+        else node = this.buildEmptyFace(col, r, logoTex);
       }
       if (node) { node.position.set(cx, colTop + r * cellH + cellH / 2 - k * colH); strip.addChild(node); }
     };
@@ -819,8 +868,7 @@ export class BonusView extends Container {
     strip.y = -travel;
     this.gridLayer.addChildAt(strip, 0);
 
-    // Vertical motion blur so the reel reads as genuinely SPINNING, even when
-    // every open cell ends up empty (a dead spin). Blur decays as it stops.
+    // Vertical motion blur so the reel reads as genuinely SPINNING.
     const blurMax = turbo ? 7 : 16;
     const blur = new BlurFilter({ strength: blurMax, quality: 2 });
     blur.strengthX = 0;
@@ -837,8 +885,6 @@ export class BonusView extends Container {
         const landed = cell.symbol === "SAFE" || cell.symbol === "MASTER_KEY";
         if (cell.symbol === "SAFE") { this.placeCell([col, r], this.buildGoldBar(cell.value ?? 0, col, r)); onLandOne(); }
         else if (cell.symbol === "MASTER_KEY") { this.placeCell([col, r], this.buildDynamite(col, r)); onLandOne(); }
-        // Every open cell gets a visible "stop" — a hit lands gold; a miss thuds
-        // the empty cell so you always SEE and FEEL the reel stop.
         this.cellStopFx([col, r], landed);
       }
     });

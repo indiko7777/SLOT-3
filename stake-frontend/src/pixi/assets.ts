@@ -72,6 +72,7 @@ const OPTIONAL_ASSETS: Record<string, string> = {
   "brinks_truck_frame": "brinks_truck_frame.png",
   "gold_bar": "gold_bar.png",
   "dynamite": "dynamite.png",
+  "heat_chase_logo": "Heat Chase Logo.png",
 };
 
 /** Background images — loaded separately so a missing file doesn't block the game */
