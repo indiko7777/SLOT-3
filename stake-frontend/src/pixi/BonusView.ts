@@ -16,9 +16,8 @@ import type { Rect } from "./types";
 const FONT = "Impact, 'Arial Black', Arial, sans-serif";
 const keyOf = ([c, r]: Position): string => `${c}:${r}`;
 const HEAT_PERIOD = [0.5, 0.34, 0.22, 0.12]; // seconds per red/blue pulse by heat level
-// No red anywhere in the game (per design): the warm strobe channel is amber,
-// paired with blue — reads as emergency lighting without any red.
-const POLICE_RED = 0xffb000;
+// Police strobe channels — real emergency lighting: vivid red paired with blue.
+const POLICE_RED = 0xff1f2e;
 const POLICE_BLUE = 0x1a6bff;
 
 // Measured from brinks_truck_frame.png (1024×572): the transparent door opening.
@@ -63,7 +62,9 @@ export class BonusView extends Container {
 
   private heat = 0;          // 0 = baseline … 3 = max
   private busted = false;
-  private spinPips: Graphics[] = [];
+  private respinsShown = MAX_RESPINS;   // last value shown on the meter (for the change beat)
+  private isSpinning = false;           // true while reels turn — drives the anticipation shake
+  private shakeBoost = 0;               // 0..1 eased ramp of the high-speed chase shake
   private readonly cells = new Map<string, Container>();
 
   constructor() {
@@ -193,10 +194,13 @@ export class BonusView extends Container {
     if (!this.truck) { this.buildHighway(); this.buildTruck(); this.buildHud(); this.startAmbient(); }
     this.gridLayer.removeChildren();
     this.cells.clear();
+    const logoTex = getExtraTexture("heat_chase_logo");
     for (let c = 0; c < GRID_COLUMNS; c++)
       for (let r = 0; r < GRID_ROWS; r++) {
         const cell = grid[c][r];
         if (cell.symbol === "SAFE") this.placeCell([c, r], this.buildGoldBar(cell.value ?? 0, c, r));
+        else if (cell.symbol === "MASTER_KEY") this.placeCell([c, r], this.buildDynamite(c, r));
+        else this.placeCell([c, r], this.buildEmptyFace(c, r, logoTex)); // resting watermark — logos never just vanish
       }
     this.setCollected(this.sumGrid(grid), false);
   }
@@ -232,22 +236,25 @@ export class BonusView extends Container {
     // Normal reel spin: open cells spin and STOP on their result, which sticks.
     await this.spinColumns(grid, spinning, turbo, onLand);
 
-    // Resolve the respin meter AFTER the spin so the change reads clearly:
-    // a hit refills the pips (+RESET), a dead spin drops one (+"-1 SPIN").
+    // Count up any gold just collected (bottom-centre, away from the meter).
+    this.setCollected(this.sumGrid(grid), true);
+
+    // Resolve the respin meter AFTER the spin, as its OWN deliberate beat — the
+    // reel settles first, THEN the player watches the spins count change. The
+    // counter just rolls cleanly up/down (no floating callouts, no pips).
     if (landed.length > 0) {
       this.heat = 0;
       this.hitFlash();
-      this.setSpins(respins);
-      this.pulseSpinsReset();
+      await wait(turbo ? 50 : 240);
+      this.animateSpinsBeat(respins, true, turbo);
+      await wait(turbo ? 80 : 640);
     } else {
       this.heat = Math.min(3, deadSpins);
-      this.setSpins(respins);
-      this.pulseSpinsDead();
       this.deadSpinBeat();
+      await wait(turbo ? 50 : 300);
+      this.animateSpinsBeat(respins, false, turbo);
+      await wait(turbo ? 80 : 680);
     }
-
-    this.setCollected(this.sumGrid(grid), true);
-    await wait(turbo ? 70 : 230);
   }
 
   /** Dynamite detonates: shockwave over neighbours, double them, then vanish. */
@@ -420,7 +427,6 @@ export class BonusView extends Container {
     this.truck = this.stars = null;
     this.collectedText = this.spinsLabel = this.spinsText = null;
     this.spinsBox = null;
-    this.spinPips = [];
     this.resultCard = null;
   }
 
@@ -541,22 +547,6 @@ export class BonusView extends Container {
     box.addChild(sVal);
     this.spinsText = sVal;
 
-    // Pip row — one dot per possible respin, filled=remaining, empty=spent
-    this.spinPips = [];
-    const pipSize = 6;
-    const pipGap = 6;
-    const pipsRow = new Container();
-    const pipsW = MAX_RESPINS * (pipSize * 2 + pipGap) - pipGap;
-    for (let i = 0; i < MAX_RESPINS; i++) {
-      const pip = new Graphics();
-      pip.x = -pipsW / 2 + i * (pipSize * 2 + pipGap) + pipSize;
-      pip.y = 0;
-      pipsRow.addChild(pip);
-      this.spinPips.push(pip);
-    }
-    pipsRow.y = 16 + Math.min(56, W / 14) + 8;
-    box.addChild(pipsRow);
-
     this.setSpins(MAX_RESPINS);
 
     // COLLECTED total, bottom-centre
@@ -574,54 +564,59 @@ export class BonusView extends Container {
   private setSpins(n: number): void {
     if (!this.spinsText || !this.spinsLabel) return;
     const v = Math.max(0, n);
+    this.respinsShown = v;
     this.spinsText.text = `${v}`;
     const low = v <= 1;
     this.spinsText.style.fill = low ? 0xffb000 : 0xffd95c;
     this.spinsLabel.text = v === 1 ? "LAST SPIN!" : "SPINS LEFT";
     this.spinsLabel.style.fill = low ? 0xffb000 : 0x9fb4d0;
-    this.updateSpinPips(v);
   }
 
-  private updateSpinPips(n: number): void {
-    const v = Math.max(0, n);
-    this.spinPips.forEach((pip, i) => {
-      pip.clear();
-      if (i < v) {
-        pip.circle(0, 0, 6).fill(0xffd95c);
-      } else {
-        pip.circle(0, 0, 6).fill(0x111e36).stroke({ color: 0xffd95c, width: 1.5, alpha: 0.3 });
-      }
-    });
-  }
-
-  /** A new symbol landed — respins reset to full. Make it unmistakable. */
-  private pulseSpinsReset(): void {
+  /**
+   * The respin meter changes after a spin — shown as ONE smooth, readable beat:
+   * the old number rolls away while the new one drops/punches into place. No
+   * floating "+1/−1" text and no pips (removed per request) — just the counter
+   * cleanly updating. Turbo snaps instantly.
+   *   reset=true  → a hit refilled the spins (punch up to full)
+   *   reset=false → a dead spin spent one     (roll down one)
+   */
+  private animateSpinsBeat(to: number, reset: boolean, turbo: boolean): void {
+    const sv = this.spinsText;
     const box = this.spinsBox;
-    if (box) {
-      // Slower, more dramatic punch so the number change is fully readable.
-      void tween(600, (p) => box.scale.set(1 + Math.sin(Math.min(1, p) * Math.PI) * 0.42)).then(() => box.scale.set(1));
-      this.floatCallout(box.x, box.y - 8, "RESET!", 0xffd95c, 24, 1200);
-    }
-  }
+    if (!sv || !box) { this.setSpins(to); return; }
+    if (turbo) { this.setSpins(to); return; }
 
-  /** A dead spin — one respin spent. Shake the box so the player feels it. */
-  private pulseSpinsDead(): void {
-    const box = this.spinsBox;
-    if (box) {
-      const bx = box.x;
-      // Slower shake so the number change is visible before it settles.
-      void tween(520, (p) => { box.x = bx + Math.sin(p * Math.PI * 5) * 7 * (1 - p); }).then(() => (box.x = bx));
-      this.floatCallout(box.x, box.y - 8, "-1 SPIN", 0xffb000, 20, 1000);
-    }
-  }
+    const baseY = sv.y;
+    // Ghost the OLD number (captured before setSpins overwrites it) so the change
+    // is a visible transition, never a jump.
+    const ghost = new Text({ text: sv.text, style: sv.style.clone() });
+    ghost.anchor.set(0.5, 0);
+    ghost.position.set(sv.x, baseY);
+    box.addChildAt(ghost, box.getChildIndex(sv));
 
-  /** Short floating text near the HUD (does not vibrate with the grid). */
-  private floatCallout(x: number, y: number, text: string, color: number, fontSize = 18, durationMs = 900): void {
-    const t = new Text({ text, style: new TextStyle({ fill: color, fontFamily: FONT, fontSize, fontWeight: "900", letterSpacing: 1, stroke: { color: 0x000000, width: 3 } }) });
-    t.anchor.set(0.5, 1);
-    t.position.set(x, y);
-    this.hudLayer.addChild(t);
-    void tween(durationMs, (p) => { t.y = y - 36 * p; t.alpha = p < 0.15 ? p / 0.15 : p > 0.6 ? 1 - (p - 0.6) / 0.4 : 1; }).then(() => t.destroy());
+    this.setSpins(to);
+    sv.alpha = 0;
+
+    if (reset) {
+      // Hit: the new (full) number pops up into place; the box gives a soft punch.
+      sv.scale.set(0.55);
+      void tween(620, (p) => {
+        ghost.alpha = (1 - p) * 0.7;
+        ghost.y = baseY - 14 * p;
+        sv.alpha = Math.min(1, p * 2);
+        sv.scale.set(0.55 + 0.45 * easeOutBack(Math.min(1, p * 1.15)));
+      }).then(() => { ghost.destroy(); sv.alpha = 1; sv.scale.set(1); });
+      void tween(600, (p) => box.scale.set(1 + Math.sin(Math.min(1, p) * Math.PI) * 0.16)).then(() => box.scale.set(1));
+    } else {
+      // Dead spin: old number falls away, new number drops in from above (a clean tick-down).
+      void tween(540, (p) => {
+        ghost.alpha = 1 - p;
+        ghost.y = baseY + 22 * p;
+        ghost.scale.set(1 - 0.18 * p);
+        sv.alpha = Math.min(1, p * 1.9);
+        sv.y = baseY - 20 * (1 - easeOutBack(Math.min(1, p)));
+      }).then(() => { ghost.destroy(); sv.alpha = 1; sv.y = baseY; sv.scale.set(1); });
+    }
   }
 
   private drawStars(elapsed: number): void {
@@ -770,24 +765,37 @@ export class BonusView extends Container {
   }
 
   /**
-   * An empty reel face — dark cell background with the Heat Chase logo as a
-   * dim watermark (12% opacity) so the reel visually scrolls even on dead spins.
-   * The low alpha makes clear it is NOT a winning symbol.
+   * An empty / no-symbol reel face: the dark cell background with the Heat Chase
+   * logo as a shadowed, faded watermark. This exists ONLY so the reel is clearly
+   * SEEN spinning even when a column has no gold/dynamite — yet it stays faint
+   * enough (and shadowed, not bright) that it can never be mistaken for a winning
+   * symbol. Gold/dynamite faces are untouched and keep their own backgrounds.
    */
   private buildEmptyFace(col: number, row: number, logoTex: Texture | null): Container {
     const r = this.cellRect(col, row);
     const c = new Container();
-    // Dark cell background matching the reel panel
+    // Dark cell background matching the reel panel.
     const bg = new Graphics();
     bg.roundRect(-r.w / 2 + 1, -r.h / 2 + 1, r.w - 2, r.h - 2, 3).fill(REEL_BG);
     c.addChild(bg);
-    // Heat Chase logo watermark — very subtle so it reads as a "filler" pattern
     if (logoTex) {
+      const maxDim = Math.min(r.w, r.h) * 0.8;
+      const sc = Math.min(maxDim / logoTex.width, maxDim / logoTex.height);
+      // Offset dark copy = a soft drop shadow, so the mark reads as embossed into
+      // the reel rather than floating on top of it.
+      const shadow = new Sprite(logoTex);
+      shadow.anchor.set(0.5);
+      shadow.tint = 0x000000;
+      shadow.alpha = 0.35;
+      shadow.scale.set(sc * 1.02);
+      shadow.position.set(2, 3);
+      c.addChild(shadow);
+      // The faded mark itself — visible enough in motion to sell the spin,
+      // dim enough at rest to obviously be a watermark.
       const logo = new Sprite(logoTex);
       logo.anchor.set(0.5);
-      logo.alpha = 0.12;
-      const maxDim = Math.min(r.w, r.h) * 0.72;
-      logo.scale.set(Math.min(maxDim / logoTex.width, maxDim / logoTex.height));
+      logo.alpha = 0.22;
+      logo.scale.set(sc);
       c.addChild(logo);
     }
     return c;
@@ -810,11 +818,18 @@ export class BonusView extends Container {
     const byCol = new Map<number, number[]>();
     for (const [c, r] of spinning) { (byCol.get(c) ?? byCol.set(c, []).get(c)!).push(r); }
 
-    const base = turbo ? 260 : 540;
-    const stagger = turbo ? 45 : 105;
-    await Promise.all([...byCol.entries()].map(([c, rows]) =>
-      this.spinOneColumn(grid, c, rows, base + c * stagger, turbo, onLandOne)
-    ));
+    // Slower, more deliberate spin (per request) — the staggered per-column stops
+    // are spread out further so the left→right reveal builds real anticipation.
+    const base = turbo ? 300 : 760;
+    const stagger = turbo ? 55 : 150;
+    this.isSpinning = true;
+    try {
+      await Promise.all([...byCol.entries()].map(([c, rows]) =>
+        this.spinOneColumn(grid, c, rows, base + c * stagger, turbo, onLandOne)
+      ));
+    } finally {
+      this.isSpinning = false;
+    }
   }
 
   /**
@@ -859,10 +874,15 @@ export class BonusView extends Container {
     // filler screens above (all rows → a continuously-filled reel; masked to open rows)
     for (let k = 1; k <= screens; k++) for (let r = 0; r < GRID_ROWS; r++) addFace(r, k, false);
 
-    // mask = the open rows only, so locked rows keep showing their sticky overlay.
-    // Insert strip + mask at z-index 0 so previously locked gold bars render on top.
+    // Mask the ENTIRE column span (not just the open rows) so the scrolling strip
+    // flows SMOOTHLY behind any sticky/locked symbols instead of being clipped at
+    // their cell edges (the old per-row mask caused passing symbols to get cut off
+    // at the invisible box around a stuck symbol). Locked gold bars live in
+    // lockedLayer, above gridLayer, so they naturally occlude the reel where they
+    // sit — the reel now reads as gliding cleanly *behind* them.
+    // Insert strip + mask at z-index 0 so any same-layer content renders on top.
     const mask = new Graphics();
-    for (const r of rows) { const rc = this.cellRect(col, r); mask.rect(rc.x, rc.y, rc.w, rc.h).fill(0xffffff); }
+    mask.rect(rc0.x, colTop, cellW, colH).fill(0xffffff);
     this.gridLayer.addChildAt(mask, 0);
     strip.mask = mask;
     strip.y = -travel;
@@ -885,37 +905,24 @@ export class BonusView extends Container {
         const landed = cell.symbol === "SAFE" || cell.symbol === "MASTER_KEY";
         if (cell.symbol === "SAFE") { this.placeCell([col, r], this.buildGoldBar(cell.value ?? 0, col, r)); onLandOne(); }
         else if (cell.symbol === "MASTER_KEY") { this.placeCell([col, r], this.buildDynamite(col, r)); onLandOne(); }
+        // EMPTY: leave a resting Heat Chase watermark so the logos never just
+        // vanish when the reel stops (every cell stays consistent, spin or rest).
+        else this.placeCell([col, r], this.buildEmptyFace(col, r, logoTex));
         this.cellStopFx([col, r], landed);
       }
     });
   }
 
-  /** A quick impact at a cell when its reel stops: hits flash gold, misses puff
-   *  a soft grey ring so an empty result is never invisible. */
+  /** A quick impact when a reel stops on a WIN: the gold/dynamite symbol punches
+   *  in. Empty stops get nothing — the old expanding ring + grey puff circles were
+   *  removed (they looked ugly); the reel motion and the symbol sell the stop. */
   private cellStopFx(pos: Position, landed: boolean): void {
-    const rc = this.cellRect(pos[0], pos[1]);
-    const cx = rc.x + rc.w / 2;
-    const cy = rc.y + rc.h / 2;
-    const reach = Math.min(rc.w, rc.h);
-
-    if (landed) {
-      const node = this.cells.get(keyOf(pos));
-      if (node) {
-        const num = node.getChildByLabel("num") as Text | null;
-        void tween(300, (p) => { const s = 1 + Math.sin(Math.min(1, p) * Math.PI) * 0.28; node.scale.set(s); if (num) num.scale.set(s); })
-          .then(() => { node.scale.set(1); if (num) num.scale.set(1); });
-      }
-      const g = new Graphics(); this.fxLayer.addChild(g);
-      void tween(280, (p) => { g.clear(); g.circle(cx, cy, reach * (0.4 + p * 0.45)).stroke({ color: 0xffd95c, width: Math.max(1, 4 * (1 - p)), alpha: (1 - p) * 0.9 }); }).then(() => g.destroy());
-    } else {
-      // Empty stop: a short downward "thud" line + a grey puff ring.
-      const g = new Graphics(); this.fxLayer.addChild(g);
-      void tween(240, (p) => {
-        g.clear();
-        g.circle(cx, cy, reach * (0.3 + p * 0.4)).stroke({ color: 0x4a5a72, width: Math.max(1, 3 * (1 - p)), alpha: (1 - p) * 0.5 });
-        g.rect(rc.x + 3, rc.y + rc.h - 4, rc.w - 6, 3).fill({ color: 0x2a3550, alpha: (1 - p) * 0.6 });
-      }).then(() => g.destroy());
-    }
+    if (!landed) return;
+    const node = this.cells.get(keyOf(pos));
+    if (!node) return;
+    const num = node.getChildByLabel("num") as Text | null;
+    void tween(300, (p) => { const s = 1 + Math.sin(Math.min(1, p) * Math.PI) * 0.28; node.scale.set(s); if (num) num.scale.set(s); })
+      .then(() => { node.scale.set(1); if (num) num.scale.set(1); });
   }
 
   /** Dead spin (no land): a red wash around the opening + a centred "NO HIT" so
@@ -1005,16 +1012,41 @@ export class BonusView extends Container {
   // ── ambient + totals ─────────────────────────────────────────────────
   private startAmbient(): void {
     this.stopAmbient();
-    // Background is static & dark for readability — no scroll, no vibrate.
-    // Only the heat star/light pulses animate.
-    this.truckLayer.x = this.truckLayer.y = 0;
-    this.gridLayer.x = this.gridLayer.y = 0;
-    this.fxLayer.x = this.fxLayer.y = 0;
-    this.ambientCb = (_dt, elapsed) => {
+    this.truckLayer.position.set(0, 0);
+    this.gridLayer.position.set(0, 0);
+    this.lockedLayer.position.set(0, 0);
+    this.fxLayer.position.set(0, 0);
+    this.shakeBoost = 0;
+    this.ambientCb = (dt, elapsed) => {
       this.drawStars(elapsed);
       this.drawPolice(elapsed);
+      this.driveShake(dt, elapsed);
     };
     ambientTicker.add(this.ambientCb);
+  }
+
+  /**
+   * High-speed chase shake: a constant engine/road rumble on the truck frame +
+   * reels so it always feels like we're barrelling forward, intensifying during a
+   * spin (and with the heat level) for anticipation. The HUD and the police glow
+   * stay rock-steady so the numbers and lighting remain readable.
+   */
+  private driveShake(dt: number, elapsed: number): void {
+    // Ease the boost toward 1 while spinning, back to 0 once settled.
+    const target = this.isSpinning ? 1 : 0;
+    this.shakeBoost += (target - this.shakeBoost) * Math.min(1, dt * 6);
+    const t = elapsed;
+    // Layered sines ≈ a pseudo-random rumble; the vertical axis dominates (the
+    // forward thrust / road bumps), with a slower suspension bob on top.
+    const ry = Math.sin(t * 52) * 0.5 + Math.sin(t * 89) * 0.3;
+    const rx = Math.sin(t * 61) * 0.4 + Math.sin(t * 97) * 0.25;
+    const bob = Math.sin(t * 5.0) * 0.5;
+    const amp = 1.6 + this.heat * 0.6 + this.shakeBoost * 2.6;
+    const ox = rx * amp;
+    const oy = (ry + bob) * amp;
+    this.truckLayer.position.set(ox, oy);
+    this.gridLayer.position.set(ox, oy);
+    this.lockedLayer.position.set(ox, oy);
   }
 
   private stopAmbient(): void {
