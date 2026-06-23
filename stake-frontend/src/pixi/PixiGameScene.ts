@@ -390,10 +390,10 @@ export class PixiGameScene {
       case "round_end": {
         this.hud.draw(this.layout, snapshot);
         if (this.bonusActive) {
-          // The chase already showed its centered result — hold, then fade out
-          // smoothly back to the base board.
+          // The chase result card waits for the player's tap inside finish(), so
+          // by the time we reach round_end they've acknowledged it — fade straight out.
           this.bonusActive = false;
-          await wait(turbo ? 150 : 550);
+          await wait(turbo ? 40 : 140);
           await this.bonus.fadeOutAndHide(turbo);
           return;
         }

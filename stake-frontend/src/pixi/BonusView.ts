@@ -30,6 +30,30 @@ const MAX_RESPINS = 4;
 // Near-black reel/opening background so the gold symbols read clearly.
 const REEL_BG = 0x05070b;
 
+// Reel spin motion profile: a quick ramp to full speed, a long stretch of
+// CONSTANT fast spin (so it reads as continuous, looping motion), then a smooth
+// deceleration onto the stop. reelPos = 0..1 distance covered; reelVel = 0..1
+// normalised speed (drives the motion blur — blurry while fast, sharp at rest).
+const REEL_RAMP = 0.12;   // fraction of time spent accelerating
+const REEL_HOLD = 0.6;    // fraction of time at constant top speed
+const REEL_NORM = REEL_RAMP / 2 + (REEL_HOLD - REEL_RAMP) + (1 - REEL_HOLD) / 2;
+function reelPos(p: number): number {
+  let area: number;
+  if (p < REEL_RAMP) area = (p * p) / (2 * REEL_RAMP);
+  else if (p <= REEL_HOLD) area = REEL_RAMP / 2 + (p - REEL_RAMP);
+  else {
+    const u = (p - REEL_HOLD) / (1 - REEL_HOLD);
+    area = REEL_RAMP / 2 + (REEL_HOLD - REEL_RAMP) + ((1 - REEL_HOLD) / 2) * (u + Math.sin(Math.PI * u) / Math.PI);
+  }
+  return area / REEL_NORM;
+}
+function reelVel(p: number): number {
+  if (p < REEL_RAMP) return p / REEL_RAMP;
+  if (p <= REEL_HOLD) return 1;
+  const u = (p - REEL_HOLD) / (1 - REEL_HOLD);
+  return (1 + Math.cos(Math.PI * u)) / 2;
+}
+
 function fmtX(v: number): string {
   const r = Math.round(v * 100) / 100;
   return `${r.toLocaleString("en-US", { maximumFractionDigits: 2 })}x`;
@@ -332,37 +356,88 @@ export class BonusView extends Container {
     }).then(() => c.destroy());
   }
 
-  /** End of the chase. filled = Grand Escape jackpot; otherwise Busted. */
+  /** End of the chase. filled = Grand Escape jackpot; otherwise Busted.
+   *  A big, dramatic result card with the win amount that stays up until the
+   *  player taps/clicks — the bonus never auto-dismisses. */
   async finish(filled: boolean, totalX: number, turbo: boolean): Promise<void> {
     if (filled) { void this.grandEscape(turbo); }
     else { this.busted = true; this.heat = 3; void this.bustedFlash(turbo); }
 
     const W = this.rect.width;
     const H = this.rect.height;
-    // Dim the chase so the result reads clearly.
+    // Heavy dim so the result really pops.
     const dim = new Graphics();
     dim.rect(0, 0, W, H).fill({ color: 0x000000, alpha: 1 });
     dim.alpha = 0;
     this.hudLayer.addChild(dim);
 
+    // Radiating light burst behind the card (premium finish).
+    const rays = this.buildResultRays(filled);
+    this.hudLayer.addChild(rays);
+
     const card = this.buildResultCard(filled);
     this.hudLayer.addChild(card);
     this.resultCard = card;
-    card.scale.set(0.72);
+    card.scale.set(0.6);
     card.alpha = 0;
-    await tween(turbo ? 220 : 560, (p) => {
-      dim.alpha = p * 0.55;
+    await tween(turbo ? 280 : 640, (p) => {
+      dim.alpha = p * 0.72;
+      rays.alpha = p * (filled ? 0.9 : 0.5);
       card.alpha = Math.min(1, p * 2);
-      card.scale.set(0.72 + 0.28 * easeOutBack(p));
+      card.scale.set(0.6 + 0.4 * easeOutBack(p));
     }, linear);
     card.scale.set(1);
     card.alpha = 1;
 
-    // Count the payout up on the card for a satisfying finish.
+    // Count the win amount up — big and central.
     const payout = card.getChildByLabel("payout") as Text | null;
     if (payout) await this.countUp(payout, totalX, turbo);
     this.setCollected(totalX, false);
-    await wait(turbo ? 250 : 950);
+
+    // Keep it alive: slowly rotate the rays, pulse the amount + the tap hint,
+    // until the player acknowledges the win.
+    const hint = card.getChildByLabel("hint") as Text | null;
+    const baseRot = rays.rotation;
+    const idle = (_dt: number, elapsed: number): void => {
+      rays.rotation = baseRot + elapsed * 0.18;
+      if (payout) payout.scale.set(1 + Math.sin(elapsed * 2) * 0.025);
+      if (hint) hint.alpha = 0.45 + 0.45 * Math.abs(Math.sin(elapsed * 2.2));
+    };
+    ambientTicker.add(idle);
+
+    // Stay up until the player taps/clicks — NEVER auto-dismiss.
+    await this.waitForDismiss();
+
+    ambientTicker.remove(idle);
+    // A small acknowledge pop on tap before the round_end fade takes over.
+    await tween(turbo ? 120 : 200, (p) => { card.scale.set(1 + 0.06 * Math.sin(p * Math.PI)); });
+    card.scale.set(1);
+  }
+
+  /** Radiating sunburst behind the result card. */
+  private buildResultRays(filled: boolean): Container {
+    const c = new Container();
+    c.position.set(this.rect.width / 2, this.rect.height / 2);
+    const g = new Graphics();
+    const color = filled ? 0xffd95c : 0xff6a00;
+    const R = Math.max(this.rect.width, this.rect.height);
+    const n = 18;
+    for (let i = 0; i < n; i++) {
+      const a0 = (i / n) * Math.PI * 2;
+      const a1 = a0 + (Math.PI * 2 / n) * 0.5;
+      g.moveTo(0, 0).lineTo(Math.cos(a0) * R, Math.sin(a0) * R).lineTo(Math.cos(a1) * R, Math.sin(a1) * R).fill({ color, alpha: 0.13 });
+    }
+    c.addChild(g);
+    c.alpha = 0;
+    return c;
+  }
+
+  /** Resolve once the player clicks/taps anywhere — used to dismiss the result. */
+  private waitForDismiss(): Promise<void> {
+    return new Promise((resolve) => {
+      const onDown = (): void => { window.removeEventListener("pointerdown", onDown); resolve(); };
+      window.addEventListener("pointerdown", onDown);
+    });
   }
 
   private async countUp(text: Text, target: number, turbo: boolean): Promise<void> {
@@ -380,36 +455,44 @@ export class BonusView extends Container {
     const c = new Container();
     c.position.set(W / 2, H / 2);
     const accent = filled ? 0xffd95c : 0xffb000;
-    const pw = Math.min(W * 0.62, 560);
-    const ph = Math.min(H * 0.42, 260);
+    // Much bigger card so the win is the hero of the screen.
+    const pw = Math.min(W * 0.8, 720);
+    const ph = Math.min(H * 0.6, 430);
 
     const g = new Graphics();
-    g.roundRect(-pw / 2 - 6, -ph / 2 - 6, pw + 12, ph + 12, 22).fill({ color: 0x000000, alpha: 0.45 });
-    g.roundRect(-pw / 2, -ph / 2, pw, ph, 18).fill({ color: 0x0a0e1a, alpha: 0.95 });
-    g.roundRect(-pw / 2, -ph / 2, pw, ph, 18).stroke({ color: accent, width: 4 });
+    g.roundRect(-pw / 2 - 8, -ph / 2 - 8, pw + 16, ph + 16, 28).fill({ color: 0x000000, alpha: 0.5 });
+    g.roundRect(-pw / 2, -ph / 2, pw, ph, 24).fill({ color: 0x0a0e1a, alpha: 0.96 });
+    g.roundRect(-pw / 2, -ph / 2, pw, ph, 24).stroke({ color: accent, width: 5 });
     c.addChild(g);
 
     const title = new Text({
       text: filled ? "GRAND ESCAPE!" : "BUSTED",
-      style: new TextStyle({ fill: accent, fontFamily: FONT, fontSize: Math.min(48, pw / 9), fontWeight: "900", letterSpacing: 3, stroke: { color: 0x000000, width: 4 }, dropShadow: { color: accent, alpha: 0.5, blur: 16, distance: 0, angle: 0 } })
+      style: new TextStyle({ fill: accent, fontFamily: FONT, fontSize: Math.min(74, pw / 8), fontWeight: "900", letterSpacing: 3, stroke: { color: 0x000000, width: 6 }, dropShadow: { color: accent, alpha: 0.6, blur: 24, distance: 0, angle: 0 } })
     });
     title.anchor.set(0.5);
-    title.position.set(0, -ph * 0.27);
+    title.position.set(0, -ph * 0.3);
     c.addChild(title);
 
-    const sub = new Text({ text: filled ? "FULL HAUL — MAX WIN" : "TOTAL COLLECTED", style: new TextStyle({ fill: 0x9fb4d0, fontFamily: FONT, fontSize: Math.min(15, pw / 30), letterSpacing: 3 }) });
+    const sub = new Text({ text: filled ? "FULL HAUL — MAX WIN" : "TOTAL WIN", style: new TextStyle({ fill: 0x9fb4d0, fontFamily: FONT, fontSize: Math.min(22, pw / 26), letterSpacing: 4 }) });
     sub.anchor.set(0.5);
-    sub.position.set(0, -ph * 0.02);
+    sub.position.set(0, -ph * 0.06);
     c.addChild(sub);
 
     const payout = new Text({
       text: "0x",
-      style: new TextStyle({ fill: 0xffd95c, fontFamily: FONT, fontSize: Math.min(64, pw / 7), fontWeight: "900", letterSpacing: 1, stroke: { color: 0x3a2400, width: 5 }, dropShadow: { color: 0xff6a00, alpha: 0.7, blur: 14, distance: 0, angle: 0 } })
+      style: new TextStyle({ fill: 0xffd95c, fontFamily: FONT, fontSize: Math.min(112, pw / 5), fontWeight: "900", letterSpacing: 1, stroke: { color: 0x3a2400, width: 8 }, dropShadow: { color: 0xff6a00, alpha: 0.85, blur: 22, distance: 0, angle: 0 } })
     });
     payout.anchor.set(0.5);
-    payout.position.set(0, ph * 0.24);
+    payout.position.set(0, ph * 0.17);
     payout.label = "payout";
     c.addChild(payout);
+
+    const hint = new Text({ text: "TAP TO CONTINUE", style: new TextStyle({ fill: 0xffffff, fontFamily: FONT, fontSize: Math.min(18, pw / 30), letterSpacing: 3 }) });
+    hint.anchor.set(0.5);
+    hint.position.set(0, ph * 0.42);
+    hint.alpha = 0.6;
+    hint.label = "hint";
+    c.addChild(hint);
     return c;
   }
 
@@ -844,7 +927,8 @@ export class BonusView extends Container {
     const cx = rc0.x + cellW / 2;
     const colTop = rc0.y;
     const colH = cellH * GRID_ROWS;
-    const screens = turbo ? 3 : 5;
+    // More screens = a longer, clearly continuous scroll before the stop.
+    const screens = turbo ? 4 : 7;
     const travel = colH * screens;
 
     // Heat Chase logo used as a dim watermark on empty spinning cells so the
@@ -894,10 +978,13 @@ export class BonusView extends Container {
     blur.strengthX = 0;
     strip.filters = [blur];
 
+    // Constant-speed spin (the continuous illusion) then a smooth settle. The
+    // strip is one continuous run of faces, so symbols flow down and fresh ones
+    // keep arriving from the top — never a visible disappear/re-pop.
     return tween(dur, (p) => {
-      strip.y = -travel * (1 - p);
-      blur.strengthY = blurMax * (1 - p) * (1 - p); // sharp by the time it lands
-    }, easeOutCubic).then(() => {
+      strip.y = -travel * (1 - reelPos(p));
+      blur.strengthY = blurMax * reelVel(p);   // blurry while fast, razor sharp at rest
+    }, linear).then(() => {
       strip.destroy({ children: true });
       mask.destroy();
       for (const r of rows) {
@@ -980,32 +1067,43 @@ export class BonusView extends Container {
   private async grandEscape(turbo: boolean): Promise<void> {
     const W = this.rect.width;
     const H = this.rect.height;
-    const flash = new Graphics();
-    flash.rect(0, 0, W, H).fill({ color: 0xffd95c, alpha: 0.6 });
-    this.fxLayer.addChild(flash);
     const cx = W / 2, cy = H / 2;
+    const flash = new Graphics();
+    flash.rect(0, 0, W, H).fill({ color: 0xfff2c0, alpha: 0.85 });
+    this.fxLayer.addChild(flash);
+    const ring = new Graphics();
+    this.fxLayer.addChild(ring);
     const parts: Graphics[] = [];
-    const data: Array<{ vx: number; vy: number }> = [];
-    const n = turbo ? 14 : 44;
+    const data: Array<{ vx: number; vy: number; spin: number }> = [];
+    const n = turbo ? 28 : 90;
     for (let i = 0; i < n; i++) {
       const g = new Graphics();
-      g.circle(0, 0, 3 + Math.random() * 5).fill([0xffd95c, 0xffec80, 0xff6a00, 0xffffff][i % 4]);
+      const sz = 4 + Math.random() * 9;
+      g.rect(-sz / 2, -sz / 2, sz, sz).fill([0xffd95c, 0xffec80, 0xff6a00, 0xffffff][i % 4]);
       g.position.set(cx, cy);
+      g.rotation = Math.random() * Math.PI;
       this.fxLayer.addChild(g);
       parts.push(g);
-      const ang = (Math.PI * 2 * i) / n + Math.random() * 0.4;
-      data.push({ vx: Math.cos(ang) * (160 + Math.random() * 220), vy: Math.sin(ang) * (160 + Math.random() * 220) });
+      const ang = (Math.PI * 2 * i) / n + Math.random() * 0.5;
+      const sp = 240 + Math.random() * 380;
+      data.push({ vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, spin: (Math.random() - 0.5) * 10 });
     }
-    await tween(turbo ? 220 : 850, (p) => {
-      flash.alpha = (1 - p) * 0.6;
+    const reach = Math.max(W, H) * 0.62;
+    await tween(turbo ? 280 : 1000, (p) => {
+      flash.alpha = (1 - p) * 0.85;
+      ring.clear();
+      ring.circle(cx, cy, reach * p).stroke({ color: 0xffd95c, width: Math.max(1, 18 * (1 - p)), alpha: (1 - p) * 0.85 });
+      ring.circle(cx, cy, reach * p * 0.7).stroke({ color: 0xffffff, width: Math.max(1, 9 * (1 - p)), alpha: (1 - p) * 0.6 });
       parts.forEach((g, i) => {
         g.x = cx + data[i].vx * p;
-        g.y = cy + data[i].vy * p + 90 * p * p;
-        g.alpha = 1 - p;
-        g.scale.set(1 - p * 0.5);
+        g.y = cy + data[i].vy * p + 150 * p * p;
+        g.alpha = 1 - p * p;
+        g.rotation += data[i].spin * 0.02;
+        g.scale.set(1 - p * 0.4);
       });
     }, easeOutCubic);
     flash.destroy();
+    ring.destroy();
     parts.forEach((g) => g.destroy());
   }
 
