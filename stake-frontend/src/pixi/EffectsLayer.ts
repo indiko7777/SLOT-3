@@ -78,7 +78,7 @@ export class EffectsLayer extends Container {
     const strip = new Graphics();
     const stripH = amount ? (big ? 120 : 100) : 55;
     strip.rect(rect.x, cy - stripH / 2, rect.width, stripH)
-      .fill({ color: 0x050816, alpha: 0.85 });
+      .fill({ color: 0x000000, alpha: 0.85 });
     strip.alpha = 0;
     group.addChild(strip);
 
@@ -405,7 +405,7 @@ export class EffectsLayer extends Container {
       const redAlpha = 0.22 * Math.sin(progress * Math.PI * 3);
       const blueAlpha = 0.22 * Math.sin(progress * Math.PI * 3 + Math.PI);
       sweep.rect(rect.x, rect.y, rect.width / 2, rect.height).fill({ color: 0xffb000, alpha: Math.max(0, redAlpha) });
-      sweep.rect(rect.x + rect.width / 2, rect.y, rect.width / 2, rect.height).fill({ color: 0x29d4ff, alpha: Math.max(0, blueAlpha) });
+      sweep.rect(rect.x + rect.width / 2, rect.y, rect.width / 2, rect.height).fill({ color: 0x7cf595, alpha: Math.max(0, blueAlpha) });
       sweep.alpha = 1 - progress * 0.3;
     }, linear);
 
@@ -427,7 +427,7 @@ export class EffectsLayer extends Container {
       for (let i = 0; i < 8; i++) {
         const dot = new Graphics();
         const size = 2 + Math.random() * 4;
-        const color = [0xffdf65, 0xffb000, 0x62ffa7, 0x68f7ff, 0xffd700][i % 5];
+        const color = [0xffdf65, 0xffb000, 0x62ffa7, 0x9ae64e, 0xffd700][i % 5];
         dot.circle(0, 0, size).fill(color);
         dot.position.set(cx, cy);
         dot.alpha = 0;
@@ -474,8 +474,8 @@ export class EffectsLayer extends Container {
         glowBeams.moveTo(from.x, from.y).lineTo(ex, ey);
         beams.moveTo(from.x, from.y).lineTo(ex, ey);
       }
-      glowBeams.stroke({ color: 0x68f7ff, width: 12, alpha: 0.25 });
-      beams.stroke({ color: 0x68f7ff, width: 3, alpha: 0.95 });
+      glowBeams.stroke({ color: 0x9ae64e, width: 12, alpha: 0.25 });
+      beams.stroke({ color: 0x9ae64e, width: 3, alpha: 0.95 });
     });
 
     await tween(150, (progress) => {

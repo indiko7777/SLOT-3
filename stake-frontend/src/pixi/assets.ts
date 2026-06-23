@@ -19,11 +19,11 @@ export const SYMBOL_ASSETS: Record<SymbolId, SymbolSkin> = {
   WILD: { color: 0x5f401a, stroke: 0xffdf65, text: 0xffffff, label: "WD", assetKey: "symbols/wild_symbole.png" },
   DIAMOND: { color: 0x302719, stroke: 0xffdf65, text: 0xffdf65, label: "DM", assetKey: "symbols/diamond.png" },
   BIKE: { color: 0x332919, stroke: 0xffdf65, text: 0xffdf65, label: "SB", assetKey: "symbols/bike.png" },
-  CAR_WILD: { color: 0x063957, stroke: 0x65f8ff, text: 0xffffff, label: "W", assetKey: "symbols/cyan_car_wild.png" },
+  CAR_WILD: { color: 0x163611, stroke: 0x9ae64e, text: 0xffffff, label: "W", assetKey: "symbols/cyan_car_wild.png" },
   PHONE_SCATTER: { color: 0x311634, stroke: 0xff4777, text: 0xff8bad, label: "PH", assetKey: "symbols/burner_phone.png" },
   SAFE: { color: 0x5f401a, stroke: 0xffdf65, text: 0xffdf65, label: "SF", assetKey: "symbols/safe.png" },
-  MASTER_KEY: { color: 0x123a67, stroke: 0x68f7ff, text: 0xffffff, label: "KY", assetKey: "symbols/master_key.png" },
-  EMPTY: { color: 0x0d1530, stroke: 0x2b6c8a, text: 0xffffff, label: "", assetKey: "symbols/empty.png" }
+  MASTER_KEY: { color: 0x123a67, stroke: 0x9ae64e, text: 0xffffff, label: "KY", assetKey: "symbols/master_key.png" },
+  EMPTY: { color: 0x0d1530, stroke: 0x527a3c, text: 0xffffff, label: "", assetKey: "symbols/empty.png" }
 };
 
 const BASE_PATH = "assets/";

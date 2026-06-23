@@ -629,7 +629,7 @@ export class PixiGameScene {
     parentContainer.addChild(particlesContainer);
 
     const particles: Array<{ sprite: Graphics; vx: number; vy: number; scaleSpeed: number }> = [];
-    const colors = [0xffd95c, 0x65dfff, 0xffffff];
+    const colors = [0xffd95c, 0x9ae64e, 0xffffff];
     for (let i = 0; i < 24; i++) {
       const p = new Graphics();
       const color = colors[Math.floor(Math.random() * colors.length)]!;

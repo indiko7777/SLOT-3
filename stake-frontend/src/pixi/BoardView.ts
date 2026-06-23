@@ -588,14 +588,14 @@ export class BoardView extends Container {
     const colW = w / GRID_COLUMNS;
     for (let col = 0; col < GRID_COLUMNS; col++) {
       const x = col * colW;
-      const shade = col % 2 === 0 ? 0x050a1a : 0x07102a;
+      const shade = col % 2 === 0 ? 0x000000 : 0x000000;
       this.background.rect(x, 0, colW, h).fill({ color: shade, alpha: 0.52 });
     }
 
     // Thin neon column separators
     for (let col = 1; col < GRID_COLUMNS; col++) {
       const x = col * colW;
-      this.background.rect(x - 1, 4, 1, h - 8).fill({ color: 0x48e5ff, alpha: 0.14 });
+      this.background.rect(x - 1, 4, 1, h - 8).fill({ color: 0x9ae64e, alpha: 0.14 });
     }
 
     // Vignette top/bottom edges

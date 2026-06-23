@@ -7,10 +7,10 @@ import { easeInOutCubic, easeOutElastic, easeOutBack, easeOutQuad, linear, tween
 
 /** Per-symbol win accent colour. Heroes get their own signature glow. */
 const WIN_ACCENT: Partial<Record<SymbolId, number>> = {
-  CAR_WILD: 0x65f8ff,      // electric cyan
-  MASTER_KEY: 0x68f7ff,    // key energy
+  CAR_WILD: 0x9ae64e,      // electric cyan
+  MASTER_KEY: 0x9ae64e,    // key energy
   SAFE: 0xffe27a,          // warm gold
-  DIAMOND: 0x9fe8ff,       // icy sparkle
+  DIAMOND: 0xe3ffd6,       // icy sparkle
   PHONE_SCATTER: 0xff7bd0, // scatter pink
 };
 const HERO_SYMBOLS = new Set<SymbolId>(["CAR_WILD", "SAFE", "MASTER_KEY"]);
@@ -86,7 +86,7 @@ export class SymbolView extends Container {
         .stroke({ color: 0xffdf65, width: 1.5, alpha: 0.5 });
     } else if (alert) {
       this.background.roundRect(-1, -1, w + 2, h + 2, 11)
-        .stroke({ color: 0x65f8ff, width: 3, alpha: 0.8 });
+        .stroke({ color: 0x9ae64e, width: 3, alpha: 0.8 });
     } else if (transformed) {
       this.background.roundRect(-1, -1, w + 2, h + 2, 11)
         .stroke({ color: 0x62ffa7, width: 3, alpha: 0.7 });

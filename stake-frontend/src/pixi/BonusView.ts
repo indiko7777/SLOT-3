@@ -31,7 +31,7 @@ const MAX_RESPINS = 4;
 // exact colour and the reel panel is the same flat colour, so the symbols'
 // backgrounds are invisible — during a spin you only ever see the symbol art
 // move, never a background box.
-const REEL_BG = 0x26262c;
+const REEL_BG = 0x0c0c0f;
 
 // Reel spin motion profile: a quick ramp to full speed, a long stretch of
 // CONSTANT fast spin (so it reads as continuous, looping motion), then a smooth
@@ -69,6 +69,7 @@ export class BonusView extends Container {
   /** Locked (previously landed) gold bars rendered ABOVE the spinning strip so the
    *  strip's blur filter never bleeds onto or clips them. */
   private readonly lockedLayer = new Container();
+  private readonly dividerLayer = new Container();
   private readonly fxLayer = new Container();
   private readonly hudLayer = new Container();
   private readonly police = new Graphics();
@@ -99,7 +100,7 @@ export class BonusView extends Container {
     this.visible = false;
     // lockedLayer sits between gridLayer (spinning strip) and fxLayer so
     // the sticky gold bars are always drawn on top of any reel blur.
-    this.addChild(this.bgLayer, this.truckLayer, this.gridLayer, this.lockedLayer, this.fxLayer, this.police, this.hudLayer);
+    this.addChild(this.bgLayer, this.truckLayer, this.gridLayer, this.lockedLayer, this.dividerLayer, this.fxLayer, this.police, this.hudLayer);
     // Heavy blur turns the police light sources into soft, natural bloom.
     this.police.filters = [new BlurFilter({ strength: 30, quality: 3 })];
   }
@@ -159,6 +160,7 @@ export class BonusView extends Container {
 
     this.buildHighway();
     this.buildTruck();
+    this.buildDividers();
     this.buildHud();
     this.startAmbient();
     this.scale.set(1);
@@ -218,7 +220,7 @@ export class BonusView extends Container {
   /** Draw the current grid with no animation (used when resuming a round). */
   showStatic(grid: BonusCell[][]): void {
     this.visible = true;
-    if (!this.truck) { this.buildHighway(); this.buildTruck(); this.buildHud(); this.startAmbient(); }
+    if (!this.truck) { this.buildHighway(); this.buildTruck(); this.buildDividers(); this.buildHud(); this.startAmbient(); }
     this.gridLayer.removeChildren();
     this.cells.clear();
     const logoTex = getExtraTexture("heat_chase_logo");
@@ -464,7 +466,7 @@ export class BonusView extends Container {
 
     const g = new Graphics();
     g.roundRect(-pw / 2 - 8, -ph / 2 - 8, pw + 16, ph + 16, 28).fill({ color: 0x000000, alpha: 0.5 });
-    g.roundRect(-pw / 2, -ph / 2, pw, ph, 24).fill({ color: 0x0a0e1a, alpha: 0.96 });
+    g.roundRect(-pw / 2, -ph / 2, pw, ph, 24).fill({ color: 0x000000, alpha: 0.96 });
     g.roundRect(-pw / 2, -ph / 2, pw, ph, 24).stroke({ color: accent, width: 5 });
     c.addChild(g);
 
@@ -504,6 +506,7 @@ export class BonusView extends Container {
     this.stopAmbient();
     this.gridLayer.removeChildren();
     this.lockedLayer.removeChildren();
+    this.dividerLayer.removeChildren();
     this.fxLayer.removeChildren();
     this.hudLayer.removeChildren();
     this.truckLayer.removeChildren();
@@ -562,6 +565,31 @@ export class BonusView extends Container {
     this.truck = truck;
   }
 
+  private buildDividers(): void {
+    this.dividerLayer.removeChildren();
+    const o = this.opening();
+    const w = o.width / GRID_COLUMNS;
+    const g = new Graphics();
+    
+    // Draw 4 vertical column delimiters for a premium slot grid look.
+    // They extend vertically across the full reel window.
+    for (let c = 1; c < GRID_COLUMNS; c++) {
+      const x = o.x + c * w;
+      
+      // Main dark steel core line
+      g.moveTo(x, o.y)
+       .lineTo(x, o.y + o.height)
+       .stroke({ color: 0x1d212b, width: 2, alpha: 0.85 });
+      
+      // Soft light-catching highlight (left edge) to give a fine 3D bevel look
+      g.moveTo(x - 1, o.y)
+       .lineTo(x - 1, o.y + o.height)
+       .stroke({ color: 0xffffff, width: 1, alpha: 0.12 });
+    }
+    
+    this.dividerLayer.addChild(g);
+  }
+
   /** Procedural armored-truck frame: steel border with a transparent door window. */
   private procTruck(): Graphics {
     const W = this.rect.width;
@@ -576,7 +604,7 @@ export class BonusView extends Container {
     // the opening: punch a hole by drawing the surrounding frame only
     const pad = 14;
     g.roundRect(o.x - pad, o.y - pad, o.width + pad * 2, o.height + pad * 2, 10)
-      .fill({ color: 0x05070f, alpha: 1 });
+      .fill({ color: 0x000000, alpha: 1 });
     // gold-trimmed door edges
     g.roundRect(o.x - pad, o.y - pad, o.width + pad * 2, o.height + pad * 2, 10)
       .stroke({ color: 0xffd95c, width: 4, alpha: 0.7 });

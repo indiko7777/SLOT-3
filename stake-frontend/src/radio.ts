@@ -46,7 +46,7 @@ function injectStyle(): void {
     display:flex;flex-direction:column;align-items:center;justify-content:center;
     cursor:pointer;transition:all .12s ease-out;color:#fff;opacity:0.45;}
   .station-btn:hover{opacity:0.8;}
-  .station-btn.sel{border:3px solid #c2f58e;box-shadow:0 0 15px rgba(194,245,142,.3);
+  .station-btn.sel{border:3px solid #9ae64e;box-shadow:0 0 15px rgba(154,230,78,.3);
     color:#fff;transform:scale(1.25);background:#000;z-index:10;opacity:1;}
   
   .station-icon{font-size:26px;line-height:1;pointer-events:none;text-shadow:0 2px 5px rgba(0,0,0,.7);}
@@ -61,7 +61,7 @@ function injectStyle(): void {
   .radio-tag{font-size:16px;color:#e0e0e0;margin-bottom:6px;}
   
   .radio-eq{display:flex;gap:3px;height:14px;align-items:flex-end;margin-top:4px;}
-  .radio-eq i{width:3px;background:#c2f58e;border-radius:1px;animation:radioEq .8s ease-in-out infinite;}
+  .radio-eq i{width:3px;background:#9ae64e;border-radius:1px;animation:radioEq .8s ease-in-out infinite;}
   .radio-eq i:nth-child(2){animation-delay:.15s}.radio-eq i:nth-child(3){animation-delay:.3s}
   .radio-eq i:nth-child(4){animation-delay:.45s}.radio-eq i:nth-child(5){animation-delay:.1s}
   @keyframes radioEq{0%,100%{height:3px}50%{height:14px}}

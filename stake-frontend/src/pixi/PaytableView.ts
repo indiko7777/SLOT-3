@@ -25,7 +25,7 @@ const SYMBOL_GROUPS: SymbolGroup[] = [
   },
   {
     title: "MID",
-    titleColor: 0x48e5ff,
+    titleColor: 0x9ae64e,
     symbols: ["DUFFEL", "AMMO", "PISTOL"],
   },
   {
@@ -36,9 +36,9 @@ const SYMBOL_GROUPS: SymbolGroup[] = [
 ];
 
 const GOLD = 0xffdf65;
-const CYAN = 0x48e5ff;
+const CYAN = 0x9ae64e;
 const PANEL_BG = 0x0a0f24;
-const OVERLAY_BG = 0x050816;
+const OVERLAY_BG = 0x000000;
 const BORDER_GOLD = 0xb8962e;
 const TEXT_WHITE = 0xffffff;
 const TEXT_DIM = 0x8a9cbf;
@@ -333,7 +333,7 @@ export class PaytableView extends Container {
 
     // Subtle row background
     const rowBg = new Graphics();
-    rowBg.roundRect(0, 0, innerW, rowH, 6).fill({ color: 0x0e1530, alpha: 0.5 });
+    rowBg.roundRect(0, 0, innerW, rowH, 6).fill({ color: 0x000000, alpha: 0.5 });
     row.addChildAt(rowBg, 0);
 
     return row;
@@ -345,7 +345,7 @@ export class PaytableView extends Container {
 
     // Row background
     const rowBg = new Graphics();
-    rowBg.roundRect(0, 0, innerW, rowH, 6).fill({ color: 0x0e1530, alpha: 0.5 });
+    rowBg.roundRect(0, 0, innerW, rowH, 6).fill({ color: 0x000000, alpha: 0.5 });
     rowBg.roundRect(0, 0, innerW, rowH, 6).stroke({ color: SYMBOL_ASSETS[symId].stroke, width: 1, alpha: 0.25 });
     row.addChild(rowBg);
 

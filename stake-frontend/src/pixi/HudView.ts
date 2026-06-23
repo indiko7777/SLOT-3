@@ -137,12 +137,12 @@ export class HudView extends Container {
     } else {
       // Fallback procedural background
       const g = new Graphics();
-      g.rect(0, 0, layout.width, layout.height).fill(0x060917);
-      g.circle(layout.width * 0.78, layout.height * 0.2, Math.max(layout.width, layout.height) * 0.26).fill({ color: 0x126dff, alpha: 0.24 });
+      g.rect(0, 0, layout.width, layout.height).fill(0x000000);
+      g.circle(layout.width * 0.78, layout.height * 0.2, Math.max(layout.width, layout.height) * 0.26).fill({ color: 0x2ea847, alpha: 0.24 });
       g.circle(layout.width * 0.26, layout.height * 0.96, Math.max(layout.width, layout.height) * 0.25).fill({ color: 0xff6129, alpha: 0.3 });
       if (isMaxHeat) {
         g.rect(0, 0, layout.width / 2, layout.height).fill({ color: 0xffb000, alpha: 0.14 });
-        g.rect(layout.width / 2, 0, layout.width / 2, layout.height).fill({ color: 0x29d4ff, alpha: 0.14 });
+        g.rect(layout.width / 2, 0, layout.width / 2, layout.height).fill({ color: 0x7cf595, alpha: 0.14 });
       }
       this.addChild(g);
     }
@@ -186,7 +186,7 @@ export class HudView extends Container {
         logo.position.set(center, (regionTop + regionBottom) / 2);
         
         // Add a drop shadow to separate it clearly from the background
-        logo.filters = [new DropShadowFilter({ color: 0x000000, alpha: 0.9, blur: 8, distance: 5 })];
+        logo.filters = [new DropShadowFilter({ color: 0x000000, alpha: 0.9, blur: 8, offset: { x: 0, y: 5 } })];
 
         // Subtle breathing animation to draw the eye
         this.addAmbient((_dt, elapsed) => {
@@ -210,7 +210,7 @@ export class HudView extends Container {
 
     const glowColor = action === "super_buy" ? 0xffdf65
                     : action === "ante" ? (this.runtime.isAnteEnabled() ? 0x22dd66 : 0x4a5a6c)
-                    : 0x48e5ff;
+                    : 0x9ae64e;
 
     // Outer neon glow
     const glow = new Graphics();
@@ -221,7 +221,7 @@ export class HudView extends Container {
 
     // Dark body
     const bg = new Graphics();
-    bg.roundRect(0, 0, width, height, 8).fill({ color: 0x07152e, alpha: 0.5 });
+    bg.roundRect(0, 0, width, height, 8).fill({ color: 0x000000, alpha: 0.5 });
     bg.roundRect(0, 0, width, height, 8).stroke({ color: glowColor, width: 2.5, alpha: 0.75 });
     panel.addChild(bg);
 
@@ -230,7 +230,7 @@ export class HudView extends Container {
 
     // Kicker text
     const kickerSize = Math.min(13, Math.max(10, width / 12));
-    const kickerColor = action === "super_buy" ? 0xbfa65c : action === "ante" ? 0x6abf8a : 0x6ab8cc;
+    const kickerColor = action === "super_buy" ? 0xbfa65c : action === "ante" ? 0x6abf8a : 0x98c47e;
     const kickerText = makeText(kicker, kickerSize, kickerColor, width / 2, 10, "center");
     this.fitText(kickerText, textMaxWidth);
     panel.addChild(kickerText);
@@ -314,16 +314,16 @@ export class HudView extends Container {
     // Fully transparent interior — background shows through
     // Outer neon edge border only
     frame.roundRect(rect.x - 2, rect.y - 2, rect.width + 4, rect.height + 4, 12)
-      .stroke({ color: 0x48e5ff, width: 2, alpha: 0.45 });
+      .stroke({ color: 0x9ae64e, width: 2, alpha: 0.45 });
     frame.roundRect(rect.x, rect.y, rect.width, rect.height, 10)
-      .stroke({ color: 0x48e5ff, width: 1, alpha: 0.25 });
+      .stroke({ color: 0x9ae64e, width: 1, alpha: 0.25 });
     this.addChild(frame);
   }
 
   private drawControls(rect: Rect, snapshot: PlaybackSnapshot): void {
     // Bar background
     const bar = new Graphics();
-    bar.rect(rect.x, rect.y, rect.width, rect.height).fill({ color: 0x070a18, alpha: 0.5 });
+    bar.rect(rect.x, rect.y, rect.width, rect.height).fill({ color: 0x000000, alpha: 0.5 });
     this.addChild(bar);
 
     // Small utility buttons
@@ -436,7 +436,7 @@ export class HudView extends Container {
       const pts = this.starPoints(sx, starCY, starR, starIR);
 
       const base = new Graphics();
-      base.poly(pts).fill({ color: 0x0a0e1e, alpha: 0.5 });
+      base.poly(pts).fill({ color: 0x000000, alpha: 0.5 });
       base.poly(pts).stroke({ color: 0x4a5570, width: 2.5, alpha: 0.6 });
       this.addChild(base);
 
@@ -546,7 +546,7 @@ export class HudView extends Container {
   private smallButton(x: number, y: number, size: number, label: string, action: string): void {
     const button = new Container();
     const g = new Graphics();
-    g.circle(size / 2, size / 2, size / 2).fill({ color: 0x0a1020, alpha: 0.5 }).stroke({ color: 0x3a5a7a, width: 1.5 });
+    g.circle(size / 2, size / 2, size / 2).fill({ color: 0x000000, alpha: 0.5 }).stroke({ color: 0x6d9154, width: 1.5 });
     button.addChild(g);
     button.addChild(makeText(label, Math.min(18, size * 0.42), 0x8a9ab8, size / 2, size * 0.24, "center"));
     button.position.set(x, y);
@@ -561,12 +561,12 @@ export class HudView extends Container {
   private betButton(x: number, y: number, size: number, label: string, action: string): void {
     const button = new Container();
     const g = new Graphics();
-    g.circle(size / 2, size / 2, size / 2).fill({ color: 0x0a1428, alpha: 0.5 }).stroke({ color: 0x48e5ff, width: 2, alpha: 0.6 });
+    g.circle(size / 2, size / 2, size / 2).fill({ color: 0x000000, alpha: 0.5 }).stroke({ color: 0x9ae64e, width: 2, alpha: 0.6 });
     button.addChild(g);
     const txt = new Text({
       text: label,
       style: new TextStyle({
-        fill: 0x48e5ff,
+        fill: 0x9ae64e,
         fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
         fontSize: 22,
         fontWeight: "900"
@@ -597,19 +597,19 @@ export class HudView extends Container {
 
     // Halo glow behind
     const halo = new Graphics();
-    halo.circle(R, R, R + 10).fill({ color: 0x48e5ff, alpha: isPlaying ? 0 : 0.08 });
+    halo.circle(R, R, R + 10).fill({ color: 0x9ae64e, alpha: isPlaying ? 0 : 0.08 });
     visual.addChild(halo);
 
     // Outer ring
     const outer = new Graphics();
-    outer.circle(R, R, R).fill({ color: 0x0a1428, alpha: 0.5 });
-    outer.circle(R, R, R).stroke({ color: isPlaying ? 0x3a4a5c : 0x48e5ff, width: 4 });
+    outer.circle(R, R, R).fill({ color: 0x000000, alpha: 0.5 });
+    outer.circle(R, R, R).stroke({ color: isPlaying ? 0x5d7d49 : 0x9ae64e, width: 4 });
     visual.addChild(outer);
 
     // Inner disc
     const inner = new Graphics();
-    inner.circle(R, R, R - 8).fill({ color: 0x0c1530, alpha: 0.5 });
-    inner.circle(R, R, R - 8).stroke({ color: isPlaying ? 0x2a3a4c : 0x48e5ff, width: 1.5, alpha: 0.4 });
+    inner.circle(R, R, R - 8).fill({ color: 0x000000, alpha: 0.5 });
+    inner.circle(R, R, R - 8).stroke({ color: isPlaying ? 0x4d6639 : 0x9ae64e, width: 1.5, alpha: 0.4 });
     visual.addChild(inner);
 
     // SPIN text — Impact
@@ -621,7 +621,7 @@ export class HudView extends Container {
         fontSize: 24,
         fontWeight: "900",
         letterSpacing: 3,
-        dropShadow: isPlaying ? undefined : { color: 0x48e5ff, alpha: 0.4, blur: 6, distance: 0 }
+        dropShadow: isPlaying ? undefined : { color: 0x9ae64e, alpha: 0.4, blur: 6, distance: 0 }
       })
     });
     spinText.anchor.set(0.5, 0.5);
