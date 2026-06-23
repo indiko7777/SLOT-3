@@ -5,7 +5,7 @@ import { getExtraTexture } from "./assets";
 import { makeText } from "./text";
 import { ambientTicker } from "./tween";
 import type { LayoutMetrics, Rect, SceneRuntime } from "./types";
-import { OutlineFilter } from "pixi-filters";
+import { OutlineFilter, DropShadowFilter } from "pixi-filters";
 
 export class HudView extends Container {
   private ambientCbs: Array<(dt: number, elapsed: number) => void> = [];
@@ -161,6 +161,41 @@ export class HudView extends Container {
     this.panelButton(rect.x, rect.y, panelWidth, 112, "BUY", TEXT.buy, "100.00x", "buy");
     this.panelButton(rect.x, rect.y + 124, panelWidth, 124, "BUY", TEXT.superBuy, "500.00x", "super_buy");
     this.panelButton(rect.x, rect.y + 262, panelWidth, 134, TEXT.ante, this.runtime.isAnteEnabled() ? "ACTIVE" : "+50%", this.runtime.isAnteEnabled() ? "ON" : "OFF", "ante");
+
+    // Game name & logo below the button stack — LANDSCAPE ONLY (the compact
+    // portrait layout returned above). A deliberately bigger gap separates it
+    // from the buttons so it doesn't read as "just another button", and it's
+    // sized as large as the side gap allows while staying clear of everything.
+    const logoTex = getExtraTexture("heat_chase_logo");
+    if (logoTex && logoTex.width > 0 && logoTex.height > 0) {
+      const center = rect.x + panelWidth / 2;
+      const buttonsBottom = rect.y + 396;
+      const spaceBelow = (rect.y + rect.height) - buttonsBottom;
+      const gap = Math.min(56, spaceBelow * 0.32);   // > the ~12px inter-button gaps
+      const regionTop = buttonsBottom + gap;
+      const regionBottom = rect.y + rect.height - 8;
+      const availH = regionBottom - regionTop;
+      const boxW = Math.max(0, rect.width * 1.4);      // Allow it to be significantly wider than the buttons
+      if (availH > 24 && boxW > 24) {
+        const logo = new Sprite(logoTex);
+        logo.anchor.set(0.5, 0.5);
+        
+        // Use a multiplier to make it noticeably larger (pop out more)
+        const baseScale = Math.min(boxW / logoTex.width, (availH * 1.2) / logoTex.height);
+        logo.scale.set(baseScale);
+        logo.position.set(center, (regionTop + regionBottom) / 2);
+        
+        // Add a drop shadow to separate it clearly from the background
+        logo.filters = [new DropShadowFilter({ color: 0x000000, alpha: 0.9, blur: 8, distance: 5 })];
+
+        // Subtle breathing animation to draw the eye
+        this.addAmbient((_dt, elapsed) => {
+          logo.scale.set(baseScale * (1 + 0.03 * Math.sin(elapsed * 2)));
+        });
+
+        this.addChild(logo);
+      }
+    }
   }
 
   /** Shrink a text object uniformly so it never spills past maxWidth (never enlarges). */
@@ -356,7 +391,12 @@ export class HudView extends Container {
   }
 
   private drawArt(rect: Rect, _snapshot: PlaybackSnapshot): void {
-    this.drawWantedStars(rect);
+    // Landscape: the 5 wanted stars sit in a strip at the TOP of the panel, ABOVE
+    // the black character silhouette ("shadow") that fills the rest below.
+    const starR = Math.min(22, rect.width / 11);
+    const labelSize = Math.min(13, rect.width * 0.04);
+    const starsH = labelSize + starR * 2 + 16;
+    this.drawWantedStars({ x: rect.x, y: rect.y, width: rect.width, height: starsH });
     this.drawCharacter(rect, _snapshot.collectionCount);
   }
 

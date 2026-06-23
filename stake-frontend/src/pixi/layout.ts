@@ -54,12 +54,16 @@ export function computeLayout(width: number, height: number): LayoutMetrics {
     height: boardFrame.height - 36
   };
 
+  // Centre the left buttons in the gap between the screen edge and the reel frame.
+  const leftPanelW = leftWidth - 24;
+  const leftPanelX = (boardFrame.x - leftPanelW) / 2;
+
   return {
     width,
     height,
     portrait,
     bottomBar,
-    leftPanel: { x: 12, y: 52, width: leftWidth - 24, height: height - bottomHeight - 68 },
+    leftPanel: { x: leftPanelX, y: 52, width: leftPanelW, height: height - bottomHeight - 68 },
     artPanel: { x: width - rightWidth + 12, y: 50, width: rightWidth - 26, height: height - bottomHeight - 58 },
     starsBar: null,
     machine,

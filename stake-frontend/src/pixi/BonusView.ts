@@ -27,8 +27,11 @@ const TRUCK_OPENING = { wFrac: 0.3262, hFrac: 0.507, cxFrac: 0.5, cyFrac: 0.4441
 // Must match stake-math BONUS_RESPINS: how many respins/pips the meter shows.
 const MAX_RESPINS = 4;
 
-// Near-black reel/opening background so the gold symbols read clearly.
-const REEL_BG = 0x05070b;
+// Uniform dark-grey reel background. EVERY bonus symbol fills its cell with this
+// exact colour and the reel panel is the same flat colour, so the symbols'
+// backgrounds are invisible — during a spin you only ever see the symbol art
+// move, never a background box.
+const REEL_BG = 0x26262c;
 
 // Reel spin motion profile: a quick ramp to full speed, a long stretch of
 // CONSTANT fast spin (so it reads as continuous, looping motion), then a smooth
@@ -545,21 +548,14 @@ export class BonusView extends Container {
       truck.addChild(this.procTruck());
     }
 
-    // Solid near-black reel surface inside the opening (overscanned a few px to
-    // cover any truck-interior bleed). No white sheen — keeps symbols readable.
+    // ONE flat, uniform reel surface inside the opening (overscanned a few px to
+    // cover any truck-interior bleed). No vignette bands, no grid separators — it
+    // is the exact same colour every symbol uses for its cell background, so the
+    // backgrounds vanish and only the symbol art is ever seen scrolling.
     const o = this.opening();
     const pad = 6;
     const panel = new Graphics();
     panel.rect(o.x - pad, o.y - pad, o.width + pad * 2, o.height + pad * 2).fill({ color: REEL_BG });
-    panel.rect(o.x, o.y, o.width, o.height * 0.45).fill({ color: 0x000000, alpha: 0.35 });
-    panel.rect(o.x, o.y + o.height * 0.85, o.width, o.height * 0.15).fill({ color: 0x000000, alpha: 0.35 });
-    // subtle grid separators so the cells read cleanly
-    for (let c = 1; c < GRID_COLUMNS; c++) {
-      panel.rect(o.x + (o.width / GRID_COLUMNS) * c - 1, o.y, 2, o.height).fill({ color: 0x000000, alpha: 0.3 });
-    }
-    for (let r = 1; r < GRID_ROWS; r++) {
-      panel.rect(o.x, o.y + (o.height / GRID_ROWS) * r - 1, o.width, 2).fill({ color: 0x000000, alpha: 0.25 });
-    }
     truck.addChild(panel);
 
     this.truckLayer.addChild(truck);
@@ -783,7 +779,7 @@ export class BonusView extends Container {
 
     // Solid cell background so no transparent gaps appear at edges when locked
     const cellBg = new Graphics();
-    cellBg.roundRect(-r.w / 2 + 1, -r.h / 2 + 1, r.w - 2, r.h - 2, 3).fill(REEL_BG);
+    cellBg.rect(-r.w / 2, -r.h / 2, r.w, r.h).fill(REEL_BG);   // full cell, exactly the panel colour → invisible
     c.addChild(cellBg);
 
     const tex = getExtraTexture("gold_bar");
@@ -827,6 +823,10 @@ export class BonusView extends Container {
   private buildDynamite(col: number, row: number): Container {
     const r = this.cellRect(col, row);
     const c = new Container();
+    // Full-cell background matching the panel so only the dynamite art is seen.
+    const cellBg = new Graphics();
+    cellBg.rect(-r.w / 2, -r.h / 2, r.w, r.h).fill(REEL_BG);
+    c.addChild(cellBg);
     const tex = getExtraTexture("dynamite");
     if (tex) {
       const s = new Sprite(tex);
@@ -848,37 +848,23 @@ export class BonusView extends Container {
   }
 
   /**
-   * An empty / no-symbol reel face: the dark cell background with the Heat Chase
-   * logo as a shadowed, faded watermark. This exists ONLY so the reel is clearly
-   * SEEN spinning even when a column has no gold/dynamite — yet it stays faint
-   * enough (and shadowed, not bright) that it can never be mistaken for a winning
-   * symbol. Gold/dynamite faces are untouched and keep their own backgrounds.
+   * The "blank" reel symbol: the Heat Chase logo on the SAME full-cell background
+   * every other symbol uses. It is a real, visible symbol, so no cell is ever
+   * empty while spinning — but it's clearly the logo, not a gold/dynamite win. Its
+   * background is the exact panel colour, so only the logo art is seen scrolling.
    */
   private buildEmptyFace(col: number, row: number, logoTex: Texture | null): Container {
     const r = this.cellRect(col, row);
     const c = new Container();
-    // Dark cell background matching the reel panel.
     const bg = new Graphics();
-    bg.roundRect(-r.w / 2 + 1, -r.h / 2 + 1, r.w - 2, r.h - 2, 3).fill(REEL_BG);
+    bg.rect(-r.w / 2, -r.h / 2, r.w, r.h).fill(REEL_BG);
     c.addChild(bg);
     if (logoTex) {
-      const maxDim = Math.min(r.w, r.h) * 0.8;
-      const sc = Math.min(maxDim / logoTex.width, maxDim / logoTex.height);
-      // Offset dark copy = a soft drop shadow, so the mark reads as embossed into
-      // the reel rather than floating on top of it.
-      const shadow = new Sprite(logoTex);
-      shadow.anchor.set(0.5);
-      shadow.tint = 0x000000;
-      shadow.alpha = 0.35;
-      shadow.scale.set(sc * 1.02);
-      shadow.position.set(2, 3);
-      c.addChild(shadow);
-      // The faded mark itself — visible enough in motion to sell the spin,
-      // dim enough at rest to obviously be a watermark.
       const logo = new Sprite(logoTex);
       logo.anchor.set(0.5);
-      logo.alpha = 0.22;
-      logo.scale.set(sc);
+      logo.alpha = 0.5;   // clearly present as a symbol, muted vs the vivid wins
+      const maxDim = Math.min(r.w, r.h) * 0.8;
+      logo.scale.set(Math.min(maxDim / logoTex.width, maxDim / logoTex.height));
       c.addChild(logo);
     }
     return c;
@@ -936,27 +922,32 @@ export class BonusView extends Container {
     const logoTex = getExtraTexture("heat_chase_logo");
 
     const strip = new Container();
-    const addFace = (r: number, k: number, finalScreen: boolean): void => {
-      let node: Container | null = null;
-      if (finalScreen) {
+    const openSet = new Set(rows);
+    const addFace = (r: number, k: number, outcome: boolean): void => {
+      let node: Container;
+      if (outcome) {
         const cell = grid[col][r];
         if (cell.symbol === "SAFE") node = this.buildGoldBar(cell.value ?? 0, col, r);
         else if (cell.symbol === "MASTER_KEY") node = this.buildDynamite(col, r);
-        // EMPTY final result: show the logo watermark so the "stop" is visible.
         else node = this.buildEmptyFace(col, r, logoTex);
       } else {
-        // Filler screen: mix in a few gold/dynamite silhouettes for visual variety,
-        // but mostly logo watermarks so the player sees something scrolling.
-        if (Math.random() < 0.12) node = this.buildDynamite(col, r);
-        else if (Math.random() < 0.18) node = this.buildGoldBar(0, col, r, true);
+        const rnd = Math.random();
+        if (rnd < 0.10) node = this.buildDynamite(col, r);
+        else if (rnd < 0.24) node = this.buildGoldBar(0, col, r, true);
         else node = this.buildEmptyFace(col, r, logoTex);
       }
-      if (node) { node.position.set(cx, colTop + r * cellH + cellH / 2 - k * colH); strip.addChild(node); }
+      // +k stacks faces BELOW the outcome row, so at the start the lower filler
+      // already fills the window (never an empty frame) and the strip scrolls
+      // DOWN — symbols flow down, fresh ones arrive from above.
+      node.position.set(cx, colTop + r * cellH + cellH / 2 + k * colH);
+      strip.addChild(node);
     };
-    // final screen (k=0): only the open rows get their real outcome
-    for (const r of rows) addFace(r, 0, true);
-    // filler screens above (all rows → a continuously-filled reel; masked to open rows)
-    for (let k = 1; k <= screens; k++) for (let r = 0; r < GRID_ROWS; r++) addFace(r, k, false);
+    // Outcome screen at the TOP (k=0): open rows show the real result; locked rows
+    // get filler (they sit under the lockedLayer overlay) so the belt stays packed.
+    for (let r = 0; r < GRID_ROWS; r++) addFace(r, 0, openSet.has(r));
+    // Filler screens stacked BELOW — enough to keep the window full for the whole
+    // travel, so every cell of every column ALWAYS shows a symbol.
+    for (let k = 1; k <= screens + 1; k++) for (let r = 0; r < GRID_ROWS; r++) addFace(r, k, false);
 
     // Mask the ENTIRE column span (not just the open rows) so the scrolling strip
     // flows SMOOTHLY behind any sticky/locked symbols instead of being clipped at
