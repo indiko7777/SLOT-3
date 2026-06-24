@@ -11,19 +11,21 @@ import {
   type SymbolId
 } from "./domain";
 import {
+  BASEBIG_THRESHOLD,
   BONUS_CELLS,
   BONUS_RESPINS,
   CLUSTER_PAY,
+  cascadeMultiplier,
   clusterSizeFactor,
   type Criteria,
-  HEAT5_MULTIPLIERS,
   LOW_SYMBOLS,
   MAX_BONUS_SPINS,
   MAX_TUMBLES,
   MODES,
   PAYABLE_SYMBOLS,
   PAYOUT_QUANTUM_X,
-  SCATTER_TRIGGER_COUNT
+  SCATTER_TRIGGER_COUNT,
+  SCATTER_TRIGGER_SHARE
 } from "./model";
 import { Rng } from "./rng";
 
@@ -68,10 +70,21 @@ export function simulateRound(
     turboProfile: "normal"
   });
 
+  // For a forced bonus in a CASH mode, decide the trigger TYPE up front: a rare
+  // scatter land, or (the default, ~85%) the WANTED path — a deep cascade forced
+  // to climb to Heat 5 so the book genuinely triggers via the stars. BUY modes
+  // are a purchased Getaway: straight to the bonus, no Wanted climb / base run.
+  const isCash = !cfg.isBuyBonus;
+  const forceScatter = forceBonus && isCash && rng.bool(SCATTER_TRIGGER_SHARE);
+  const forceDeep = forceBonus && isCash && !forceScatter;
+
   let board = genBoard(rng, mode);
   if (criteria === "zero") scrubWins(board, rng);
-  if (criteria === "basegame") ensureSeedCluster(board, rng);
-  if (forceBonus) plantScatters(board, rng, SCATTER_TRIGGER_COUNT);
+  if (criteria === "basegame") ensureSeedCluster(board, rng, false);
+  if (criteria === "basebig") ensureSeedCluster(board, rng, true);
+  if (forceScatter) plantScatters(board, rng, SCATTER_TRIGGER_COUNT);
+  else if (forceDeep) ensureSeedCluster(board, rng, true);
+  else if (forceBonus) plantScatters(board, rng, SCATTER_TRIGGER_COUNT); // buy: straight to the Getaway
   else capScatters(board, rng, SCATTER_TRIGGER_COUNT - 1);
 
   events.push({ type: "board_settle", board: cloneBoard(board) });
@@ -85,15 +98,21 @@ export function simulateRound(
     });
   }
 
-  // ---- Base game: cluster + tumble + Heat chain ----
+  // ---- Base game: cluster + tumble + climbing cascade multiplier ----
+  // The big win is built by CHAIN LENGTH: every cascade bumps the multiplier
+  // one rung (CASCADE_LADDER) and that rung multiplies every win on this
+  // cascade. A long chain of modest clusters compounds into the monster win.
   let heat = 0;
-  let globalMultiplier = 1;
+  let cascadeIndex = 0;
+  let globalMultiplier = cascadeMultiplier(0); // 1
   let winCounter = 0;
   let baseGameWin = 0;
 
   for (let guard = 0; guard < MAX_TUMBLES; guard++) {
     const clusters = findClusters(board);
     if (clusters.length === 0) break;
+
+    globalMultiplier = cascadeMultiplier(cascadeIndex);
 
     for (const cluster of clusters) {
       winCounter += 1;
@@ -119,8 +138,10 @@ export function simulateRound(
     heat = Math.min(5, heat + 1);
     events.push({ type: "heat_advance", from, to: heat, reason: "win_tumble" });
 
-    // Heat feature unlocks happen as the meter reaches the threshold.
-    if (from < 3 && heat >= 3) {
+    // Heat feature unlocks happen as the meter reaches the threshold. Pulled
+    // EARLY (transform @2, mega-wild @3) so deep chains — and the 5★ Wanted
+    // trigger — are reachable, not a 1-in-thousands event, on this small grid.
+    if (from < 2 && heat >= 2) {
       const positions = findSymbols(board, LOW_SYMBOLS);
       if (positions.length > 0) {
         for (const [c, r] of positions) board[c]![r] = "CASH";
@@ -135,9 +156,19 @@ export function simulateRound(
     }
 
     applyGravity(board, removed, rng, mode);
+    // Wanted-path coverage: force the fresh drop to contain a cluster so the
+    // chain keeps climbing to Heat 5 (the 5★ trigger). Looks like a lucky refill
+    // and stops once Heat 5 is reached; representative of a genuine deep chain.
+    if (forceDeep && heat < 5) {
+      const sym = (["BRASS", "KNIFE", "PISTOL", "AMMO"] as SymbolId[])[rng.int(4)]!;
+      plantBlob(board, rng, sym, 5);
+    }
     events.push({ type: "tumble_drop", board: cloneBoard(board) });
 
-    if (from < 4 && heat >= 4) {
+    // Mid-chain wild injection fuels a runaway chain. Fires entering Heat 3 AND
+    // Heat 4 so each rung can carry the chain one deeper — that's what keeps the
+    // 5★ Wanted trigger reachable (not a 1-in-thousands wall) on a 5x4 grid.
+    if ((from < 3 && heat >= 3) || (from < 4 && heat >= 4)) {
       const topLeft = placeMegaWild(board, rng);
       events.push({
         type: "mega_wild_place",
@@ -152,11 +183,13 @@ export function simulateRound(
       });
     }
 
-    if (from < 5 && heat >= 5) {
-      globalMultiplier = pickWeighted(rng, HEAT5_MULTIPLIERS);
+    // Advance the ladder; surface the new rung so the client can show it climb.
+    cascadeIndex += 1;
+    const nextMultiplier = cascadeMultiplier(cascadeIndex);
+    if (nextMultiplier > globalMultiplier) {
       events.push({
         type: "global_multiplier_apply",
-        value: globalMultiplier,
+        value: nextMultiplier,
         affectedWinIds: [`w${winCounter + 1}`]
       });
     }
@@ -165,16 +198,22 @@ export function simulateRound(
   baseGameWin = Number(baseGameWin.toFixed(4));
 
   // ---- Bonus: The Getaway Hold & Spin ----
+  // Two trigger paths, both fully in-book: (1) the WANTED-LEVEL path — a chain
+  // that reaches Heat 5 (a 5-cascade chain) launches the Getaway on this same
+  // paid spin (earned, guaranteed, RTP-funded); (2) the classic 3+ scatter land.
   let bonusWin = 0;
-  const triggered =
-    forceBonus || findSymbol(board, SCATTER).length >= SCATTER_TRIGGER_COUNT;
+  const reachedMaxHeat = heat >= 5;
+  const finalScatters = findSymbol(board, SCATTER);
+  const scatterTriggered = finalScatters.length >= SCATTER_TRIGGER_COUNT;
+  const triggered = forceBonus || reachedMaxHeat || scatterTriggered;
 
   if (triggered) {
     const bonusMode = mode === "super_buy" ? "super_getaway" : "getaway";
-    const trigPositions =
-      scatterPositions.length >= SCATTER_TRIGGER_COUNT
-        ? scatterPositions.slice(0, SCATTER_TRIGGER_COUNT)
-        : defaultScatterPositions();
+    // Heat 5 (the Wanted path) takes precedence. Only a genuine 3+ scatter land
+    // — with no max-heat chain — highlights scatters; the Wanted path carries no
+    // scatter positions so the client can theme it as an earned trigger.
+    const viaScatter = scatterTriggered && !reachedMaxHeat;
+    const trigPositions = viaScatter ? finalScatters.slice(0, SCATTER_TRIGGER_COUNT) : [];
     events.push({
       type: "bonus_trigger",
       mode: bonusMode,
@@ -201,9 +240,11 @@ export function simulateRound(
       ? "wincap"
       : triggered
         ? "freegame"
-        : finalX > 0
-          ? "basegame"
-          : "zero";
+        : finalX >= BASEBIG_THRESHOLD
+          ? "basebig"
+          : finalX > 0
+            ? "basegame"
+            : "zero";
 
   return {
     record: { id, payoutMultiplier: finalX, events },
@@ -387,12 +428,18 @@ function scrubWins(board: Board, rng: Rng): void {
 }
 
 /**
- * Plant a connected blob so basegame sims span a realistic range (small low
- * clusters up to chunky premium ones), not just a minimum low pair. This is
- * what gives the base game a tail instead of a flat 0.1x.
+ * Plant a connected blob to seed a base-game win.
+ *  - `big=false` (basegame): small low/mid clusters -> frequent, tiny wins that
+ *    keep the base hit-rate high and the band mean LOW (so its probability stays
+ *    high and dead spins stay down).
+ *  - `big=true` (basebig): large premium clusters that clear the basebig
+ *    threshold on their own and often kick off a runaway cascade -> the rare,
+ *    laddered monster win.
  */
-function ensureSeedCluster(board: Board, rng: Rng): void {
-  const tier = rng.weightedIndex([30, 42, 28]); // low / mid / premium
+function ensureSeedCluster(board: Board, rng: Rng, big: boolean): void {
+  const tier = big
+    ? 2 // premium only
+    : rng.weightedIndex([42, 46, 12]); // mostly low/mid, rarely premium
   const pool =
     tier === 0
       ? (["BRASS", "KNIFE"] as SymbolId[])
@@ -400,8 +447,12 @@ function ensureSeedCluster(board: Board, rng: Rng): void {
         ? (["PISTOL", "AMMO", "DUFFEL"] as SymbolId[])
         : (["CASH", "DIAMOND", "BIKE"] as SymbolId[]);
   const symbol = pool[rng.int(pool.length)]!;
-  const size = rng.range(5, 10);
+  const size = big ? rng.range(8, 12) : rng.range(5, 6);
+  plantBlob(board, rng, symbol, size);
+}
 
+/** Stamp a connected `size`-cell blob of `symbol` onto the board (overwrites). */
+function plantBlob(board: Board, rng: Rng, symbol: SymbolId, size: number): void {
   const start: Position = [rng.int(GRID_COLUMNS), rng.int(GRID_ROWS)];
   const blob = new Set<string>([`${start[0]}:${start[1]}`]);
   const frontier: Position[] = [start];

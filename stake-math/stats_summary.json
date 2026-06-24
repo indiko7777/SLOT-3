@@ -15,10 +15,10 @@
       "rtpPct": 96,
       "rows": 40000,
       "totalWeight": "1000000000000",
-      "hitRate": 0.085852,
-      "bonusHitRate": 0.007762,
+      "hitRate": 0.331017,
+      "bonusHitRate": 0.005225,
       "maxWinRate": 0.00001152,
-      "stdDev": 22.319,
+      "stdDev": 22.067,
       "volatilityVsTarget": 0,
       "maxPayoutX": 5000,
       "booksMatch": true
@@ -29,11 +29,11 @@
       "rtp": 0.96,
       "rtpPct": 96,
       "rows": 40000,
-      "totalWeight": "1000000000000",
-      "hitRate": 0.117899,
-      "bonusHitRate": 0.012304,
+      "totalWeight": "1000000007818",
+      "hitRate": 0.468341,
+      "bonusHitRate": 0.008132,
       "maxWinRate": 0.00001728,
-      "stdDev": 17.341,
+      "stdDev": 17.167,
       "volatilityVsTarget": 0,
       "maxPayoutX": 5000,
       "booksMatch": true
@@ -47,8 +47,8 @@
       "totalWeight": "1000000000000",
       "hitRate": 1,
       "bonusHitRate": 1,
-      "maxWinRate": 0.002999,
-      "stdDev": 2.972,
+      "maxWinRate": 0.003067,
+      "stdDev": 2.99,
       "volatilityVsTarget": 0,
       "maxPayoutX": 5000,
       "booksMatch": true
@@ -62,12 +62,12 @@
       "totalWeight": "1000000000000",
       "hitRate": 1,
       "bonusHitRate": 1,
-      "maxWinRate": 0.07223,
-      "stdDev": 2.548,
+      "maxWinRate": 0.0723,
+      "stdDev": 2.55,
       "volatilityVsTarget": 0,
       "maxPayoutX": 5000,
       "booksMatch": true
     }
   ],
-  "generatedAt": "2026-06-21T18:45:44.705Z"
+  "generatedAt": "2026-06-24T14:46:59.626Z"
 }

@@ -68,7 +68,7 @@ export function applyEvent(snapshot: PlaybackSnapshot, event: GameEvent, record:
         ...next,
         state: "cluster_evaluate",
         scatterPositions: event.positions,
-        lastMessage: event.count >= 3 ? "Burner Phones found" : "Scatter tease"
+        lastMessage: event.count >= 3 ? "Armored Trucks found" : "Scatter tease"
       };
     case "cluster_win":
       return {

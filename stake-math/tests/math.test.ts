@@ -62,6 +62,7 @@ describe("optimizer", () => {
     let id = 1;
     for (let i = 0; i < 2000; i++) sims.push(synthSim(id++, 0, "zero"));
     for (let i = 0; i < 1500; i++) sims.push(synthSim(id++, 0.2 + (i % 30) * 0.1, "basegame"));
+    for (let i = 0; i < 200; i++) sims.push(synthSim(id++, 8 + (i % 40) * 4, "basebig"));
     for (let i = 0; i < 600; i++) sims.push(synthSim(id++, 10 + (i % 50) * 5, "freegame"));
     for (let i = 0; i < 80; i++) sims.push(synthSim(id++, 5000, "wincap"));
 

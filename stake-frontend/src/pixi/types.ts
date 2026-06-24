@@ -1,4 +1,17 @@
 import type { RoundRecord } from "../domain";
+import type { PieceGain } from "../meta/collection";
+
+/** Persistent Beach Girl gallery snapshot for HUD rendering (cosmetic). */
+export interface GalleryProgress {
+  girlId: number;
+  girlName: string;
+  artPrefix: string;
+  pieces: number;
+  totalPieces: number;
+  completedGirls: number;
+  totalGirls: number;
+  mastered: boolean;
+}
 
 export interface SceneRuntime {
   getMode(): string;
@@ -9,12 +22,15 @@ export interface SceneRuntime {
   getBetLevel(): number;
   getCredit(): number;
   getCurrency(): string;
-  /** Persistent Wanted meter, 0–5 (fractional). At 5 the Getaway triggers free. */
+  /** Live in-spin Wanted level = cascade Heat, 0–5. At 5★ the Getaway triggers. */
   getWantedLevel(): number;
-  /** Beach Girl collection count, 0-7 */
+  /** Pieces shown for the current girl (0..her piece count). */
   getCollectionCount(): number;
-  incrementCollectionCount(): number;
-  resetCollectionCount(): void;
+  /** Reveal one body part for a landed WILD; persists + returns what to animate
+   *  (null once the gallery is mastered). */
+  collectWild(): PieceGain | null;
+  /** Full persistent-gallery progress for the HUD. */
+  getGalleryProgress(): GalleryProgress;
   onAction(action: string): Promise<void>;
   onSafeLand?: (index: number, total: number) => void;
   /** Bonus heat level 0–3 (consecutive dead spins); drives siren/helicopter audio. */

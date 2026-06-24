@@ -3,11 +3,11 @@ import { type Criteria } from "../src/model";
 import { simulateMode } from "../src/simulate";
 
 const MODES: BetMode[] = ["base", "ante", "buy", "super_buy"];
-const CRITS: Criteria[] = ["zero", "basegame", "freegame", "wincap"];
+const CRITS: Criteria[] = ["zero", "basegame", "basebig", "freegame", "wincap"];
 
 for (const mode of MODES) {
   const sims = simulateMode(mode);
-  const by: Record<Criteria, number[]> = { zero: [], basegame: [], freegame: [], wincap: [] };
+  const by: Record<Criteria, number[]> = { zero: [], basegame: [], basebig: [], freegame: [], wincap: [] };
   for (const s of sims) by[s.criteria].push(s.payoutX);
   const tot = sims.length;
   const cost = { base: 1, ante: 1.5, buy: 100, super_buy: 500 }[mode]!;

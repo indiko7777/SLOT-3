@@ -18,7 +18,29 @@ export const MAX_WIN_X = 5000;
 /** Stake books store payout as integer hundredths and require payout % 10 == 0. */
 export const PAYOUT_QUANTUM_X = 0.1;
 
-export type Criteria = "zero" | "basegame" | "freegame" | "wincap";
+export type Criteria = "zero" | "basegame" | "basebig" | "freegame" | "wincap";
+
+/**
+ * Non-bonus wins at or above this multiplier are bucketed into `basebig`
+ * instead of `basegame`. This is what lets a fat cascade tail coexist with a
+ * high base hit-rate: the frequent small wins (`basegame`) keep their own high
+ * probability, while the rare laddered monsters (`basebig`) get their own tiny
+ * probability. Without the split, the tail poisons the base frequency and the
+ * game drowns in dead spins (measured 91% before the split).
+ */
+export const BASEBIG_THRESHOLD = 5;
+
+/**
+ * Tumble-multiplier ladder. Climbs one rung per cascade and multiplies every
+ * win from that rung on, so a LONG chain of modest clusters compounds into the
+ * big win — not a single fat cluster. Index = cascade number (0 = first board
+ * evaluation, ×1). Front-loaded because the 5x4 grid only sustains short chains.
+ */
+export const CASCADE_LADDER = [1, 2, 4, 7, 12, 20, 30, 45, 65];
+
+export function cascadeMultiplier(cascadeIndex: number): number {
+  return CASCADE_LADDER[Math.min(cascadeIndex, CASCADE_LADDER.length - 1)]!;
+}
 
 /**
  * How the 96% RTP is split across bands for the cash-play modes (fractions of
@@ -28,6 +50,7 @@ export type Criteria = "zero" | "basegame" | "freegame" | "wincap";
  */
 export interface RtpSplit {
   basegame: number;
+  basebig: number;
   freegame: number;
   wincap: number;
 }
@@ -57,8 +80,13 @@ export const MODES: Record<BetMode, ModeConfig> = {
     isFeature: false,
     isBuyBonus: false,
     sims: 40_000,
-    criteria: { zero: 0.30, basegame: 0.45, freegame: 0.22, wincap: 0.03 },
-    rtpSplit: { basegame: 0.22, freegame: 0.72, wincap: 0.06 },
+    // Coverage quotas (NOT final frequency). basebig gets generous COVERAGE so
+    // the rare big-cascade tail is well sampled; its real probability is tiny.
+    criteria: { zero: 0.22, basegame: 0.46, basebig: 0.10, freegame: 0.20, wincap: 0.02 },
+    // basegame carries the FREQUENT small wins (high hit-rate); basebig carries
+    // the rare laddered monsters. Splitting them is what defeats the dead-spin
+    // problem at a fixed 96% RTP.
+    rtpSplit: { basegame: 0.22, basebig: 0.10, freegame: 0.62, wincap: 0.06 },
     reelWeights: baseReels(),
     safeValues: safeTable(1)
   },
@@ -67,8 +95,8 @@ export const MODES: Record<BetMode, ModeConfig> = {
     isFeature: true,
     isBuyBonus: false,
     sims: 40_000,
-    criteria: { zero: 0.28, basegame: 0.45, freegame: 0.24, wincap: 0.03 },
-    rtpSplit: { basegame: 0.2, freegame: 0.74, wincap: 0.06 },
+    criteria: { zero: 0.20, basegame: 0.46, basebig: 0.10, freegame: 0.22, wincap: 0.02 },
+    rtpSplit: { basegame: 0.21, basebig: 0.10, freegame: 0.63, wincap: 0.06 },
     reelWeights: anteReels(),
     safeValues: safeTable(1)
   },
@@ -77,7 +105,7 @@ export const MODES: Record<BetMode, ModeConfig> = {
     isFeature: false,
     isBuyBonus: true,
     sims: 18_000,
-    criteria: { zero: 0, basegame: 0, freegame: 0.88, wincap: 0.12 },
+    criteria: { zero: 0, basegame: 0, basebig: 0, freegame: 0.88, wincap: 0.12 },
     reelWeights: baseReels(),
     safeValues: safeTable(1.15)
   },
@@ -86,7 +114,7 @@ export const MODES: Record<BetMode, ModeConfig> = {
     isFeature: false,
     isBuyBonus: true,
     sims: 18_000,
-    criteria: { zero: 0, basegame: 0, freegame: 0.80, wincap: 0.20 },
+    criteria: { zero: 0, basegame: 0, basebig: 0, freegame: 0.80, wincap: 0.20 },
     reelWeights: baseReels(),
     safeValues: safeTable(1.45)
   }
@@ -110,16 +138,21 @@ export const CLUSTER_PAY: Record<SymbolId, number> = {
   EMPTY: 0
 };
 
-/** Size scaling — steep enough for a high-volatility feel, not explosive. */
+/**
+ * Size scaling — deliberately FLAT. Cluster size barely matters now; the big
+ * win is built by chain LENGTH via the cascade multiplier ladder, not by one
+ * fat cluster. A 20-cluster pays ~18x the base (was 185x); the difference is
+ * carried by the ladder when chains run long.
+ */
 export function clusterSizeFactor(size: number): number {
   if (size < 5) return 0;
   const table = [
-    /* 5 */ 0.6, /* 6 */ 1.1, /* 7 */ 1.8, /* 8 */ 2.8, /* 9 */ 4.2,
-    /* 10 */ 6.2, /* 11 */ 9, /* 12 */ 13, /* 13 */ 19, /* 14 */ 27,
-    /* 15 */ 38, /* 16 */ 54, /* 17 */ 74, /* 18 */ 100, /* 19 */ 135,
-    /* 20 */ 185
+    /* 5 */ 0.4, /* 6 */ 0.7, /* 7 */ 1.0, /* 8 */ 1.4, /* 9 */ 1.9,
+    /* 10 */ 2.5, /* 11 */ 3.2, /* 12 */ 4.0, /* 13 */ 5.0, /* 14 */ 6.2,
+    /* 15 */ 7.6, /* 16 */ 9.2, /* 17 */ 11, /* 18 */ 13, /* 19 */ 15.5,
+    /* 20 */ 18
   ];
-  return table[Math.min(size, 20) - 5] ?? 0.6;
+  return table[Math.min(size, 20) - 5] ?? 0.4;
 }
 
 export const PAYABLE_SYMBOLS: SymbolId[] = [
@@ -135,16 +168,13 @@ export const PAYABLE_SYMBOLS: SymbolId[] = [
 
 export const LOW_SYMBOLS: SymbolId[] = ["BRASS", "KNIFE"];
 
-/** Heat 5 global multiplier set. */
-export const HEAT5_MULTIPLIERS = [
-  { value: 2, weight: 44 },
-  { value: 3, weight: 28 },
-  { value: 5, weight: 16 },
-  { value: 8, weight: 8 },
-  { value: 12, weight: 4 }
-];
-
 export const SCATTER_TRIGGER_COUNT = 3;
+/**
+ * Share of forced bonus COVERAGE generated as the classic 3-scatter land (the
+ * rare surprise). The rest (~85%) is seeded as a deep Wanted-path cascade, so
+ * the served Getaways are mostly Heat-5 / Wanted-triggered, not random scatters.
+ */
+export const SCATTER_TRIGGER_SHARE = 0.15;
 /** Hold & Spin starts with this many spins; resets on any land. Bust after this
  *  many consecutive dead spins (4 = baseline + 3 escalating heat levels). */
 export const BONUS_RESPINS = 4;
@@ -161,19 +191,22 @@ function baseReels(): Record<SymbolId, number> {
     AMMO: 145,
     DUFFEL: 125,
     CASH: 70,
-    WILD: 55,
+    WILD: 3, // RARE: the collection symbol — one WILD reveals one girl body part
     DIAMOND: 40,
     BIKE: 26,
     CAR_WILD: 12,
-    PHONE_SCATTER: 8,
+    PHONE_SCATTER: 3, // thinned: scatters are now a rare surprise, not the main route
     SAFE: 0,
     MASTER_KEY: 0,
     EMPTY: 0
   };
 }
 
+// Ante boosts the WANTED path: more wilds -> chains continue deeper -> Heat 5 /
+// the Getaway lands more often (that is the value of paying the ante).
 function anteReels(): Record<SymbolId, number> {
-  return { ...baseReels(), PHONE_SCATTER: 14, CAR_WILD: 14 };
+  // Ante also fills the collection a bit faster (WILD 3 -> 5) as a perk.
+  return { ...baseReels(), PHONE_SCATTER: 5, CAR_WILD: 18, WILD: 5 };
 }
 
 function safeTable(scale: number): { value: number; weight: number }[] {

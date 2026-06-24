@@ -28,8 +28,10 @@ for (const mode of MODES) {
   );
   console.log(
     `             P{zero ${P.zero.toFixed(4)} base ${P.basegame.toFixed(4)} ` +
-      `free ${P.freegame.toExponential(2)} cap ${P.wincap.toExponential(2)}}  ` +
-      `E{base ${E.basegame.toFixed(2)} free ${E.freegame.toFixed(1)} cap ${E.wincap.toFixed(0)}}`
+      `big ${P.basebig.toExponential(2)} free ${P.freegame.toExponential(2)} ` +
+      `cap ${P.wincap.toExponential(2)}}  ` +
+      `E{base ${E.basegame.toFixed(2)} big ${E.basebig.toFixed(1)} ` +
+      `free ${E.freegame.toFixed(1)} cap ${E.wincap.toFixed(0)}}`
   );
 
   // Free the heavy records before the next mode.

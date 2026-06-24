@@ -1,6 +1,8 @@
 import { Application, Container, Sprite, Graphics, Text, TextStyle } from "pixi.js";
 import { GRID_COLUMNS, GRID_ROWS, type Board, type BonusCell, type GameEvent, type Position, type SymbolId } from "../domain";
 import type { PlaybackSnapshot } from "../playback";
+import type { PieceGain } from "../meta/collection";
+import { rewardFor } from "../meta/rewards";
 import { BoardView } from "./BoardView";
 import { BonusView } from "./BonusView";
 import { EffectsLayer } from "./EffectsLayer";
@@ -12,6 +14,8 @@ import { getExtraTexture } from "./assets";
 import { tween, wait, easeInOutCubic, easeOutBack } from "./tween";
 import type { LayoutMetrics, SceneRuntime } from "./types";
 import { OutlineFilter } from "pixi-filters";
+import { CardPeekView } from "./CardPeekView";
+import { GalleryView } from "./GalleryView";
 
 export class PixiGameScene {
   private readonly root = new Container();
@@ -20,12 +24,17 @@ export class PixiGameScene {
   private readonly bonus = new BonusView();
   private readonly effects = new EffectsLayer();
   private readonly paytable = new PaytableView();
+  private readonly cardPeek: CardPeekView;
+  private readonly gallery: GalleryView;
   private layout: LayoutMetrics;
   private currentSnapshot: PlaybackSnapshot | null = null;
   private hasBoard = false;
   private bonusDeadSpins = 0;
   private bonusActive = false;
+  /** WILDs already counted toward the collection this round (dedup across tumbles). */
   private readonly collectedWilds = new Set<SymbolView>();
+  /** DEV-only: drives the debug panel's "Trigger Next Piece" preview animation. */
+  private debugPieceCounter = 0;
 
   constructor(private readonly app: Application, private readonly runtime: SceneRuntime) {
     this.layout = computeLayout(app.screen.width, app.screen.height);
@@ -34,7 +43,23 @@ export class PixiGameScene {
       onReelStop: (col, total) => runtime.onReelStop?.(col, total),
       onAnticipation: () => runtime.onAnticipation?.(),
     });
-    this.root.addChild(this.hud, this.board, this.bonus, this.effects, this.paytable);
+    this.cardPeek = new CardPeekView(runtime, () => {
+      this.gallery.toggle(this.layout.width, this.layout.height);
+    });
+    this.gallery = new GalleryView(runtime);
+    
+    // Layer order: hud, board, and cardPeek are base layers.
+    // bonus, effects are transient overlays on top.
+    // paytable and gallery are fullscreen modals covering everything.
+    this.root.addChild(
+      this.hud,
+      this.board,
+      this.cardPeek,
+      this.bonus,
+      this.effects,
+      this.paytable,
+      this.gallery
+    );
     this.app.stage.addChild(this.root);
   }
 
@@ -44,6 +69,10 @@ export class PixiGameScene {
     this.board.layout(this.layout.board);
     // The Getaway bonus is a full-screen POV chase.
     this.bonus.layout({ x: 0, y: 0, width: this.layout.width, height: this.layout.height });
+    this.cardPeek.layout(this.layout);
+    if (this.gallery.visible) {
+      this.gallery.show(this.layout.width, this.layout.height);
+    }
     // Redraw the HUD so all panels, text, and controls move immediately to their
     // new positions. Without this the HUD only updates on the next renderSnapshot
     // call, causing a visible lag where the board and HUD are misaligned.
@@ -71,6 +100,15 @@ export class PixiGameScene {
     this.board.layout(this.layout.board);
     this.bonus.layout({ x: 0, y: 0, width: this.layout.width, height: this.layout.height });
     this.board.updateCollectionCounter(snapshot.collectionCount);
+    
+    // Position/update the card peek view and gallery view
+    const isBonusActive = snapshot.bonusGrid && snapshot.state.startsWith("bonus");
+    this.cardPeek.visible = !isBonusActive && !this.bonusActive;
+    this.cardPeek.layout(this.layout);
+    if (this.gallery.visible) {
+      this.gallery.show(this.layout.width, this.layout.height);
+    }
+
     this.hud.draw(this.layout, snapshot);
     // Only rebuild the board if we don't already have one showing.
     // After a spin/tumble round the board is already in the correct state
@@ -126,7 +164,7 @@ export class PixiGameScene {
 
   /** Restore a clean idle base board (used by the panel's Reset). */
   private debugReset(): void {
-    this.collectedWilds.clear();
+    this.debugPieceCounter = 0;
     this.bonus.hide();
     this.bonusActive = false;
     if (this.currentSnapshot) { this.hasBoard = false; this.renderSnapshot(this.currentSnapshot); }
@@ -265,25 +303,21 @@ export class PixiGameScene {
 
       case "collection": {
         if (arg === "next") {
-          const board = this.currentSnapshot?.board || this.uniformBoard("BRASS");
-          let wildPos: Position = [2, 2];
-          let found = false;
-          for (let col = 0; col < GRID_COLUMNS; col++) {
-            for (let row = 0; row < GRID_ROWS; row++) {
-              if (board[col][row] === "WILD") {
-                wildPos = [col, row];
-                found = true;
-                break;
-              }
-            }
-            if (found) break;
-          }
-          if (!found) {
-            board[2][2] = "WILD";
-            this.board.setInstant(board);
-            this.hasBoard = true;
-          }
-          await this.runCollectionAnimation(wildPos, turbo);
+          // DEV preview only — animates the next piece without touching the real
+          // persistent gallery (that is driven by shards in main.ts).
+          this.debugPieceCounter = (this.debugPieceCounter % 8) + 1;
+          const completedGirl = this.debugPieceCounter === 8;
+          const gain: PieceGain = {
+            girlId: 0,
+            pieceIndex: this.debugPieceCounter,
+            totalPieces: 8,
+            artPrefix: "char",
+            completedGirl,
+            galleryComplete: false,
+            unlockId: completedGirl ? "skin_neon" : null
+          };
+          if (completedGirl) this.debugPieceCounter = 0;
+          await this.runCollectionAnimation([2, 2], gain, turbo);
         }
         return;
       }
@@ -357,7 +391,7 @@ export class PixiGameScene {
       case "bonus_trigger":
         this.bonusDeadSpins = 0;
         this.bonusActive = true;
-        await this.board.scatterTease(event.scatterPositions, turbo);
+        this.cardPeek.visible = false;
         await this.bonus.intro(turbo);
         return;
       case "bonus_spin": {
@@ -395,6 +429,8 @@ export class PixiGameScene {
           this.bonusActive = false;
           await wait(turbo ? 40 : 140);
           await this.bonus.fadeOutAndHide(turbo);
+          this.cardPeek.visible = true;
+          this.cardPeek.layout(this.layout);
           return;
         }
         if (event.payoutMultiplier === 0) {
@@ -417,43 +453,49 @@ export class PixiGameScene {
     }
   }
 
+  /**
+   * Each rare WILD on the board reveals ONE body part. We dedup by symbol-view
+   * so a WILD that survives tumbles is only counted once, then ask the gallery
+   * (runtime.collectWild) to advance + persist and animate the part it reveals.
+   */
   private async checkAndPlayCollectionAnimation(board: Board, turbo: boolean): Promise<void> {
-    const wildPositions: Position[] = [];
+    const newWilds: Position[] = [];
     for (let col = 0; col < GRID_COLUMNS; col++) {
       for (let row = 0; row < GRID_ROWS; row++) {
         if (board[col][row] === "WILD") {
-          const symbolView = this.board.getSymbolView([col, row]);
-          if (symbolView && !this.collectedWilds.has(symbolView)) {
-            wildPositions.push([col, row]);
-            this.collectedWilds.add(symbolView);
+          const view = this.board.getSymbolView([col, row]);
+          if (view && !this.collectedWilds.has(view)) {
+            this.collectedWilds.add(view);
+            newWilds.push([col, row]);
           }
         }
       }
     }
-    if (wildPositions.length === 0) return;
-    for (const pos of wildPositions) {
-      await this.runCollectionAnimation(pos, turbo);
+    for (const pos of newWilds) {
+      const gain = this.runtime.collectWild();
+      if (!gain) break; // gallery already mastered
+      await this.runCollectionAnimation(pos, gain, turbo);
     }
   }
 
-  private async runCollectionAnimation(pos: Position, turbo: boolean): Promise<void> {
+  private async runCollectionAnimation(pos: Position, gain: PieceGain, turbo: boolean): Promise<void> {
+    const newCount = gain.pieceIndex;
+    const prefix = gain.artPrefix;
+    const completed = gain.completedGirl;
+
+    // The piece flies from a board cell if one is showing there; otherwise it
+    // simply animates into the assembly (e.g. girls 2/3 before their art exists).
     const symbolView = this.board.getSymbolView(pos);
-    if (!symbolView) return;
+    const origScaleX = symbolView?.scale.x ?? 1;
+    const origScaleY = symbolView?.scale.y ?? 1;
 
-    // 1. Increment collection count (1 to 7, wraps for test)
-    const newCount = this.runtime.incrementCollectionCount();
-
-    // 2. Glowing Wild symbol pops out of the reel frame
-    if (symbolView.parent) {
-      symbolView.parent.addChild(symbolView);
+    if (symbolView) {
+      if (symbolView.parent) symbolView.parent.addChild(symbolView);
+      await tween(turbo ? 120 : 300, (p) => {
+        const s = 1 + 0.45 * Math.sin(p * Math.PI);
+        symbolView.scale.set(origScaleX * s, origScaleY * s);
+      }, easeOutBack);
     }
-    const origScaleX = symbolView.scale.x;
-    const origScaleY = symbolView.scale.y;
-
-    await tween(turbo ? 120 : 300, (p) => {
-      const s = 1 + 0.45 * Math.sin(p * Math.PI);
-      symbolView.scale.set(origScaleX * s, origScaleY * s);
-    }, easeOutBack);
 
     const width = this.layout.width;
     const height = this.layout.height;
@@ -470,7 +512,7 @@ export class PixiGameScene {
       overlay.alpha = 0;
       this.root.addChild(overlay);
 
-      const silTex = getExtraTexture("char_silhouette");
+      const silTex = getExtraTexture(`${prefix}_silhouette`);
       if (silTex) {
         const charContainer = new Container();
         const silSprite = new Sprite(silTex);
@@ -485,7 +527,7 @@ export class PixiGameScene {
 
         // Add already-collected pieces
         for (let i = 1; i < newCount; i++) {
-          const pieceTex = getExtraTexture(`char_piece_${i}`);
+          const pieceTex = getExtraTexture(`${prefix}_piece_${i}`);
           if (pieceTex) {
             const pieceSprite = new Sprite(pieceTex);
             pieceSprite.anchor.set(0.5);
@@ -503,7 +545,7 @@ export class PixiGameScene {
           overlay.alpha = p;
         });
 
-        const pieceTex = getExtraTexture(`char_piece_${newCount}`);
+        const pieceTex = getExtraTexture(`${prefix}_piece_${newCount}`);
         if (pieceTex) {
           const flySprite = new Sprite(pieceTex);
           flySprite.anchor.set(0.5);
@@ -531,7 +573,7 @@ export class PixiGameScene {
 
           await this.triggerSnapImpact(targetX, targetY, overlay, newCount);
 
-          if (newCount === 8) {
+          if (completed) {
             await this.triggerCompletionOverlay(charContainer, silScale, targetX, targetY, overlay);
           }
 
@@ -547,7 +589,7 @@ export class PixiGameScene {
       // --- LANDSCAPE MODE: PERSISTENT FILL ---
       const artRect = this.layout.artPanel;
       if (artRect) {
-        const silTex = getExtraTexture("char_silhouette");
+        const silTex = getExtraTexture(`${prefix}_silhouette`);
         if (silTex) {
           const boxW = artRect.width - 24;
           const boxH = artRect.height - 84;
@@ -555,7 +597,7 @@ export class PixiGameScene {
           const targetX = artRect.x + artRect.width / 2;
           const targetY = artRect.y + 60 + (artRect.height - 60) / 2;
 
-          const pieceTex = getExtraTexture(`char_piece_${newCount}`);
+          const pieceTex = getExtraTexture(`${prefix}_piece_${newCount}`);
           if (pieceTex) {
             const flySprite = new Sprite(pieceTex);
             flySprite.anchor.set(0.5);
@@ -575,9 +617,9 @@ export class PixiGameScene {
 
             await this.triggerSnapImpact(targetX, targetY, this.root, newCount);
 
-            if (newCount === 8) {
+            if (completed) {
               const celebrationContainer = new Container();
-              const fullTex = getExtraTexture("char_full");
+              const fullTex = getExtraTexture(`${prefix}_full`);
               if (fullTex) {
                 const fullSprite = new Sprite(fullTex);
                 fullSprite.anchor.set(0.5);
@@ -603,16 +645,36 @@ export class PixiGameScene {
     }
 
     this.board.updateCollectionCounter(newCount);
+    
+    // Refresh card peek & gallery to reflect newly collected parts
+    this.cardPeek.layout(this.layout);
+    if (this.gallery.visible) {
+      this.gallery.show(this.layout.width, this.layout.height);
+    }
 
     if (this.currentSnapshot) {
       this.currentSnapshot.collectionCount = newCount;
       this.hud.draw(this.layout, this.currentSnapshot);
     }
 
-    await tween(100, (p) => {
-      symbolView.scale.set(origScaleX * (1.45 - 0.45 * p), origScaleY * (1.45 - 0.45 * p));
-    });
-    symbolView.scale.set(origScaleX, origScaleY);
+    // Reward moment (RTP-neutral, cosmetic). Mastering the whole gallery is the
+    // grand banner; a single girl grants her cosmetic unlock.
+    if (gain.galleryComplete) {
+      const master = rewardFor("gallery_master");
+      await this.effects.banner("GALLERY MASTERED", master?.name ?? "VIP", this.layout.board, turbo, "grand");
+    } else if (completed) {
+      const reward = rewardFor(gain.unlockId);
+      if (reward) {
+        await this.effects.banner("REWARD UNLOCKED", reward.name, this.layout.board, turbo, "high");
+      }
+    }
+
+    if (symbolView) {
+      await tween(100, (p) => {
+        symbolView.scale.set(origScaleX * (1.45 - 0.45 * p), origScaleY * (1.45 - 0.45 * p));
+      });
+      symbolView.scale.set(origScaleX, origScaleY);
+    }
   }
 
   private async triggerSnapImpact(x: number, y: number, parentContainer: Container, count: number): Promise<void> {

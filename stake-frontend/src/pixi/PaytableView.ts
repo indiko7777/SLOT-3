@@ -239,7 +239,7 @@ export class PaytableView extends Container {
     yOffset += this.getSpecialRowHeight(innerW) + 6;
 
     // SCATTER
-    const scatterRow = this.buildSpecialRow("PHONE_SCATTER", "Burner Phone", "SCATTER - 3+ trigger The Getaway", innerW);
+    const scatterRow = this.buildSpecialRow("PHONE_SCATTER", "Armored Truck", "SCATTER - 3+ trigger The Getaway", innerW);
     scatterRow.position.set(0, yOffset);
     this.contentContainer.addChild(scatterRow);
     yOffset += this.getSpecialRowHeight(innerW) + 6;

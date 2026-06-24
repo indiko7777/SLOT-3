@@ -114,8 +114,8 @@ export const SYMBOLS: Record<SymbolId, SymbolDefinition> = {
   },
   PHONE_SCATTER: {
     id: "PHONE_SCATTER",
-    label: "Burner Phone",
-    shortLabel: "PH",
+    label: "Armored Truck",
+    shortLabel: "BT",
     tier: "special",
     role: "3+ trigger The Getaway bonus"
   },

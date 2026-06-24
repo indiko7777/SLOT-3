@@ -1,7 +1,7 @@
 import type { BetMode, RoundRecord } from "./domain";
 import { validateRoundRecord } from "./domain";
 import { simulateRound } from "./engine";
-import { type Criteria, MODES } from "./model";
+import { BASEBIG_THRESHOLD, type Criteria, MODES } from "./model";
 
 export interface Sim {
   id: number;
@@ -26,7 +26,7 @@ function seedFor(mode: BetMode, id: number): number {
 
 export function simulateMode(mode: BetMode): Sim[] {
   const cfg = MODES[mode];
-  const order: Criteria[] = ["wincap", "freegame", "basegame", "zero"];
+  const order: Criteria[] = ["wincap", "freegame", "basebig", "basegame", "zero"];
   const plan: Criteria[] = [];
   for (const crit of order) {
     const n = Math.round(cfg.sims * cfg.criteria[crit]);
@@ -57,5 +57,6 @@ function classify(payoutX: number, record: RoundRecord): Criteria {
   }
   if (payoutX <= 0) return "zero";
   const hasBonus = record.events.some((e) => e.type === "bonus_trigger");
-  return hasBonus ? "freegame" : "basegame";
+  if (hasBonus) return "freegame";
+  return payoutX >= BASEBIG_THRESHOLD ? "basebig" : "basegame";
 }

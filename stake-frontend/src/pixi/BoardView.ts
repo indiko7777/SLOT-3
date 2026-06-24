@@ -2,7 +2,7 @@ import { Container, Graphics, Sprite, Text, TextStyle } from "pixi.js";
 import { GRID_COLUMNS, GRID_ROWS, type Board, type Position, type SymbolId } from "../domain";
 import { getSymbolTexture } from "./assets";
 import { SymbolView } from "./SymbolView";
-import { tween, wait, easeOutQuad, easeOutBounce, linear, ambientTicker } from "./tween";
+import { tween, wait, easeOutQuad, easeOutBounce, easeInOutCubic, linear, ambientTicker } from "./tween";
 import type { Rect } from "./types";
 
 /** Symbols that may appear as spinning filler. All have loaded textures, so a
@@ -38,6 +38,7 @@ export class BoardView extends Container {
   private readonly reelContainer = new Container();
   private readonly glassOverlay = new Graphics();
   private readonly symbols = new Map<string, SymbolView>();
+  private readonly anticipationOverlay = new Graphics();
   private rect: Rect = { x: 0, y: 0, width: 100, height: 100 };
   private cellWidth = 0;
   private cellHeight = 0;
@@ -55,7 +56,7 @@ export class BoardView extends Container {
 
   constructor() {
     super();
-    this.addChild(this.background, this.reelContainer);
+    this.addChild(this.background, this.reelContainer, this.anticipationOverlay);
     this.reelContainer.mask = this.reelMask;
     this.addChild(this.reelMask);
     this.addChild(this.glassOverlay);
@@ -120,9 +121,64 @@ export class BoardView extends Container {
   }
 
   async scatterTease(positions: Position[], turbo: boolean): Promise<void> {
+    if (turbo) {
+      this.markPositions(positions, "alert");
+      await Promise.all(positions.map((p) => this.symbols.get(keyOf(p))?.punch() ?? Promise.resolve()));
+      await wait(60);
+      return;
+    }
+
+    // Non-turbo: Dramatic sequential pop & shake to build suspense (bang... then bang... then bang)
+    const alerted: Position[] = [];
+    for (const p of positions) {
+      alerted.push(p);
+      this.markPositions(alerted, "alert");
+      const sym = this.symbols.get(keyOf(p));
+      if (sym) {
+        const originalParent = sym.parent;
+        const originalIndex = originalParent ? originalParent.getChildIndex(sym) : -1;
+        
+        // Move to the BoardView parent directly (above the mask) so it doesn't clip at the edges
+        if (originalParent) {
+          this.addChild(sym);
+        }
+        
+        const origX = sym.x;
+        const origY = sym.y;
+        const w = this.cellWidth;
+        const h = this.cellHeight;
+        
+        // Phase 1: Fast scale-up (charge/rise) to a massive size (scale 2.4)
+        // Adjust position dynamically to scale relative to the symbol's center
+        await tween(120, (progress) => {
+          const s = 1 + 1.4 * easeOutQuad(progress);
+          sym.scale.set(s);
+          sym.position.set(origX + (1 - s) * w / 2, origY + (1 - s) * h / 2);
+        }, linear);
+
+        // Phase 2: Impact / Bang! Decelerating scale down + heavy screen shake
+        await Promise.all([
+          tween(480, (progress) => {
+            const s = 2.4 - 1.4 * easeInOutCubic(progress);
+            sym.scale.set(s);
+            sym.position.set(origX + (1 - s) * w / 2, origY + (1 - s) * h / 2);
+          }, linear),
+          this.localShake(28, 500)
+        ]);
+        
+        // Reset scale and position, then return to its original masked parent container
+        sym.scale.set(1);
+        sym.position.set(origX, origY);
+        if (originalParent && originalIndex !== -1) {
+          originalParent.addChildAt(sym, Math.min(originalIndex, originalParent.children.length));
+        }
+      }
+      // Wait 500ms after the thud settles before initiating the next scatter popup
+      await wait(500);
+    }
+    
     this.markPositions(positions, "alert");
-    await Promise.all(positions.map((p) => this.symbols.get(keyOf(p))?.punch() ?? Promise.resolve()));
-    await wait(turbo ? 60 : 200);
+    await wait(200);
   }
 
   /* ─── CLEAR WINS: flash + vanish winning symbols, leaving gaps behind ─── */
@@ -377,15 +433,34 @@ export class BoardView extends Container {
 
     // ── 2. Per-reel stop offsets (scatter anticipation slows trailing reels). ──
     let scattersSeen = 0;
-    let anticipation = false;
+    const isAnticipationCol = new Array(GRID_COLUMNS).fill(false);
     const stagger: number[] = [];
     let cum = 0;
     for (let col = 0; col < GRID_COLUMNS; col++) {
-      if (col > 0) cum += anticipation && !turbo ? 480 : baseStagger;
+      if (col > 0) {
+        if (scattersSeen === 2 && (col === 3 || col === 4) && !turbo) {
+          isAnticipationCol[col] = true;
+          // Spin much longer: add 1800ms stagger!
+          cum += 1800;
+        } else {
+          cum += baseStagger;
+        }
+      }
       stagger.push(cum);
-      if (scatterCols?.has(col)) { scattersSeen++; if (scattersSeen >= 2) anticipation = true; }
+      
+      let hasScatter = false;
+      for (let row = 0; row < GRID_ROWS; row++) {
+        if (finalBoard[col][row] === "PHONE_SCATTER") {
+          hasScatter = true;
+          break;
+        }
+      }
+      if (hasScatter) {
+        scattersSeen++;
+      }
     }
-    if (anticipation && !turbo) this.onAnticipation?.();
+    const hasAnticipation = isAnticipationCol.some(x => x);
+    if (hasAnticipation && !turbo) this.onAnticipation?.();
 
     // ── 3. Build the reels. The visible rows start showing the OLD symbols so
     //       the transition into the spin has no pop. ──
@@ -425,6 +500,20 @@ export class BoardView extends Container {
         }, linear).then(() => {
           reel.state = "stopped";
           this.onReelStop?.(reel.col, GRID_COLUMNS);
+          
+          // Trigger a red flash if this column was an anticipation column and missed the scatter
+          if (isAnticipationCol[reel.col]) {
+            let landedScatter = false;
+            for (let row = 0; row < GRID_ROWS; row++) {
+              if (finalBoard[reel.col][row] === "PHONE_SCATTER") {
+                landedScatter = true;
+                break;
+              }
+            }
+            if (!landedScatter) {
+              this.triggerRedFlash();
+            }
+          }
         })
       );
     };
@@ -443,9 +532,25 @@ export class BoardView extends Container {
           const elapsed = now - start;
           const ramp = Math.min(1, elapsed / accelTime);
           const vel = Vmax * ramp * ramp; // easeIn ramp-up
+          // Clear anticipation overlay drawing
+          this.anticipationOverlay.clear();
+          
           for (const reel of reels) {
             if (reel.state !== "spin") continue;
             this.advanceReel(reel, vel * dt, cellStep, wrapSpan);
+            
+            // Draw pulsing red border if column is currently in anticipation spin
+            if (isAnticipationCol[reel.col] && elapsed >= accelTime + hold + stagger[reel.col - 1]!) {
+              const rx = this.cellX(reel.col) - 2;
+              const ry = 2;
+              const rw = this.cellWidth + 4;
+              const rh = this.rect.height - 4;
+              const pulse = 0.5 + Math.sin(performance.now() * 0.015) * 0.4;
+              this.anticipationOverlay.roundRect(rx, ry, rw, rh, 6)
+                .stroke({ color: 0xff1f2e, width: 3, alpha: 0.8 * pulse })
+                .fill({ color: 0xff1f2e, alpha: 0.08 * pulse });
+            }
+            
             if (elapsed >= accelTime + hold + stagger[reel.col]!) startDecel(reel);
           }
           if (reels.some((r) => r.state === "spin")) requestAnimationFrame(frame);
@@ -622,6 +727,33 @@ export class BoardView extends Container {
 
   private cellX(col: number): number { return this.gap + col * (this.cellWidth + this.gap); }
   private cellY(row: number): number { return this.gap + row * (this.cellHeight + this.gap); }
+
+  async localShake(intensity = 18, duration = 400): Promise<void> {
+    const origX = this.x;
+    const origY = this.y;
+    await tween(duration, (p) => {
+      const decay = Math.exp(-p * 4.5);
+      const dx = Math.sin(p * Math.PI * 5) * intensity * decay;
+      const dy = Math.cos(p * Math.PI * 4) * intensity * decay * 0.8;
+      this.x = origX + dx;
+      this.y = origY + dy;
+    }, linear);
+    this.x = origX;
+    this.y = origY;
+  }
+
+  private triggerRedFlash(): void {
+    this.anticipationOverlay.clear();
+    this.anticipationOverlay.rect(0, 0, this.rect.width, this.rect.height)
+      .fill({ color: 0xff1f2e, alpha: 0.35 });
+    
+    void tween(280, (p) => {
+      this.anticipationOverlay.alpha = 1 - p;
+    }, linear).then(() => {
+      this.anticipationOverlay.clear();
+      this.anticipationOverlay.alpha = 1;
+    });
+  }
 }
 
 export function keyOf([col, row]: Position): string { return `${col}:${row}`; }

@@ -3,6 +3,15 @@ import { EventAudioBus } from "./audio";
 import type { GameEvent, RoundRecord } from "./domain";
 import { hideLoader, showLoader, updateLoader } from "./loader";
 import { applyEvent, INITIAL_SNAPSHOT, type PlaybackSnapshot } from "./playback";
+import {
+  collectWild,
+  displayedPieces,
+  GIRLS,
+  isGalleryComplete,
+  type GalleryData,
+  type PieceGain
+} from "./meta/collection";
+import { createGalleryStore } from "./meta/GalleryStore";
 import { loadSymbolTextures } from "./pixi/assets";
 import { PixiGameScene } from "./pixi/PixiGameScene";
 import { RadioWheel } from "./radio";
@@ -42,14 +51,26 @@ let turbo = false;
 let muted = false;
 let isPlaying = false;
 let snapshot: PlaybackSnapshot = INITIAL_SNAPSHOT;
-/** Persistent Wanted meter (0–5, fractional). Climbs on base-game wins; at 5 it
- *  triggers a FREE Getaway and resets. (3 scatters still trigger it directly.) */
-let wantedMeter = 0;
-let collectionCount = 0;
+/**
+ * The WANTED LEVEL stars are the LIVE in-spin Heat (cascade depth, 0–5): the
+ * player watches them climb as the cascade chain builds, and at 5 stars (a
+ * 5-cascade chain) the Getaway triggers IN-BOOK on that same paid spin — a real,
+ * earned, fully-verifiable trigger (see docs/MATH_DESIGN.md §6). There is no
+ * client-side cross-spin meter and no client-funded free bonus (that would leak
+ * RTP). The stars reset to 0 at the start of each spin.
+ */
+// Persistent Beach Girl gallery (cosmetic, $0 EV). Loaded once, saved whenever a
+// rare WILD reveals a body part. The collection never touches RTP.
+const galleryStore = createGalleryStore();
+let gallery: GalleryData = galleryStore.load();
 
-/** How much a winning base spin raises the Wanted meter (bigger win → more). */
-function wantedGain(winX: number): number {
-  return Math.min(2, 0.6 + winX * 0.15);
+/** Reveal one body part for a landed WILD; persists and returns what to animate.
+ *  Returns null once the whole gallery is mastered. */
+function onWildCollected(): PieceGain | null {
+  const { data, gain } = collectWild(gallery);
+  gallery = data;
+  if (gain) galleryStore.save(gallery);
+  return gain;
 }
 
 void boot();
@@ -112,15 +133,21 @@ async function boot(): Promise<void> {
     getBetLevel: () => betLevels[betIndex] ?? 0,
     getCredit: () => balance,
     getCurrency: () => currency,
-    getWantedLevel: () => wantedMeter,
-    getCollectionCount: () => collectionCount,
-    incrementCollectionCount: () => {
-      if (collectionCount >= 8) collectionCount = 0;
-      collectionCount++;
-      return collectionCount;
-    },
-    resetCollectionCount: () => {
-      collectionCount = 0;
+    getWantedLevel: () => snapshot.heatLevel, // stars = live in-spin cascade Heat (0–5)
+    getCollectionCount: () => displayedPieces(gallery),
+    collectWild: onWildCollected,
+    getGalleryProgress: () => {
+      const girl = GIRLS[gallery.currentGirl] ?? GIRLS[GIRLS.length - 1]!;
+      return {
+        girlId: girl.id,
+        girlName: girl.name,
+        artPrefix: girl.artPrefix,
+        pieces: displayedPieces(gallery),
+        totalPieces: girl.pieces,
+        completedGirls: gallery.completed.length,
+        totalGirls: GIRLS.length,
+        mastered: isGalleryComplete(gallery)
+      };
     },
     onAction: handleAction,
     onSafeLand: (index, total) => {
@@ -242,12 +269,10 @@ async function playRound(modeKey: string, free = false): Promise<void> {
   activeModeKey = modeKey;
   snapshot = {
     ...INITIAL_SNAPSHOT,
-    collectionCount
+    collectionCount: displayedPieces(gallery)
   };
   scene.resetRound(snapshot);
 
-  let hadBonus = false;
-  let winX = 0;
   try {
     const res = await client.play(betAmount, currency, modeKey, free);
     // Debit reflected by the RGS — never computed locally.
@@ -257,9 +282,9 @@ async function playRound(modeKey: string, free = false): Promise<void> {
       payoutMultiplier: res.round.payoutMultiplier,
       events: res.round.state
     };
-    winX = record.payoutMultiplier;
-    hadBonus = (record.events as GameEvent[]).some((e) => e.type === "bonus_trigger");
     await replayRound(record, res.round.active);
+    // The collection advances DURING replay: each rare WILD that lands calls
+    // runtime.collectWild() from the scene and animates the body part it reveals.
   } catch (e) {
     isPlaying = false;
     const msg = e instanceof RgsError ? `${e.code}: ${e.message}` : String(e);
@@ -269,23 +294,10 @@ async function playRound(modeKey: string, free = false): Promise<void> {
   }
   isPlaying = false;
 
-  // ── Wanted meter: only regular base/ante spins move it ──
-  const isRegularSpin = modeKey === "base" || modeKey === "ante";
-  if (isRegularSpin) {
-    if (hadBonus) wantedMeter = 0;                                  // scatters gave the Getaway
-    else if (winX > 0) wantedMeter = Math.min(5, wantedMeter + wantedGain(winX)); // win raises heat
-  }
+  // The WANTED LEVEL stars follow the live in-spin Heat during replay, and a
+  // 5-cascade chain triggers the Getaway in-book (math side) — nothing to
+  // accumulate or reset on the client.
   scene.renderSnapshot(snapshot);
-
-  // Meter hit 5 stars → FREE Getaway, then reset the meter.
-  if (isRegularSpin && wantedMeter >= 5) {
-    isPlaying = true; // lock input through the transition
-    await new Promise((r) => window.setTimeout(r, 700)); // let the full 5 stars register
-    wantedMeter = 0;
-    await playRound("buy", true);
-    activeModeKey = anteEnabled ? "ante" : "base";
-    scene.renderSnapshot(snapshot);
-  }
 }
 
 async function replayRound(record: RoundRecord, active: boolean): Promise<void> {

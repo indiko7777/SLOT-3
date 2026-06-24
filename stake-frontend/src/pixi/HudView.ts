@@ -208,21 +208,19 @@ export class HudView extends Container {
   private panelButton(x: number, y: number, width: number, height: number, kicker: string, title: string, value: string, action: string): void {
     const panel = new Container();
 
-    const glowColor = action === "super_buy" ? 0xffdf65
-                    : action === "ante" ? (this.runtime.isAnteEnabled() ? 0x22dd66 : 0x4a5a6c)
-                    : 0x9ae64e;
+    const glowColor = 0xe30000; // Red theme color (#E30000)
 
     // Outer neon glow
     const glow = new Graphics();
     glow.roundRect(-4, -4, width + 8, height + 8, 10)
-      .fill({ color: glowColor, alpha: 0.12 });
+      .fill({ color: glowColor, alpha: 0.16 });
     glow.alpha = 0.8;
     panel.addChild(glow);
 
-    // Dark body
+    // Dark body (with a tiny bit bolder strokes for extra depth/weight)
     const bg = new Graphics();
     bg.roundRect(0, 0, width, height, 8).fill({ color: 0x000000, alpha: 0.5 });
-    bg.roundRect(0, 0, width, height, 8).stroke({ color: glowColor, width: 2.5, alpha: 0.75 });
+    bg.roundRect(0, 0, width, height, 8).stroke({ color: glowColor, width: 3.5, alpha: 0.85 });
     panel.addChild(bg);
 
     // Inner width available for text (account for the rounded body padding)
@@ -230,7 +228,7 @@ export class HudView extends Container {
 
     // Kicker text
     const kickerSize = Math.min(13, Math.max(10, width / 12));
-    const kickerColor = action === "super_buy" ? 0xbfa65c : action === "ante" ? 0x6abf8a : 0x98c47e;
+    const kickerColor = 0xffd1d1; // Soft light red
     const kickerText = makeText(kicker, kickerSize, kickerColor, width / 2, 10, "center");
     this.fitText(kickerText, textMaxWidth);
     panel.addChild(kickerText);
@@ -254,12 +252,12 @@ export class HudView extends Container {
     this.fitText(titleText, textMaxWidth);
     panel.addChild(titleText);
 
-    // Value — gold with drop shadow
+    // Value — gold or active red with drop shadow
     const vSize = Math.min(26, Math.max(16, width / 6));
     const valText = new Text({
       text: value,
       style: new TextStyle({
-        fill: action === "ante" && this.runtime.isAnteEnabled() ? 0x22dd66 : 0xffdf65,
+        fill: action === "ante" && this.runtime.isAnteEnabled() ? 0xff3333 : 0xffdf65,
         fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
         fontSize: vSize,
         fontWeight: "900",
@@ -469,27 +467,26 @@ export class HudView extends Container {
     }
   }
 
-  private drawCharacter(rect: Rect, count: number): void {
-    const silTex = getExtraTexture("char_silhouette");
-    if (!silTex) return;
+  private drawCharacter(rect: Rect, _count: number): void {
+    // Driven by the PERSISTENT gallery (not the old wrap-at-8 counter).
+    const prog = this.runtime.getGalleryProgress();
+
+    const silTex = getExtraTexture(`${prog.artPrefix}_silhouette`);
+    if (!silTex) return; // no art for this girl yet (girls 2/3) — see card options
 
     const assembly = new Container();
-
-    // Silhouette Sprite
     const silSprite = new Sprite(silTex);
     silSprite.anchor.set(0.5);
-    silSprite.x = 57.5; // Shift shadow right to align with the pieces
-    silSprite.y = 27.5; // Shift shadow down to align with the pieces
+    silSprite.x = 57.5; // align shadow with the pieces
+    silSprite.y = 27.5;
     silSprite.tint = 0x000000;
     const outline = new OutlineFilter({ thickness: 2, color: 0xffffff, quality: 1.0 });
     outline.resolution = window.devicePixelRatio || 1;
     silSprite.filters = [outline];
     assembly.addChild(silSprite);
 
-    // Add collected pieces
-    // Order: 1: Right Feet, 2: Left Feet, 3: Legs, 4: Stomach, 5: Phonearm, 6: Chest, 7: Left Arm (rightarm1), 8: Head
-    for (let i = 1; i <= Math.min(8, count); i++) {
-      const pieceTex = getExtraTexture(`char_piece_${i}`);
+    for (let i = 1; i <= Math.min(prog.totalPieces, prog.pieces); i++) {
+      const pieceTex = getExtraTexture(`${prog.artPrefix}_piece_${i}`);
       if (pieceTex) {
         const pieceSprite = new Sprite(pieceTex);
         pieceSprite.anchor.set(0.5);
@@ -497,9 +494,9 @@ export class HudView extends Container {
       }
     }
 
-    // If complete (8), draw the full image instead of separate layers to avoid seam lines
-    if (count >= 8) {
-      const fullTex = getExtraTexture("char_full");
+    // When complete, draw the full image instead of separate layers (no seams).
+    if (prog.pieces >= prog.totalPieces) {
+      const fullTex = getExtraTexture(`${prog.artPrefix}_full`);
       if (fullTex) {
         const fullSprite = new Sprite(fullTex);
         fullSprite.anchor.set(0.5);
@@ -507,18 +504,11 @@ export class HudView extends Container {
       }
     }
 
-    // Fit inside the box panel
     const boxW = rect.width - 24;
     const boxH = rect.height - 84;
     const scale = Math.min(boxW / silTex.width, boxH / silTex.height);
     assembly.scale.set(scale);
-
-    // Center in the box
-    assembly.position.set(
-      rect.x + rect.width / 2,
-      rect.y + 60 + (rect.height - 60) / 2
-    );
-
+    assembly.position.set(rect.x + rect.width / 2, rect.y + 60 + (rect.height - 60) / 2);
     this.addChild(assembly);
   }
 

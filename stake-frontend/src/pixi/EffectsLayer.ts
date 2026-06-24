@@ -313,12 +313,14 @@ export class EffectsLayer extends Container {
     if (turbo) return;
     const origX = target.x;
     const origY = target.y;
-    const intensity = 6;
-    await tween(300, (p) => {
-      const decay = 1 - p;
-      const freq = Math.sin(p * Math.PI * 8);
-      target.x = origX + freq * intensity * decay;
-      target.y = origY + Math.cos(p * Math.PI * 6) * intensity * decay * 0.5;
+    const intensity = 20; // Massive thud displacement
+    const duration = 450;  // Longer duration for smooth springy decay
+    await tween(duration, (p) => {
+      const decay = Math.exp(-p * 4.5); // Organic physical decay curve
+      const dx = Math.sin(p * Math.PI * 5) * intensity * decay;
+      const dy = Math.cos(p * Math.PI * 4) * intensity * decay * 0.8;
+      target.x = origX + dx;
+      target.y = origY + dy;
     }, linear);
     target.x = origX;
     target.y = origY;

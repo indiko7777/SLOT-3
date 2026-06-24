@@ -45,6 +45,7 @@ export function optimizeMode(mode: BetMode, sims: Sim[]): OptimizeResult {
   const groups: Record<Criteria, Sim[]> = {
     zero: [],
     basegame: [],
+    basebig: [],
     freegame: [],
     wincap: []
   };
@@ -52,15 +53,16 @@ export function optimizeMode(mode: BetMode, sims: Sim[]): OptimizeResult {
 
   const mean = (g: Sim[]): number =>
     g.length ? g.reduce((a, s) => a + s.payoutX, 0) / g.length : 0;
-  const E = {
+  const E: Record<Criteria, number> = {
     zero: 0,
     basegame: mean(groups.basegame),
+    basebig: mean(groups.basebig),
     freegame: mean(groups.freegame),
     wincap: mean(groups.wincap)
   };
 
   const T = TARGET_RTP * cost;
-  const P: Record<Criteria, number> = { zero: 0, basegame: 0, freegame: 0, wincap: 0 };
+  const P: Record<Criteria, number> = { zero: 0, basegame: 0, basebig: 0, freegame: 0, wincap: 0 };
 
   if (cfg.isBuyBonus) {
     if (groups.freegame.length === 0 || groups.wincap.length === 0)
@@ -77,29 +79,31 @@ export function optimizeMode(mode: BetMode, sims: Sim[]): OptimizeResult {
   } else {
     const split = cfg.rtpSplit;
     if (!split) throw new Error(`[${mode}] cash mode needs rtpSplit`);
-    if (E.basegame <= 0 || E.freegame <= 0 || E.wincap <= 0)
-      throw new Error(`[${mode}] missing band coverage to solve RTP`);
-    // Each band carries `split.x * T` of RTP -> probability = that / band mean.
-    const pbg = (T * split.basegame) / E.basegame;
-    const pfg = (T * split.freegame) / E.freegame;
-    const pwc = (T * split.wincap) / E.wincap;
-    const pzero = 1 - pbg - pfg - pwc;
-    if (pbg <= 0 || pbg >= 1 || pfg <= 0 || pfg >= 1)
-      throw new Error(
-        `[${mode}] infeasible split P{bg=${pbg.toFixed(4)} fg=${pfg.toFixed(
-          4
-        )} wc=${pwc.toExponential(2)}} — E{bg=${E.basegame.toFixed(
-          2
-        )} fg=${E.freegame.toFixed(1)}}; adjust pays/split.`
-      );
+    // Each positive band carries `split.x * T` of RTP -> probability = that /
+    // band mean. Bands with a split but no coverage throw; bands with no split
+    // are simply skipped. Zero (dead spins) is the residual mass.
+    const positiveBands = ["basegame", "basebig", "freegame", "wincap"] as const;
+    let pzero = 1;
+    for (const band of positiveBands) {
+      const frac = split[band] ?? 0;
+      if (frac <= 0) continue;
+      const e = E[band];
+      if (e <= 0)
+        throw new Error(`[${mode}] band ${band} has RTP split ${frac} but no coverage`);
+      const p = (T * frac) / e;
+      if (p <= 0 || p >= 1)
+        throw new Error(
+          `[${mode}] band ${band} prob ${p.toFixed(4)} out of range ` +
+            `(E=${e.toFixed(2)}, split=${frac}); adjust pays/split.`
+        );
+      P[band] = p;
+      pzero -= p;
+    }
     if (pzero < 0)
       throw new Error(
         `[${mode}] zero prob ${pzero.toFixed(4)} < 0 — engine too generous; ` +
           `soften pays or shift split toward bonus.`
       );
-    P.freegame = pfg;
-    P.wincap = pwc;
-    P.basegame = pbg;
     P.zero = pzero;
   }
 

@@ -85,8 +85,18 @@ export class SymbolView extends Container {
       this.background.roundRect(0, 0, w, h, 10)
         .stroke({ color: 0xffdf65, width: 1.5, alpha: 0.5 });
     } else if (alert) {
-      this.background.roundRect(-1, -1, w + 2, h + 2, 11)
-        .stroke({ color: 0x9ae64e, width: 3, alpha: 0.8 });
+      // Glossy transparent green background fill inside the cell
+      this.background.roundRect(0, 0, w, h, 10)
+        .fill({ color: 0x9ae64e, alpha: 0.28 });
+      // Glossy top reflection sheen
+      this.background.roundRect(0, 0, w, h / 2, 10)
+        .fill({ color: 0xffffff, alpha: 0.15 });
+      // Neon green outer glowing border
+      this.background.roundRect(-2, -2, w + 4, h + 4, 12)
+        .stroke({ color: 0x9ae64e, width: 3.5, alpha: 0.95 });
+      // Subtler inner border for extra depth
+      this.background.roundRect(0, 0, w, h, 10)
+        .stroke({ color: 0x9ae64e, width: 1.5, alpha: 0.60 });
     } else if (transformed) {
       this.background.roundRect(-1, -1, w + 2, h + 2, 11)
         .stroke({ color: 0x62ffa7, width: 3, alpha: 0.7 });
