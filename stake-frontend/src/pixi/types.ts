@@ -26,11 +26,18 @@ export interface SceneRuntime {
   getWantedLevel(): number;
   /** Pieces shown for the current girl (0..her piece count). */
   getCollectionCount(): number;
-  /** Reveal one body part for a landed WILD; persists + returns what to animate
-   *  (null once the gallery is mastered). */
+  /** Add one landed WILD's points (= base bet); returns a card-reveal to animate
+   *  when its points just unlocked a new card, else null. Persists. */
   collectWild(): PieceGain | null;
   /** Full persistent-gallery progress for the HUD. */
   getGalleryProgress(): GalleryProgress;
+  /** Head-start Power Level unlocked (0..3), regardless of the current bet. */
+  getActiveTier?(): number;
+  /** Head-start stars in effect for the CURRENT bet (0..3): the active tier when
+   *  wagering at/below its average-bet lock, else 0 (the advantage is dimmed). */
+  getHeadStartStars?(): number;
+  /** Whether the head-start is active for the current bet (false = dimmed). */
+  isHeadStartActive?(): boolean;
   onAction(action: string): Promise<void>;
   onSafeLand?: (index: number, total: number) => void;
   /** Bonus heat level 0–3 (consecutive dead spins); drives siren/helicopter audio. */

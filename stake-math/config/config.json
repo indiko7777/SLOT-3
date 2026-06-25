@@ -109,6 +109,78 @@
         "file": "force.json",
         "sha256": ""
       }
+    },
+    {
+      "name": "base_tier1",
+      "tables": [
+        {
+          "file": "lookUpTable_base_tier1_0.csv",
+          "sha256": "bc82ddf40fb3123a1d3d26182d2be5cc7dae8811afa59ea18ee42fb0cbfa50ee"
+        }
+      ],
+      "cost": 1,
+      "rtp": 0.96,
+      "bookLength": 40000,
+      "feature": false,
+      "autoEndRoundDisabled": false,
+      "buyBonus": false,
+      "maxWin": 5000,
+      "booksFile": {
+        "file": "books_base_tier1.jsonl.zst",
+        "sha256": "623b5fdc2c944d1588130cb9dd6cd786cde0820e90c1cdecf33b617c6fad4b65"
+      },
+      "forceFile": {
+        "file": "force.json",
+        "sha256": ""
+      }
+    },
+    {
+      "name": "base_tier2",
+      "tables": [
+        {
+          "file": "lookUpTable_base_tier2_0.csv",
+          "sha256": "dd56c70201c4e8dc0cd9dca0bbbf2c83c12a1e045ed40c978e499d311d51151e"
+        }
+      ],
+      "cost": 1,
+      "rtp": 0.96,
+      "bookLength": 40000,
+      "feature": false,
+      "autoEndRoundDisabled": false,
+      "buyBonus": false,
+      "maxWin": 5000,
+      "booksFile": {
+        "file": "books_base_tier2.jsonl.zst",
+        "sha256": "436ea8b9dcf6bb0caca087b3893c4a7b2f87da86ecfd0e65b574aa4c4bb170c6"
+      },
+      "forceFile": {
+        "file": "force.json",
+        "sha256": ""
+      }
+    },
+    {
+      "name": "base_tier3",
+      "tables": [
+        {
+          "file": "lookUpTable_base_tier3_0.csv",
+          "sha256": "5f41c581caa1c7b1455068bdb3cfb7d9d3a639967a8554b423b4e1b5b1aff9c3"
+        }
+      ],
+      "cost": 1,
+      "rtp": 0.96,
+      "bookLength": 40000,
+      "feature": false,
+      "autoEndRoundDisabled": false,
+      "buyBonus": false,
+      "maxWin": 5000,
+      "booksFile": {
+        "file": "books_base_tier3.jsonl.zst",
+        "sha256": "922276e8264687bf0e1c4f4444f93e953e2ac88a980779357b7cb28af199154a"
+      },
+      "forceFile": {
+        "file": "force.json",
+        "sha256": ""
+      }
     }
   ]
 }

@@ -23,6 +23,24 @@
       "cost": 500,
       "events": "books_super_buy.jsonl.zst",
       "weights": "lookUpTable_super_buy_0.csv"
+    },
+    {
+      "name": "base_tier1",
+      "cost": 1,
+      "events": "books_base_tier1.jsonl.zst",
+      "weights": "lookUpTable_base_tier1_0.csv"
+    },
+    {
+      "name": "base_tier2",
+      "cost": 1,
+      "events": "books_base_tier2.jsonl.zst",
+      "weights": "lookUpTable_base_tier2_0.csv"
+    },
+    {
+      "name": "base_tier3",
+      "cost": 1,
+      "events": "books_base_tier3.jsonl.zst",
+      "weights": "lookUpTable_base_tier3_0.csv"
     }
   ]
 }

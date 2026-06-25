@@ -192,6 +192,16 @@ export class GalleryView extends Container {
             artSprite.y = 4;
             card.addChild(artSprite);
           }
+        } else if (i === 1) {
+          const fullTex = getExtraTexture("char2_full");
+          if (fullTex) {
+            const artSprite = new Sprite(fullTex);
+            artSprite.anchor.set(0.5);
+            const scale = Math.min((cardW - 14) / fullTex.width, (cardH - 50) / fullTex.height);
+            artSprite.scale.set(scale * 1.25);
+            artSprite.y = 4;
+            card.addChild(artSprite);
+          }
         } else {
           // Placeholder completed mark
           const completeIcon = new Graphics();
@@ -229,6 +239,33 @@ export class GalleryView extends Container {
 
             const scale = Math.min((cardW - 16) / silTex.width, (cardH - 56) / silTex.height);
             assembly.scale.set(scale * 1.05);
+            assembly.y = 4;
+            card.addChild(assembly);
+          }
+        } else if (i === 1) {
+          const assembly = new Container();
+          const silTex = getExtraTexture("char2_silhouette");
+          if (silTex) {
+            const silSprite = new Sprite(silTex);
+            silSprite.anchor.set(0.5);
+            silSprite.x = 0;
+            silSprite.y = 0;
+            silSprite.tint = 0x000000;
+            silSprite.alpha = 0.8;
+            assembly.addChild(silSprite);
+
+            const collectedPieces = prog.pieces;
+            for (let p = 1; p <= Math.min(8, collectedPieces); p++) {
+              const pieceTex = getExtraTexture(`char2_piece_${p}`);
+              if (pieceTex) {
+                const pieceSprite = new Sprite(pieceTex);
+                pieceSprite.anchor.set(0.5);
+                assembly.addChild(pieceSprite);
+              }
+            }
+
+            const scale = Math.min((cardW - 16) / silTex.width, (cardH - 56) / silTex.height);
+            assembly.scale.set(scale * 1.05 * 1.25);
             assembly.y = 4;
             card.addChild(assembly);
           }

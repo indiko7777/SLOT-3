@@ -3,7 +3,15 @@ export const GRID_COLUMNS = 5;
 export const GRID_ROWS = 4;
 export const MAX_WIN_MULTIPLIER = 5000;
 
-export type BetMode = "base" | "ante" | "buy" | "super_buy";
+export type BetMode =
+  | "base"
+  | "ante"
+  | "buy"
+  | "super_buy"
+  // Collection Power-Level head-start tables (RTP-neutral; client-routed).
+  | "base_tier1"
+  | "base_tier2"
+  | "base_tier3";
 
 export type SymbolId =
   | "BRASS"
@@ -211,7 +219,10 @@ export const BET_MODES: Record<BetMode, { label: string; priceMultiplier: number
   base: { label: "Base Game", priceMultiplier: 1, rtpTarget: 0.965 },
   ante: { label: "Ante", priceMultiplier: 1.5, rtpTarget: 0.965 },
   buy: { label: "Getaway Buy", priceMultiplier: 100, rtpTarget: 0.965 },
-  super_buy: { label: "Super Getaway Buy", priceMultiplier: 500, rtpTarget: 0.965 }
+  super_buy: { label: "Super Getaway Buy", priceMultiplier: 500, rtpTarget: 0.965 },
+  base_tier1: { label: "Sapphire Head-Start", priceMultiplier: 1, rtpTarget: 0.965 },
+  base_tier2: { label: "Roxy Head-Start", priceMultiplier: 1, rtpTarget: 0.965 },
+  base_tier3: { label: "Vega Head-Start", priceMultiplier: 1, rtpTarget: 0.965 }
 };
 
 export function assertBoard(board: Board): void {

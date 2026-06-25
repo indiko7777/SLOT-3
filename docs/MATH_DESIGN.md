@@ -189,3 +189,63 @@ The Hold & Spin bonus itself is unchanged and confirmed well-tuned (full-screen
 
 Tests run via the math CLI only (`npm test`, `generate`, `verify`). Browser
 feel-testing is done by the owner. The DEV debug pop-up is left untouched.
+
+## 8. Value-Weighted Wild collection & consumable head-start (DONE)
+
+A second collection mechanic layered on §3, requested as "Value-Weighted Point
+System + Active Power Level lock." It is implemented in the **only form Stake's
+platform allows**; the two adaptations below are forced by §0 and were applied
+exactly as §6 was (turning a money/EV mechanic into an RTP-neutral, client-side
+one). Both are flagged in code.
+
+**What ships as specified**
+
+- **Points, not pieces.** Every WILD in the base game awards
+  `Points = Wilds Landed × Base Bet` into a single global `points` total. It is
+  continuous and **never resets on a bet change**.
+- **Three cards** (Sapphire → Roxy → Vega) unlock at cumulative point
+  thresholds. Unlocking a card **logs the average base bet** of the spins that
+  earned it (`phaseWagered / phaseSpins`) and arms a head-start "Power Level".
+- **The Active-Power-Level lock.** A head-start is active only while the player
+  wagers **at or below** that tier's logged average bet; above it the advantage
+  dims and the spin uses Tier 0. The client uses this to **route** the spin to
+  the matching certified table (`base`, `base_tier1/2/3`).
+- **Consumable + Grand Reset.** Hitting the Getaway on an active-tier spin
+  consumes the head-start on bonus completion (back to Tier 0; the card stays
+  visible). Consuming the **Tier 3** head-start wipes the whole gallery to
+  State 0.
+- **Cross-session persistence** of the full `player_state` (points, cards,
+  consumed head-starts, per-tier average bets, phase counters), loaded at init.
+
+**Adaptation A — the tiers are RTP-NEUTRAL, not free EV.** A head-start that
+paid more would push true RTP above 96% and fail Stake's per-mode verification
+(the exact leak §6 removed). So `base_tier1/2/3` are real, separately-certified
+bet modes that each verify to **exactly 96%**: each shifts published RTP mass
+out of frequent small base wins (`basegame` 0.22 → 0.17 → 0.12 → 0.08) into a
+**more frequent Getaway** (`freegame` 0.62 → 0.67 → 0.72 → 0.76), with `basebig`
++ `wincap` held constant. Measured Getaway rate climbs 0.522% → 0.579% → 0.607%
+→ 0.716% across tiers — a felt "head start" that is pure variance reshaping. The
+client also pre-lights `tier` of the 5 WANTED stars and the tier book reaches
+the Getaway after a shorter star climb (`triggerHeat = 5 − headStart`).
+
+**Adaptation B — state + routing are CLIENT-SIDE.** Stake's RGS is stateless
+with no per-player store and no RGS-level table routing (§0), so the
+`player_state` is persisted client-side behind `PlayerStateStore` (the same swap
+point as §4's `GalleryStore`; operator/account store later), and the **client**
+picks which certified mode to request. Because every tier is 96%, the average-
+bet lock guards no money — it is a pacing/feel gate, not anti-exploit (there is
+nothing to exploit at equal RTP).
+
+**Build map**
+
+- Math: `MODES.base_tier{1,2,3}` (model.ts) + `headStart` in the engine; four
+  base-cost tables generated and verified to exactly 96% (cross-mode spread 0).
+- Frontend (pure, unit-tested — 12 tests): `meta/powerLevel.ts` (points, tiers,
+  lock, routing, consume, Grand Reset, sanitize) + `meta/PlayerStateStore.ts`.
+  Wired into `main.ts` (route → record spin → add points on WILDs → consume on
+  Getaway) and the HUD (gold head-start stars, dimmed when over the lock). The
+  3 cards reuse the existing 3-girl gallery art (`char` / `char2` / `char3`).
+- **Single pacing knob:** `CARDS[*].threshold` in `powerLevel.ts` (points; 1pt =
+  $1 of bet per WILD). Re-pace there; re-tune tier feel via the tier `rtpSplit`
+  in model.ts (then `npm run generate` re-verifies 96%). Art for the cards is
+  pending (owner adding later); logic + persistence are complete.

@@ -36,17 +36,23 @@ export class PixiGameScene {
   /** DEV-only: drives the debug panel's "Trigger Next Piece" preview animation. */
   private debugPieceCounter = 0;
 
+  private devGalleryProgress: any = null;
+
   constructor(private readonly app: Application, private readonly runtime: SceneRuntime) {
     this.layout = computeLayout(app.screen.width, app.screen.height);
-    this.hud = new HudView(runtime);
+    const runtimeProxy = {
+      ...runtime,
+      getGalleryProgress: () => this.devGalleryProgress || runtime.getGalleryProgress()
+    };
+    this.hud = new HudView(runtimeProxy);
     this.board.setAudioHooks({
       onReelStop: (col, total) => runtime.onReelStop?.(col, total),
       onAnticipation: () => runtime.onAnticipation?.(),
     });
-    this.cardPeek = new CardPeekView(runtime, () => {
+    this.cardPeek = new CardPeekView(runtimeProxy, () => {
       this.gallery.toggle(this.layout.width, this.layout.height);
     });
-    this.gallery = new GalleryView(runtime);
+    this.gallery = new GalleryView(runtimeProxy);
     
     // Layer order: hud, board, and cardPeek are base layers.
     // bonus, effects are transient overlays on top.
@@ -165,6 +171,7 @@ export class PixiGameScene {
   /** Restore a clean idle base board (used by the panel's Reset). */
   private debugReset(): void {
     this.debugPieceCounter = 0;
+    this.devGalleryProgress = null;
     this.bonus.hide();
     this.bonusActive = false;
     if (this.currentSnapshot) { this.hasBoard = false; this.renderSnapshot(this.currentSnapshot); }
@@ -316,8 +323,53 @@ export class PixiGameScene {
             galleryComplete: false,
             unlockId: completedGirl ? "skin_neon" : null
           };
+          this.devGalleryProgress = {
+            girlId: 0,
+            girlName: "Sapphire",
+            artPrefix: "char",
+            pieces: this.debugPieceCounter,
+            totalPieces: 8,
+            completedGirls: 0,
+            totalGirls: 3,
+            mastered: false
+          };
+          
           if (completedGirl) this.debugPieceCounter = 0;
           await this.runCollectionAnimation([2, 2], gain, turbo);
+        } else if (arg === "flow") {
+          const { GIRLS } = await import("../meta/collection");
+          for (let girlId = 0; girlId < 3; girlId++) {
+            const girl = GIRLS[girlId];
+            const maxPieces = girl.pieces;
+            for (let piece = 1; piece <= maxPieces; piece++) {
+              const completedGirl = piece === maxPieces;
+              const galleryComplete = girlId === 2 && completedGirl;
+              const gain: PieceGain = {
+                girlId,
+                pieceIndex: piece,
+                totalPieces: maxPieces,
+                artPrefix: girl.artPrefix,
+                completedGirl,
+                galleryComplete,
+                unlockId: completedGirl ? girl.unlockId : null
+              };
+              this.devGalleryProgress = {
+                girlId,
+                girlName: girl.name,
+                artPrefix: girl.artPrefix,
+                pieces: piece,
+                totalPieces: maxPieces,
+                completedGirls: girlId,
+                totalGirls: 3,
+                mastered: galleryComplete
+              };
+              
+              await this.runCollectionAnimation([2, 2], gain, turbo);
+              await wait(turbo ? 150 : 400);
+            }
+          }
+          this.devGalleryProgress = null;
+          this.hud.draw(this.layout, this.currentSnapshot);
         }
         return;
       }
@@ -535,7 +587,8 @@ export class PixiGameScene {
           }
         }
 
-        const silScale = Math.min((width * 0.8) / silTex.width, (height * 0.6) / silTex.height);
+        const rawSilScale = Math.min((this.layout.width - 40) / silTex.width, (this.layout.height - 300) / silTex.height);
+        const silScale = prefix === "char2" ? rawSilScale * 1.25 : rawSilScale;
         charContainer.scale.set(silScale);
         charContainer.position.set(width / 2, height / 2 - 40);
         overlay.addChild(charContainer);
@@ -549,21 +602,20 @@ export class PixiGameScene {
         if (pieceTex) {
           const flySprite = new Sprite(pieceTex);
           flySprite.anchor.set(0.5);
-          flySprite.position.set(sourceX, sourceY);
-          const startScale = 0.25;
-          const endScale = silScale;
-          flySprite.scale.set(startScale);
-          overlay.addChild(flySprite);
-
           const targetX = charContainer.x;
           const targetY = charContainer.y;
+          const dropSourceY = targetY - 200;
+          const startScale = silScale * 1.35;
+          flySprite.position.set(targetX, dropSourceY);
+          flySprite.scale.set(startScale);
+          flySprite.alpha = 0;
+          overlay.addChild(flySprite);
 
-          await tween(turbo ? 250 : 550, (p) => {
-            flySprite.x = sourceX + (targetX - sourceX) * p;
-            flySprite.y = sourceY + (targetY - sourceY) * p;
-            flySprite.scale.set(startScale + (endScale - startScale) * p);
-            flySprite.rotation = (1 - p) * 0.4;
-          }, easeInOutCubic);
+          await tween(turbo ? 300 : 700, (p) => {
+            flySprite.y = dropSourceY + (targetY - dropSourceY) * p;
+            flySprite.scale.set(startScale + (silScale - startScale) * p);
+            flySprite.alpha = Math.min(1, p * 2);
+          }, easeOutBack);
 
           flySprite.destroy();
 
@@ -574,7 +626,7 @@ export class PixiGameScene {
           await this.triggerSnapImpact(targetX, targetY, overlay, newCount);
 
           if (completed) {
-            await this.triggerCompletionOverlay(charContainer, silScale, targetX, targetY, overlay);
+            await this.triggerCompletionOverlay(charContainer, silScale, targetX, targetY, overlay, prefix);
           }
 
           await wait(turbo ? 200 : 500);
@@ -593,7 +645,8 @@ export class PixiGameScene {
         if (silTex) {
           const boxW = artRect.width - 24;
           const boxH = artRect.height - 84;
-          const endScale = Math.min(boxW / silTex.width, boxH / silTex.height);
+          const rawEndScale = Math.min(boxW / silTex.width, boxH / silTex.height);
+          const endScale = prefix === "char2" ? rawEndScale * 1.25 : rawEndScale;
           const targetX = artRect.x + artRect.width / 2;
           const targetY = artRect.y + 60 + (artRect.height - 60) / 2;
 
@@ -601,17 +654,18 @@ export class PixiGameScene {
           if (pieceTex) {
             const flySprite = new Sprite(pieceTex);
             flySprite.anchor.set(0.5);
-            flySprite.position.set(sourceX, sourceY);
-            const startScale = 0.25;
+            const dropSourceY = targetY - 200;
+            const startScale = endScale * 1.35;
+            flySprite.position.set(targetX, dropSourceY);
             flySprite.scale.set(startScale);
+            flySprite.alpha = 0;
             this.root.addChild(flySprite);
 
-            await tween(turbo ? 250 : 550, (p) => {
-              flySprite.x = sourceX + (targetX - sourceX) * p;
-              flySprite.y = sourceY + (targetY - sourceY) * p;
+            await tween(turbo ? 300 : 700, (p) => {
+              flySprite.y = dropSourceY + (targetY - dropSourceY) * p;
               flySprite.scale.set(startScale + (endScale - startScale) * p);
-              flySprite.rotation = (1 - p) * 0.4;
-            }, easeInOutCubic);
+              flySprite.alpha = Math.min(1, p * 2);
+            }, easeOutBack);
 
             flySprite.destroy();
 
@@ -634,7 +688,7 @@ export class PixiGameScene {
                   this.hud.draw(this.layout, this.currentSnapshot);
                 }
 
-                await this.triggerCompletionOverlay(celebrationContainer, endScale, targetX, targetY, this.root);
+                await this.triggerCompletionOverlay(celebrationContainer, endScale, targetX, targetY, this.root, prefix);
                 await wait(800);
                 celebrationContainer.destroy({ children: true });
               }
@@ -727,9 +781,10 @@ export class PixiGameScene {
     scale: number,
     targetX: number,
     targetY: number,
-    parentContainer: Container
+    parentContainer: Container,
+    prefix: string
   ): Promise<void> {
-    const fullTex = getExtraTexture("char_full");
+    const fullTex = getExtraTexture(`${prefix}_full`);
     if (!fullTex) return;
 
     const fullSprite = new Sprite(fullTex);

@@ -4,7 +4,16 @@ import { type IndexMode, publishMode, writeManifest } from "../src/publish";
 import { simulateMode } from "../src/simulate";
 import { verify } from "../src/verify";
 
-const MODES: BetMode[] = ["base", "ante", "buy", "super_buy"];
+const MODES: BetMode[] = [
+  "base",
+  "ante",
+  "buy",
+  "super_buy",
+  // Collection Power-Level head-start tables (RTP-neutral; see model.ts).
+  "base_tier1",
+  "base_tier2",
+  "base_tier3"
+];
 
 const t0 = Date.now();
 const indexModes: IndexMode[] = [];

@@ -63,6 +63,13 @@ export function simulateRound(
   const forceBonus = criteria === "freegame" || criteria === "wincap";
   const forceWincap = criteria === "wincap";
 
+  // Collection head-start: a tier-N table reaches the 5★ Getaway after a SHORTER
+  // climb (the client pre-lights the first N stars). RTP-safe — the optimizer
+  // reweights every mode to exactly 96% regardless of the natural trigger rate;
+  // this only makes the served tier books reflect the shorter, head-started run.
+  const headStart = cfg.headStart ?? 0;
+  const triggerHeat = Math.max(1, 5 - headStart);
+
   events.push({
     type: "round_start",
     mode,
@@ -159,7 +166,7 @@ export function simulateRound(
     // Wanted-path coverage: force the fresh drop to contain a cluster so the
     // chain keeps climbing to Heat 5 (the 5★ trigger). Looks like a lucky refill
     // and stops once Heat 5 is reached; representative of a genuine deep chain.
-    if (forceDeep && heat < 5) {
+    if (forceDeep && heat < triggerHeat) {
       const sym = (["BRASS", "KNIFE", "PISTOL", "AMMO"] as SymbolId[])[rng.int(4)]!;
       plantBlob(board, rng, sym, 5);
     }
@@ -202,7 +209,7 @@ export function simulateRound(
   // that reaches Heat 5 (a 5-cascade chain) launches the Getaway on this same
   // paid spin (earned, guaranteed, RTP-funded); (2) the classic 3+ scatter land.
   let bonusWin = 0;
-  const reachedMaxHeat = heat >= 5;
+  const reachedMaxHeat = heat >= triggerHeat;
   const finalScatters = findSymbol(board, SCATTER);
   const scatterTriggered = finalScatters.length >= SCATTER_TRIGGER_COUNT;
   const triggered = forceBonus || reachedMaxHeat || scatterTriggered;

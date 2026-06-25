@@ -72,6 +72,35 @@ export interface ModeConfig {
   rtpSplit?: RtpSplit;
   reelWeights: Record<SymbolId, number>;
   safeValues: { value: number; weight: number }[];
+  /**
+   * Collection Power-Level head-start (0 = normal). For the `base_tierN` tables:
+   * the Getaway is reached SOONER / more often (the published `freegame` share
+   * climbs with the tier while `basegame` shrinks to compensate), and the client
+   * pre-lights `headStart` of the 5 WANTED stars. The optimizer still solves the
+   * mode to EXACTLY 96%, so the head-start is purely variance reshaping — a feel
+   * advantage, never extra EV (see docs/MATH_DESIGN.md §8).
+   */
+  headStart?: number;
+}
+
+/**
+ * Build a base-cost cash mode at the given Power-Level head-start. tier 0 is the
+ * normal game; tiers 1–3 shift RTP mass from frequent small base wins into a
+ * more frequent Getaway, so a higher tier *feels* like an advantage while every
+ * tier still verifies to exactly 96%.
+ */
+function baseTier(headStart: number, rtpSplit: RtpSplit): ModeConfig {
+  return {
+    cost: 1,
+    isFeature: false,
+    isBuyBonus: false,
+    sims: 40_000,
+    criteria: { zero: 0.22, basegame: 0.46, basebig: 0.1, freegame: 0.2, wincap: 0.02 },
+    rtpSplit,
+    reelWeights: baseReels(),
+    safeValues: safeTable(1),
+    headStart
+  };
 }
 
 export const MODES: Record<BetMode, ModeConfig> = {
@@ -117,7 +146,15 @@ export const MODES: Record<BetMode, ModeConfig> = {
     criteria: { zero: 0, basegame: 0, basebig: 0, freegame: 0.80, wincap: 0.20 },
     reelWeights: baseReels(),
     safeValues: safeTable(1.45)
-  }
+  },
+  // ---- Collection Power-Level head-start tables (RTP-neutral, 1x cost) -------
+  // base.freegame is 0.62; each tier shifts mass out of `basegame` (frequent
+  // small wins) into `freegame` (the Getaway) so the bonus lands progressively
+  // more often. basebig + wincap are held constant so the big-cascade and
+  // max-win feel are unchanged. All three still solve to exactly 96%.
+  base_tier1: baseTier(1, { basegame: 0.17, basebig: 0.1, freegame: 0.67, wincap: 0.06 }),
+  base_tier2: baseTier(2, { basegame: 0.12, basebig: 0.1, freegame: 0.72, wincap: 0.06 }),
+  base_tier3: baseTier(3, { basegame: 0.08, basebig: 0.1, freegame: 0.76, wincap: 0.06 })
 };
 
 /** Cluster pays: payout (x of base bet) = clusterPay[symbol] * sizeFactor(size). */

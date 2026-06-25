@@ -239,8 +239,20 @@ export class CardPeekView extends Container {
             artSprite.y = 5;
             card.addChild(artSprite);
           }
+        } else if (i === 1) {
+          // Roxy full art exists!
+          const fullTex = getExtraTexture("char2_full");
+          if (fullTex) {
+            const artSprite = new Sprite(fullTex);
+            artSprite.anchor.set(0.5);
+            // Scale and crop to fit card beautifully
+            const scale = Math.min((this.cardWidth - 10) / fullTex.width, (this.cardHeight - 40) / fullTex.height);
+            artSprite.scale.set(scale * 1.25);
+            artSprite.y = 5;
+            card.addChild(artSprite);
+          }
         } else {
-          // Roxy / Vega prop placeholder completed art
+          // Vega prop placeholder completed art
           const completeIcon = new Graphics();
           completeIcon.circle(0, 0, 16).fill({ color: borderGlowColor, alpha: 0.25 }).stroke({ color: borderGlowColor, width: 1.5 });
           // Checkmark
@@ -283,8 +295,37 @@ export class CardPeekView extends Container {
             assembly.y = 4;
             card.addChild(assembly);
           }
+        } else if (i === 1) {
+          // Roxy interactive progress assembly
+          const assembly = new Container();
+          const silTex = getExtraTexture("char2_silhouette");
+          if (silTex) {
+            const silSprite = new Sprite(silTex);
+            silSprite.anchor.set(0.5);
+            silSprite.x = 0;
+            silSprite.y = 0;
+            silSprite.tint = 0x000000;
+            silSprite.alpha = 0.8;
+            assembly.addChild(silSprite);
+
+            // Overlay pieces
+            const collectedPieces = prog.pieces;
+            for (let p = 1; p <= Math.min(8, collectedPieces); p++) {
+              const pieceTex = getExtraTexture(`char2_piece_${p}`);
+              if (pieceTex) {
+                const pieceSprite = new Sprite(pieceTex);
+                pieceSprite.anchor.set(0.5);
+                assembly.addChild(pieceSprite);
+              }
+            }
+
+            const scale = Math.min((this.cardWidth - 12) / silTex.width, (this.cardHeight - 44) / silTex.height);
+            assembly.scale.set(scale * 1.05 * 1.25);
+            assembly.y = 4;
+            card.addChild(assembly);
+          }
         } else {
-          // Roxy & Vega in progress prop placeholders
+          // Vega in progress prop placeholders
           const progIcon = new Graphics();
           // Draw a stylized pulsing circle/gear to represent progress
           progIcon.circle(0, 0, 15).stroke({ color: borderGlowColor, width: 2, alpha: 0.5 });

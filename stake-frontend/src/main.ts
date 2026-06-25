@@ -3,21 +3,27 @@ import { EventAudioBus } from "./audio";
 import type { GameEvent, RoundRecord } from "./domain";
 import { hideLoader, showLoader, updateLoader } from "./loader";
 import { applyEvent, INITIAL_SNAPSHOT, type PlaybackSnapshot } from "./playback";
+import { GIRLS, type PieceGain } from "./meta/collection";
 import {
-  collectWild,
-  displayedPieces,
-  GIRLS,
-  isGalleryComplete,
-  type GalleryData,
-  type PieceGain
-} from "./meta/collection";
-import { createGalleryStore } from "./meta/GalleryStore";
+  activeTier,
+  addPoints,
+  cardProgress,
+  consumeHeadStart,
+  effectiveTier,
+  recordSpin,
+  routeMode,
+  NUM_CARDS,
+  type PowerState
+} from "./meta/powerLevel";
+import { createPlayerStateStore } from "./meta/PlayerStateStore";
+import type { GalleryProgress } from "./pixi/types";
 import { loadSymbolTextures } from "./pixi/assets";
 import { PixiGameScene } from "./pixi/PixiGameScene";
 import { RadioWheel } from "./radio";
 import { RgsClient, RgsError, toDisplay } from "./rgs/client";
 import { readSession } from "./rgs/session";
 import type { BetModeObject, Jurisdiction } from "./rgs/types";
+import { showConfirmPopup } from "./confirmPopup";
 
 const root = document.querySelector<HTMLDivElement>("#app");
 if (!root) throw new Error("Missing #app root");
@@ -59,18 +65,63 @@ let snapshot: PlaybackSnapshot = INITIAL_SNAPSHOT;
  * client-side cross-spin meter and no client-funded free bonus (that would leak
  * RTP). The stars reset to 0 at the start of each spin.
  */
-// Persistent Beach Girl gallery (cosmetic, $0 EV). Loaded once, saved whenever a
-// rare WILD reveals a body part. The collection never touches RTP.
-const galleryStore = createGalleryStore();
-let gallery: GalleryData = galleryStore.load();
+// Persistent Power-Level collection (cosmetic, $0 EV; RTP-neutral head-start).
+// player_state is loaded here at init (right after authenticate) and saved on
+// every change. WILDs add value-weighted points; crossing a threshold reveals a
+// card and arms a head-start that routes eligible base spins to base_tierN.
+const powerStore = createPlayerStateStore();
+let power: PowerState = powerStore.load();
 
-/** Reveal one body part for a landed WILD; persists and returns what to animate.
- *  Returns null once the whole gallery is mastered. */
+// Per-spin collection context, set in playRound before replay.
+let spinBet = 0; // the spin's base bet — one WILD awards exactly this many points
+let spinOrganic = false; // base/ante/tier spin (points accrue) vs a bought bonus
+
+const currentBet = (): number => betLevels[betIndex] ?? 0;
+
+/** Add one landed WILD's points (= base bet). Returns a card-reveal to animate
+ *  only when this WILD's points just unlocked a new card; persists state. */
 function onWildCollected(): PieceGain | null {
-  const { data, gain } = collectWild(gallery);
-  gallery = data;
-  if (gain) galleryStore.save(gallery);
-  return gain;
+  if (!spinOrganic) return null; // points only accrue on base/ante play
+  const { state, gain } = addPoints(power, spinBet);
+  power = state;
+  powerStore.save(power);
+  const card = gain.cardUnlocked;
+  if (!card) return null; // points added, but no new card revealed this WILD
+  const pieces = GIRLS[card.id]?.pieces ?? 8;
+  return {
+    girlId: card.id,
+    pieceIndex: pieces,
+    totalPieces: pieces,
+    artPrefix: card.artPrefix,
+    completedGirl: true,
+    galleryComplete: gain.cardsUnlocked >= NUM_CARDS,
+    unlockId: null
+  };
+}
+
+/** Project the Power-Level state onto the HUD/gallery's card view. The visible
+ *  cards = thresholds crossed; the in-progress card's silhouette fills with the
+ *  player's points progress toward the next threshold. */
+function galleryProgress(): GalleryProgress {
+  const cards = power.cardsUnlocked;
+  const mastered = cards >= NUM_CARDS;
+  const idx = Math.min(cards, GIRLS.length - 1);
+  const girl = GIRLS[idx] ?? GIRLS[GIRLS.length - 1]!;
+  let pieces = girl.pieces;
+  if (!mastered) {
+    const { into, needed } = cardProgress(power);
+    pieces = needed > 0 ? Math.min(girl.pieces, Math.floor((into / needed) * girl.pieces)) : 0;
+  }
+  return {
+    girlId: girl.id,
+    girlName: girl.name,
+    artPrefix: girl.artPrefix,
+    pieces,
+    totalPieces: girl.pieces,
+    completedGirls: cards,
+    totalGirls: NUM_CARDS,
+    mastered
+  };
 }
 
 void boot();
@@ -134,21 +185,14 @@ async function boot(): Promise<void> {
     getCredit: () => balance,
     getCurrency: () => currency,
     getWantedLevel: () => snapshot.heatLevel, // stars = live in-spin cascade Heat (0–5)
-    getCollectionCount: () => displayedPieces(gallery),
+    getCollectionCount: () => galleryProgress().pieces,
     collectWild: onWildCollected,
-    getGalleryProgress: () => {
-      const girl = GIRLS[gallery.currentGirl] ?? GIRLS[GIRLS.length - 1]!;
-      return {
-        girlId: girl.id,
-        girlName: girl.name,
-        artPrefix: girl.artPrefix,
-        pieces: displayedPieces(gallery),
-        totalPieces: girl.pieces,
-        completedGirls: gallery.completed.length,
-        totalGirls: GIRLS.length,
-        mastered: isGalleryComplete(gallery)
-      };
-    },
+    getGalleryProgress: galleryProgress,
+    // Head-start Power Level: unlocked tier, and the stars in effect for the
+    // current bet (0 = dimmed because the bet is above this tier's average lock).
+    getActiveTier: () => activeTier(power),
+    getHeadStartStars: () => effectiveTier(power, currentBet()),
+    isHeadStartActive: () => effectiveTier(power, currentBet()) > 0,
     onAction: handleAction,
     onSafeLand: (index, total) => {
       if (!muted) audioBus.fireSafeLand(index, total);
@@ -253,10 +297,27 @@ async function handleAction(action: string): Promise<void> {
     case "super_buy":
       if (jurisdiction?.disabledBuyFeature) return;
       if (!betModes[action]) return;
-      await playRound(action);
+      const confirmed = await showConfirmPopup(
+        action,
+        betLevels[betIndex],
+        currency,
+        () => {
+          if (!muted) audioBus.playUI("click", false);
+        }
+      );
+      if (confirmed) {
+        await playRound(action);
+      }
       return;
     case "spin":
-      await playRound(anteEnabled && betModes.ante ? "ante" : "base");
+      // Tier routing: the collection picks the certified table for this base
+      // spin (base, or base_tierN when a head-start is active AND the bet is at
+      // or below that tier's average-bet lock). Ante is its own table.
+      if (anteEnabled && betModes.ante) {
+        await playRound("ante");
+      } else {
+        await playRound(routeMode(power, currentBet()));
+      }
       return;
   }
 }
@@ -265,26 +326,38 @@ async function playRound(modeKey: string, free = false): Promise<void> {
   const betAmount = betLevels[betIndex];
   if (betAmount == null) return;
 
+  // Spin context for the collection: which Power-Level table we're playing, and
+  // whether points accrue (organic base/ante/tier play, not a bought bonus).
+  spinBet = betAmount;
+  const effTier = modeKey.startsWith("base_tier") ? Number(modeKey.slice(-1)) || 0 : 0;
+  spinOrganic = modeKey === "base" || modeKey === "ante" || effTier > 0;
+
   isPlaying = true;
   activeModeKey = modeKey;
   snapshot = {
     ...INITIAL_SNAPSHOT,
-    collectionCount: displayedPieces(gallery)
+    collectionCount: galleryProgress().pieces
   };
   scene.resetRound(snapshot);
 
+  let record: RoundRecord;
   try {
     const res = await client.play(betAmount, currency, modeKey, free);
     // Debit reflected by the RGS — never computed locally.
     balance = toDisplay(res.balance.amount);
-    const record: RoundRecord = {
+    // Count this paid spin toward the current tier's average bet (organic play).
+    if (spinOrganic && !free) {
+      power = recordSpin(power, betAmount);
+      powerStore.save(power);
+    }
+    record = {
       id: res.round.roundID,
       payoutMultiplier: res.round.payoutMultiplier,
       events: res.round.state
     };
     await replayRound(record, res.round.active);
-    // The collection advances DURING replay: each rare WILD that lands calls
-    // runtime.collectWild() from the scene and animates the body part it reveals.
+    // The collection advances DURING replay: each WILD calls runtime.collectWild()
+    // from the scene, adding value-weighted points and revealing a card on cross.
   } catch (e) {
     isPlaying = false;
     const msg = e instanceof RgsError ? `${e.code}: ${e.message}` : String(e);
@@ -294,9 +367,21 @@ async function playRound(modeKey: string, free = false): Promise<void> {
   }
   isPlaying = false;
 
-  // The WANTED LEVEL stars follow the live in-spin Heat during replay, and a
-  // 5-cascade chain triggers the Getaway in-book (math side) — nothing to
-  // accumulate or reset on the client.
+  // Consume the head-start when the Getaway triggered on an active-tier spin.
+  // The bonus has just settled (/wallet/end-round, inside replayRound); spending
+  // the Tier 3 head-start wipes the entire gallery (the Grand Reset).
+  if (effTier > 0 && record.events.some((e) => e.type === "bonus_trigger")) {
+    const { state, grandReset, consumedTier } = consumeHeadStart(power, effTier);
+    power = state;
+    powerStore.save(power);
+    snapshot = {
+      ...snapshot,
+      lastMessage: grandReset
+        ? "GRAND ESCAPE — gallery reset to zero!"
+        : `Tier ${consumedTier} head-start used`
+    };
+  }
+
   scene.renderSnapshot(snapshot);
 }
 

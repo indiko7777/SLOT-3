@@ -63,6 +63,16 @@ const EXTRA_ASSETS: Record<string, string> = {
   "char_piece_7": "bodycharachter1/rightarm1.png.png",
   "char_piece_8": "bodycharachter1/head1.png.png",
   "char_full": "bodycharachter1/full_image1.png.png",
+
+  "char2_silhouette": "bodycharachter2/silhouette.png",
+  "char2_piece_1": "bodycharachter2/right foot.png",
+  "char2_piece_2": "bodycharachter2/left foot.png",
+  "char2_piece_3": "bodycharachter2/legs.png",
+  "char2_piece_4": "bodycharachter2/body.png",
+  "char2_piece_5": "bodycharachter2/left arm.png",
+  "char2_piece_6": "bodycharachter2/right arm.png",
+  "char2_piece_7": "bodycharachter2/head.png",
+  "char2_full": "bodycharachter2/full image girl 2.png",
 };
 
 /** Optional images — loaded per-file so a missing one never blocks the game.

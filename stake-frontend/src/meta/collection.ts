@@ -34,7 +34,7 @@ export interface GirlConfig {
  */
 export const GIRLS: GirlConfig[] = [
   { id: 0, name: "Sapphire", pieces: 8, artPrefix: "char", unlockId: "skin_neon" },
-  { id: 1, name: "Roxy", pieces: 8, artPrefix: "char2", unlockId: "skin_gold" },
+  { id: 1, name: "Roxy", pieces: 7, artPrefix: "char2", unlockId: "skin_gold" },
   { id: 2, name: "Vega", pieces: 8, artPrefix: "char3", unlockId: "skin_diamond" }
 ];
 

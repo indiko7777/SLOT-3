@@ -415,6 +415,11 @@ export class HudView extends Container {
 
     const meter = Math.max(0, Math.min(5, this.runtime.getWantedLevel()));
     const filledStars: Graphics[] = [];
+    // Collection head-start: the first `headStart` stars are pre-lit (gold) as
+    // the active Power-Level advantage. `activeTier` stars exist but show dimmed
+    // when the current bet is above that tier's average-bet lock (advantage off).
+    const headStart = Math.max(0, Math.min(5, this.runtime.getHeadStartStars?.() ?? 0));
+    const activeTier = Math.max(0, Math.min(5, this.runtime.getActiveTier?.() ?? 0));
 
     // "WANTED LEVEL" label centred above the star row
     this.addChild(makeText(
@@ -437,6 +442,20 @@ export class HudView extends Container {
       base.poly(pts).fill({ color: 0x000000, alpha: 0.5 });
       base.poly(pts).stroke({ color: 0x4a5570, width: 2.5, alpha: 0.6 });
       this.addChild(base);
+
+      // Head-start underlay: pre-lit gold for active stars; a dim gold outline
+      // when the tier is unlocked but locked out by the current bet.
+      if (i < headStart && fill < 1) {
+        const hs = new Graphics();
+        hs.poly(pts).fill({ color: 0xffcf40, alpha: 0.85 });
+        hs.poly(pts).stroke({ color: 0xffe680, width: 1.5, alpha: 0.9 });
+        this.addChild(hs);
+      } else if (i < activeTier && i >= headStart) {
+        const dim = new Graphics();
+        dim.poly(pts).fill({ color: 0xffcf40, alpha: 0.12 });
+        dim.poly(pts).stroke({ color: 0xffcf40, width: 1.5, alpha: 0.4 });
+        this.addChild(dim);
+      }
 
       if (fill > 0) {
         const filled = new Graphics();
@@ -477,8 +496,8 @@ export class HudView extends Container {
     const assembly = new Container();
     const silSprite = new Sprite(silTex);
     silSprite.anchor.set(0.5);
-    silSprite.x = 57.5; // align shadow with the pieces
-    silSprite.y = 27.5;
+    silSprite.x = prog.artPrefix === "char" ? 57.5 : 0;
+    silSprite.y = prog.artPrefix === "char" ? 27.5 : 0;
     silSprite.tint = 0x000000;
     const outline = new OutlineFilter({ thickness: 2, color: 0xffffff, quality: 1.0 });
     outline.resolution = window.devicePixelRatio || 1;
@@ -507,7 +526,8 @@ export class HudView extends Container {
     const boxW = rect.width - 24;
     const boxH = rect.height - 84;
     const scale = Math.min(boxW / silTex.width, boxH / silTex.height);
-    assembly.scale.set(scale);
+    const multiplier = prog.artPrefix === "char2" ? 1.25 : 1.0;
+    assembly.scale.set(scale * multiplier);
     assembly.position.set(rect.x + rect.width / 2, rect.y + 60 + (rect.height - 60) / 2);
     this.addChild(assembly);
   }

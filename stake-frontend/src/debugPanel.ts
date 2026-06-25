@@ -67,7 +67,8 @@ const GROUPS: Group[] = [
   {
     title: "Beach Girl Collection",
     buttons: [
-      { label: "Trigger Next Piece", action: "collection:next" }
+      { label: "Trigger Next Piece", action: "collection:next" },
+      { label: "Test All Girls Flow", action: "collection:flow" }
     ]
   }
 ];

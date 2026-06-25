@@ -3,7 +3,23 @@ export const GRID_COLUMNS = 5;
 export const GRID_ROWS = 4;
 export const MAX_WIN_MULTIPLIER = 5000;
 
-export type BetMode = "base" | "ante" | "buy" | "super_buy";
+/**
+ * Cash modes: `base` is the normal game (the collection's Tier 0). `base_tier1`
+ * / `base_tier2` / `base_tier3` are the Power-Level head-start tables: the
+ * persistent Wild-collection routes a player to them once they have unlocked the
+ * matching card AND are wagering at or below their logged average bet (see
+ * docs/MATH_DESIGN.md §8). They are RTP-NEUTRAL — every tier verifies to exactly
+ * 96%; the head-start is a faster, more frequent Getaway (variance reshaping),
+ * never free EV (which Stake's per-mode RTP verification would reject).
+ */
+export type BetMode =
+  | "base"
+  | "ante"
+  | "buy"
+  | "super_buy"
+  | "base_tier1"
+  | "base_tier2"
+  | "base_tier3";
 
 export type SymbolId =
   | "BRASS"
@@ -211,7 +227,11 @@ export const BET_MODES: Record<BetMode, { label: string; priceMultiplier: number
   base: { label: "Base Game", priceMultiplier: 1, rtpTarget: 0.965 },
   ante: { label: "Ante", priceMultiplier: 1.5, rtpTarget: 0.965 },
   buy: { label: "Getaway Buy", priceMultiplier: 100, rtpTarget: 0.965 },
-  super_buy: { label: "Super Getaway Buy", priceMultiplier: 500, rtpTarget: 0.965 }
+  super_buy: { label: "Super Getaway Buy", priceMultiplier: 500, rtpTarget: 0.965 },
+  // Power-Level head-start tables (same 1x cost as base; RTP-neutral).
+  base_tier1: { label: "Base · Sapphire Head-Start", priceMultiplier: 1, rtpTarget: 0.965 },
+  base_tier2: { label: "Base · Roxy Head-Start", priceMultiplier: 1, rtpTarget: 0.965 },
+  base_tier3: { label: "Base · Vega Head-Start", priceMultiplier: 1, rtpTarget: 0.965 }
 };
 
 export function assertBoard(board: Board): void {

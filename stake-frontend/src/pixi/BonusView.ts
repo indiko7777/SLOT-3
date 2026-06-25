@@ -3,6 +3,7 @@ import { GRID_COLUMNS, GRID_ROWS, type BonusCell, type Position } from "../domai
 import { getExtraTexture } from "./assets";
 import { tween, wait, easeOutBack, easeOutCubic, linear, ambientTicker } from "./tween";
 import type { Rect } from "./types";
+import { shockwave } from "../vfx/Shaders";
 
 /* ═══════════════════════════════════════════════════════════════════
    "THE GETAWAY" — POV police-chase Hold & Spin.
@@ -294,35 +295,142 @@ export class BonusView extends Container {
     const reach = Math.max(kc.w, kc.h);
     const dyn = this.cells.get(keyOf(keyPos));
 
-    // Blast: bright flash + expanding shockwave ring + spark debris; the
-    // dynamite bursts outward as it detonates.
-    const flash = new Graphics(); this.fxLayer.addChild(flash);
-    const ring = new Graphics(); this.fxLayer.addChild(ring);
-    const sparks: Graphics[] = [];
-    const sv: Array<{ vx: number; vy: number }> = [];
-    const ns = turbo ? 8 : 18;
-    for (let i = 0; i < ns; i++) {
-      const g = new Graphics();
-      g.circle(0, 0, 2 + Math.random() * 3).fill([0xffd95c, 0xff6a00, 0xffffff][i % 3]);
-      g.position.set(cx, cy);
-      this.fxLayer.addChild(g);
-      sparks.push(g);
-      const ang = (Math.PI * 2 * i) / ns + Math.random() * 0.4;
-      const sp = reach * (2 + Math.random() * 2.5);
-      sv.push({ vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp });
+    // Highest multiplier of affected safes
+    const maxVal = affected.reduce((max, a) => Math.max(max, a.newValue), 1);
+
+    // Dynamic scale of the explosion based on multiplier
+    const explosionRadius = reach * (1.8 + Math.min(3.5, maxVal * 0.04));
+
+    // Screen thud/shake scaling with max multiplier
+    const shakeIntensity = 12 + Math.min(28, maxVal * 0.6);
+    const shakeDuration = turbo ? 220 : 450 + Math.min(350, maxVal * 6);
+    const origX = this.x;
+    const origY = this.y;
+    const shakePromise = tween(shakeDuration, (p) => {
+      const decay = Math.exp(-p * 4.5);
+      const dx = Math.sin(p * Math.PI * 8) * shakeIntensity * decay;
+      const dy = Math.cos(p * Math.PI * 7) * shakeIntensity * decay * 0.8;
+      this.x = origX + dx;
+      this.y = origY + dy;
+    }, linear).then(() => {
+      this.x = origX;
+      this.y = origY;
+    });
+
+    // Radial GPU shockwave ripple
+    void shockwave(this.fxLayer, { x: cx, y: cy }, { duration: turbo ? 400 : 800 });
+
+    // Procedural color interpolation helper
+    const lerpColor = (c1: number, c2: number, t: number): number => {
+      const r1 = (c1 >> 16) & 0xff, g1 = (c1 >> 8) & 0xff, b1 = c1 & 0xff;
+      const r2 = (c2 >> 16) & 0xff, g2 = (c2 >> 8) & 0xff, b2 = c2 & 0xff;
+      const r = Math.round(r1 + (r2 - r1) * t);
+      const g = Math.round(g1 + (g2 - g1) * t);
+      const b = Math.round(b1 + (b2 - b1) * t);
+      return (r << 16) | (g << 8) | b;
+    };
+
+    const getExplosionColor = (progress: number): number => {
+      if (progress < 0.15) {
+        return lerpColor(0xffffff, 0xffea00, progress / 0.15);
+      } else if (progress < 0.45) {
+        return lerpColor(0xffea00, 0xff5500, (progress - 0.15) / 0.3);
+      } else if (progress < 0.75) {
+        return lerpColor(0xff5500, 0x444444, (progress - 0.45) / 0.3);
+      } else {
+        return lerpColor(0x444444, 0x111111, (progress - 0.75) / 0.25);
+      }
+    };
+
+    const drawFireball = (g: Graphics, r: number, color: number, alphaScale: number) => {
+      g.clear();
+      g.circle(0, 0, r).fill({ color, alpha: 0.12 * alphaScale });
+      g.circle(0, 0, r * 0.65).fill({ color, alpha: 0.35 * alphaScale });
+      g.circle(0, 0, r * 0.35).fill({ color, alpha: 0.85 * alphaScale });
+    };
+
+    // Full screen blast overlay
+    const blastFlash = new Graphics();
+    blastFlash.rect(0, 0, this.rect.width, this.rect.height).fill({ color: 0xffaa00, alpha: 0.75 });
+    this.fxLayer.addChild(blastFlash);
+
+    // Layered particles setup
+    interface ExplosionParticle {
+      g: Graphics;
+      vx: number;
+      vy: number;
+      size: number;
+      rotSpeed: number;
+      type: "fire" | "debris";
+      driftY: number;
+      maxScale: number;
     }
-    await tween(turbo ? 200 : 440, (p) => {
-      flash.clear();
-      flash.circle(cx, cy, reach * (0.5 + p * 0.7)).fill({ color: 0xfff2c0, alpha: (1 - p) * 0.7 });
-      ring.clear();
-      const rr = reach * 0.4 + reach * 1.9 * p;
-      ring.circle(cx, cy, rr).stroke({ color: 0xffd95c, width: Math.max(1, 9 * (1 - p)), alpha: (1 - p) * 0.95 });
-      ring.circle(cx, cy, rr * 0.62).stroke({ color: 0xffffff, width: Math.max(1, 5 * (1 - p)), alpha: (1 - p) * 0.7 });
-      sparks.forEach((g, i) => { g.x = cx + sv[i].vx * p; g.y = cy + sv[i].vy * p + 50 * p * p; g.alpha = 1 - p; g.scale.set(1 - p * 0.5); });
-      if (dyn) { dyn.scale.set(1 + p * 0.5); dyn.alpha = 1 - p; }
-    }, easeOutCubic);
-    flash.destroy(); ring.destroy(); sparks.forEach((g) => g.destroy());
-    if (dyn) { this.cells.delete(keyOf(keyPos)); dyn.destroy(); }
+
+    const particles: ExplosionParticle[] = [];
+    const numParticles = turbo ? 10 : 26 + Math.min(24, maxVal * 0.5);
+
+    for (let i = 0; i < numParticles; i++) {
+      const g = new Graphics();
+      this.fxLayer.addChild(g);
+      const angle = Math.random() * Math.PI * 2;
+      const speed = (0.25 + Math.random() * 0.75) * explosionRadius;
+      const size = 14 + Math.random() * 22;
+      particles.push({
+        g,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size,
+        rotSpeed: (Math.random() - 0.5) * 5,
+        type: Math.random() < 0.75 ? "fire" : "debris",
+        driftY: -(18 + Math.random() * 28),
+        maxScale: 1.1 + Math.random() * 1.6
+      });
+    }
+
+    const duration = turbo ? 260 : 650 + Math.min(350, maxVal * 4);
+
+    await Promise.all([
+      shakePromise,
+      tween(duration, (p) => {
+        // Flash fades quickly
+        blastFlash.alpha = Math.max(0, (1 - p * 2.8) * 0.75);
+
+        particles.forEach((pt) => {
+          const x = cx + pt.vx * p;
+          const y = cy + pt.vy * p + (pt.type === "fire" ? pt.driftY * p : 80 * p * p);
+          pt.g.position.set(x, y);
+          pt.g.rotation += pt.rotSpeed * 0.016;
+
+          if (pt.type === "fire") {
+            const color = getExplosionColor(p);
+            const currentSize = pt.size * (0.35 + (pt.maxScale - 0.35) * Math.sin(p * Math.PI * 0.5));
+            const alpha = p < 0.12 ? p / 0.12 : (1 - p) * 1.15;
+            drawFireball(pt.g, currentSize, color, Math.max(0, Math.min(1, alpha)));
+          } else {
+            pt.g.clear();
+            const shardSize = pt.size * 0.38 * (1 - p * 0.5);
+            pt.g.poly([
+              0, -shardSize,
+              shardSize * 0.6, -shardSize * 0.2,
+              shardSize * 0.4, shardSize * 0.5,
+              -shardSize * 0.4, shardSize * 0.3,
+            ]).fill({ color: p < 0.3 ? 0xffcc00 : 0x222222, alpha: 1 - p });
+          }
+        });
+
+        if (dyn) {
+          dyn.scale.set(1 + p * 0.8);
+          dyn.alpha = Math.max(0, 1 - p * 3);
+        }
+      }, easeOutCubic)
+    ]);
+
+    blastFlash.destroy();
+    particles.forEach((pt) => pt.g.destroy());
+    if (dyn) {
+      this.cells.delete(keyOf(keyPos));
+      dyn.destroy();
+    }
 
     // Double each neighbour — clear "×2" badge + a punch + a gold flash so the
     // upgrade is unmistakable.

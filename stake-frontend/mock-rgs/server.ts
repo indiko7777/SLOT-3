@@ -27,7 +27,10 @@ interface ModeData {
   cost: number;
   rows: Row[];
   totalWeight: number;
-  events: Map<number, unknown[]>;
+  /** Raw JSONL line per book id; parsed on demand. Storing strings (not parsed
+   *  object graphs) keeps all modes — including the 3 tier tables, ~236k books
+   *  total — comfortably within the Node heap. */
+  events: Map<number, string>;
 }
 
 const modes = new Map<string, ModeData>();
@@ -76,11 +79,12 @@ function loadBundle(): void {
     }
     const raw = readFileSync(path.join(PUBLISH, m.events));
     const jsonl = Buffer.from(decompress(new Uint8Array(raw))).toString("utf8");
-    const events = new Map<number, unknown[]>();
+    const events = new Map<number, string>();
     for (const l of jsonl.split("\n")) {
-      if (!l.trim()) continue;
-      const b = JSON.parse(l) as { id: number; events: unknown[] };
-      events.set(b.id, b.events);
+      const line = l.trim();
+      if (!line) continue;
+      const id = Number(line.slice(line.indexOf(":") + 1, line.indexOf(",")));
+      events.set(id, line);
     }
     modes.set(m.name, { cost: m.cost, rows, totalWeight: cum, events });
     console.log(
@@ -156,7 +160,11 @@ const server = createServer((req, res) => {
                 mode: "super_buy",
                 costMultiplier: cost("super_buy"),
                 feature: false
-              }
+              },
+              // Collection Power-Level head-start tables (client-routed; 1x cost).
+              base_tier1: { mode: "base_tier1", costMultiplier: cost("base_tier1"), feature: false },
+              base_tier2: { mode: "base_tier2", costMultiplier: cost("base_tier2"), feature: false },
+              base_tier3: { mode: "base_tier3", costMultiplier: cost("base_tier3"), feature: false }
             },
             jurisdiction: jurisdiction()
           },
@@ -190,13 +198,15 @@ const server = createServer((req, res) => {
         const winApi = Math.round((amount * row.payoutCents) / 100);
         s.balanceApi -= debit;
         s.pendingWin = winApi;
+        const line = mode.events.get(row.id);
+        const state = line ? (JSON.parse(line) as { events: unknown[] }).events : [];
         const round = {
           roundID: roundSeq++,
           amount: debit,
           payout: winApi,
           payoutMultiplier,
           mode: String(payload.mode),
-          state: mode.events.get(row.id) ?? []
+          state
         };
         s.active = winApi > 0 ? round : null;
         if (winApi === 0) s.pendingWin = 0; // RGS auto-ends 0-win rounds
