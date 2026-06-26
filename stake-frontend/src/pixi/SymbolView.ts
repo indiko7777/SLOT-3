@@ -5,13 +5,31 @@ import { SYMBOL_ASSETS, getSymbolTexture, getSymbolAnimation, type SymbolAnimati
 import { makeText } from "./text";
 import { easeInOutCubic, easeOutElastic, easeOutBack, easeOutQuad, linear, tween, ambientTicker } from "./tween";
 
-/** Per-symbol win accent colour. Heroes get their own signature glow. */
-const WIN_ACCENT: Partial<Record<SymbolId, number>> = {
-  CAR_WILD: 0x9ae64e,      // electric cyan
-  MASTER_KEY: 0x9ae64e,    // key energy
-  SAFE: 0xffe27a,          // warm gold
-  DIAMOND: 0xe3ffd6,       // icy sparkle
-  PHONE_SCATTER: 0xff7bd0, // scatter pink
+const WIN_ACCENT: Record<SymbolId, number> = {
+  // Low Tier: Steel Blue
+  BRASS: 0x74b9ff,
+  KNIFE: 0x74b9ff,
+  
+  // Mid Tier: Golden Orange
+  PISTOL: 0xfdcb6e,
+  AMMO: 0xfdcb6e,
+  DUFFEL: 0xfdcb6e,
+  
+  // Premium Tier: Magenta / Purple
+  CASH: 0xe056fd,
+  DIAMOND: 0xe056fd,
+  BIKE: 0xe056fd,
+  
+  // Specials (Wilds): Electric Green
+  WILD: 0x9ae64e,
+  CAR_WILD: 0x9ae64e,
+  
+  // Scatters / Bonus: Neon Red & Pure Gold
+  PHONE_SCATTER: 0xff4757,
+  SAFE: 0xffd700,
+  MASTER_KEY: 0xffd700,
+  
+  EMPTY: 0x000000
 };
 const HERO_SYMBOLS = new Set<SymbolId>(["CAR_WILD", "SAFE", "MASTER_KEY"]);
 const DEFAULT_ACCENT = 0xffdf65;
@@ -79,11 +97,12 @@ export class SymbolView extends Container {
     // No idle cell box or white frame — symbols sit directly on the reel.
     // A border is only drawn to signal win / alert / transform states.
     if (highlighted) {
-      // Golden glow border for wins
+      const accent = WIN_ACCENT[this.id] ?? DEFAULT_ACCENT;
+      // Glowing border for wins based on symbol accent color
       this.background.roundRect(-2, -2, w + 4, h + 4, 12)
-        .stroke({ color: 0xffdf65, width: 3, alpha: 0.9 });
+        .stroke({ color: accent, width: 3, alpha: 0.9 });
       this.background.roundRect(0, 0, w, h, 10)
-        .stroke({ color: 0xffdf65, width: 1.5, alpha: 0.5 });
+        .stroke({ color: accent, width: 1.5, alpha: 0.5 });
     } else if (alert) {
       // Glossy transparent green background fill inside the cell
       this.background.roundRect(0, 0, w, h, 10)
