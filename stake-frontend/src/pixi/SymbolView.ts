@@ -5,7 +5,7 @@ import { SYMBOL_ASSETS, getSymbolTexture, getSymbolAnimation, type SymbolAnimati
 import { makeText } from "./text";
 import { easeInOutCubic, easeOutElastic, easeOutBack, easeOutQuad, linear, tween, ambientTicker } from "./tween";
 
-const WIN_ACCENT: Record<SymbolId, number> = {
+export const WIN_ACCENT: Record<SymbolId, number> = {
   // Low Tier: Steel Blue
   BRASS: 0x74b9ff,
   KNIFE: 0x74b9ff,
@@ -32,7 +32,7 @@ const WIN_ACCENT: Record<SymbolId, number> = {
   EMPTY: 0x000000
 };
 const HERO_SYMBOLS = new Set<SymbolId>(["CAR_WILD", "SAFE", "MASTER_KEY"]);
-const DEFAULT_ACCENT = 0xffdf65;
+export const DEFAULT_ACCENT = 0xffdf65;
 
 export class SymbolView extends Container {
   readonly id: SymbolId;

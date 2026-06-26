@@ -8,10 +8,104 @@ import { getExtraTexture } from "./assets";
 
 export class EffectsLayer extends Container {
   private readonly particles = new Container();
+  private readonly coinPool: Graphics[] = [];
+  private readonly billPool: Container[] = [];
 
   constructor() {
     super();
     this.addChild(this.particles);
+    this.preWarmPools();
+  }
+
+  private preWarmPools(): void {
+    // Pre-warm coins pool
+    for (let i = 0; i < 60; i++) {
+      const coin = new Graphics();
+      const size = 8;
+      coin.circle(0, 0, size).fill(0xffd700);
+      coin.circle(0, 0, size * 0.7).fill(0xffec80);
+      coin.circle(-size * 0.2, -size * 0.2, size * 0.25).fill({ color: 0xffffff, alpha: 0.6 });
+      coin.rect(-1, -size * 0.4, 2, size * 0.8).fill({ color: 0xb8860b, alpha: 0.5 });
+      coin.visible = false;
+      this.particles.addChild(coin);
+      this.coinPool.push(coin);
+    }
+
+    // Pre-warm bills pool
+    const billTex = getExtraTexture("real_bill");
+    for (let i = 0; i < 60; i++) {
+      const bill = new Container();
+      if (billTex) {
+        const spr = new Sprite(billTex);
+        spr.anchor.set(0.5);
+        bill.addChild(spr);
+      } else {
+        const gfx = new Graphics();
+        const w = 30;
+        const h = 15;
+        gfx.roundRect(-w / 2, -h / 2, w, h, 2).fill(0x2ecc71)
+          .stroke({ color: 0xffffff, alpha: 0.4, width: 1 });
+        gfx.rect(-1, -h / 2, 2, h).fill({ color: 0xffffff, alpha: 0.2 });
+        bill.addChild(gfx);
+      }
+      bill.visible = false;
+      this.particles.addChild(bill);
+      this.billPool.push(bill);
+    }
+  }
+
+  private getObtainedCoin(): Graphics {
+    let coin = this.coinPool.pop();
+    if (!coin) {
+      coin = new Graphics();
+      const size = 8;
+      coin.circle(0, 0, size).fill(0xffd700);
+      coin.circle(0, 0, size * 0.7).fill(0xffec80);
+      coin.circle(-size * 0.2, -size * 0.2, size * 0.25).fill({ color: 0xffffff, alpha: 0.6 });
+      coin.rect(-1, -size * 0.4, 2, size * 0.8).fill({ color: 0xb8860b, alpha: 0.5 });
+      this.particles.addChild(coin);
+    }
+    coin.visible = true;
+    coin.alpha = 1;
+    coin.scale.set(1);
+    coin.rotation = 0;
+    return coin;
+  }
+
+  private returnCoin(coin: Graphics): void {
+    coin.visible = false;
+    this.coinPool.push(coin);
+  }
+
+  private getObtainedBill(tex?: any): Container {
+    let bill = this.billPool.pop();
+    if (!bill) {
+      bill = new Container();
+      if (tex) {
+        const spr = new Sprite(tex);
+        spr.anchor.set(0.5);
+        bill.addChild(spr);
+      } else {
+        const gfx = new Graphics();
+        const w = 30;
+        const h = 15;
+        gfx.roundRect(-w / 2, -h / 2, w, h, 2).fill(0x2ecc71)
+          .stroke({ color: 0xffffff, alpha: 0.4, width: 1 });
+        gfx.rect(-1, -h / 2, 2, h).fill({ color: 0xffffff, alpha: 0.2 });
+        bill.addChild(gfx);
+      }
+      this.particles.addChild(bill);
+    }
+    bill.visible = true;
+    bill.alpha = 1;
+    bill.scale.set(1);
+    bill.rotation = 0;
+    return bill;
+  }
+
+  private returnBill(bill: Container): void {
+    bill.visible = false;
+    this.billPool.push(bill);
   }
 
   /* ─────────────────────────────────────────────────
@@ -197,40 +291,11 @@ export class EffectsLayer extends Container {
     const billTex = getExtraTexture("real_bill");
 
     for (let i = 0; i < billCount; i++) {
-      let bill: Container;
-
-      if (billTex) {
-        const spr = new Sprite(billTex);
-        spr.anchor.set(0.5);
-        const targetWidth = 65 + Math.random() * 25;
-        spr.scale.set(targetWidth / billTex.width);
-        bill = new Container();
-        bill.addChild(spr);
-      } else {
-        const gfx = new Graphics();
-        // Big fat bills like the cartoon reference
-        const w = 44 + Math.random() * 20;
-        const h = 22 + Math.random() * 10;
-        const shade = [0x1a8f3f, 0x22a849, 0x178a38, 0x1b9e42, 0x0f7a2e][i % 5];
-        const lightShade = [0x2ecc71, 0x34d678, 0x28c066, 0x3ddc84, 0x27ae60][i % 5];
-
-        // Bill body
-        gfx.roundRect(-w / 2, -h / 2, w, h, 3).fill(shade);
-        // Inner border
-        gfx.roundRect(-w / 2 + 3, -h / 2 + 3, w - 6, h - 6, 2)
-          .stroke({ color: lightShade, width: 1.5, alpha: 0.6 });
-        // Center circle (like real bills)
-        const circR = Math.min(w, h) * 0.28;
-        gfx.circle(0, 0, circR).fill({ color: lightShade, alpha: 0.35 });
-        gfx.circle(0, 0, circR * 0.6).fill({ color: lightShade, alpha: 0.2 });
-        // Dollar sign
-        gfx.roundRect(-2, -h * 0.3, 4, h * 0.6, 1).fill({ color: 0xffffff, alpha: 0.35 });
-        gfx.roundRect(-w * 0.12, -2, w * 0.24, 4, 1).fill({ color: 0xffffff, alpha: 0.25 });
-        // Corner marks
-        gfx.rect(-w / 2 + 5, -h / 2 + 5, 6, 4).fill({ color: 0xffffff, alpha: 0.2 });
-        gfx.rect(w / 2 - 11, h / 2 - 9, 6, 4).fill({ color: 0xffffff, alpha: 0.2 });
-        bill = gfx;
-      }
+      const bill = this.getObtainedBill(billTex);
+      // Randomize scale for variance
+      const targetWidth = 65 + Math.random() * 25;
+      const baseW = billTex ? billTex.width : 30;
+      bill.scale.set(targetWidth / baseW);
 
       bill.position.set(
         rect.x - 30 + Math.random() * (rect.width + 60),
@@ -239,7 +304,6 @@ export class EffectsLayer extends Container {
       bill.rotation = (Math.random() - 0.5) * 1.2;
       bill.alpha = 0;
       bills.push(bill);
-      this.particles.addChild(bill);
       billData.push({
         vx: (Math.random() - 0.5) * 50,
         vy: 100 + Math.random() * 160,
@@ -260,7 +324,7 @@ export class EffectsLayer extends Container {
         bill.rotation += d.spin * 0.013;
       });
     }, linear);
-    bills.forEach((b) => b.destroy());
+    bills.forEach((b) => this.returnBill(b));
   }
 
   /* ─────────────────────────────────────────────────
@@ -273,19 +337,13 @@ export class EffectsLayer extends Container {
     const coinData: Array<{ angle: number; speed: number; spin: number; size: number }> = [];
 
     for (let i = 0; i < coinCount; i++) {
-      const coin = new Graphics();
+      const coin = this.getObtainedCoin();
       const size = 5 + Math.random() * 7;
-      // Gold coin with highlight
-      coin.circle(0, 0, size).fill(0xffd700);
-      coin.circle(0, 0, size * 0.7).fill(0xffec80);
-      coin.circle(-size * 0.2, -size * 0.2, size * 0.25).fill({ color: 0xffffff, alpha: 0.6 });
-      // Dollar sign
-      coin.rect(-1, -size * 0.4, 2, size * 0.8).fill({ color: 0xb8860b, alpha: 0.5 });
+      coin.scale.set(size / 8);
 
       coin.position.set(cx, cy);
       coin.alpha = 0;
       coins.push(coin);
-      this.particles.addChild(coin);
       coinData.push({
         angle: (Math.PI * 2 * i) / coinCount + (Math.random() - 0.5) * 0.4,
         speed: 150 + Math.random() * 250,
@@ -304,10 +362,10 @@ export class EffectsLayer extends Container {
         coin.x = cx + Math.cos(d.angle) * dist;
         coin.y = cy + Math.sin(d.angle) * dist + 100 * p * p; // gravity
         coin.rotation += d.spin * 0.012;
-        coin.scale.set(1 - p * 0.4);
+        coin.scale.set((d.size / 8) * (1 - p * 0.4));
       });
     }, easeOutCubic);
-    coins.forEach((c) => c.destroy());
+    coins.forEach((c) => this.returnCoin(c));
   }
 
   /* ─────────────────────────────────────────────────
@@ -341,25 +399,11 @@ export class EffectsLayer extends Container {
     const billTex = getExtraTexture("real_bill");
 
     for (let i = 0; i < count; i += 1) {
-      let bill: Container;
-      if (billTex) {
-        const spr = new Sprite(billTex);
-        spr.anchor.set(0.5);
-        const targetWidth = 35 + Math.random() * 15;
-        spr.scale.set(targetWidth / billTex.width);
-        bill = new Container();
-        bill.addChild(spr);
-      } else {
-        const gfx = new Graphics();
-        const w = 16 + Math.random() * 12;
-        const h = 7 + Math.random() * 5;
-        const shade = [0x62ffa7, 0x4de89a, 0x2ecc71, 0x27ae60][i % 4];
-        gfx.roundRect(-w / 2, -h / 2, w, h, 2).fill(shade)
-          .stroke({ color: 0xffffff, alpha: 0.4, width: 1 });
-        gfx.rect(-1, -h / 2, 2, h).fill({ color: 0xffffff, alpha: 0.2 });
-        bill = gfx;
-      }
-      
+      const bill = this.getObtainedBill(billTex);
+      const targetWidth = 35 + Math.random() * 15;
+      const baseW = billTex ? billTex.width : 30;
+      bill.scale.set(targetWidth / baseW);
+
       bill.position.set(
         rect.x + rect.width * (0.15 + Math.random() * 0.7),
         rect.y + rect.height * (0.25 + Math.random() * 0.5)
@@ -367,7 +411,6 @@ export class EffectsLayer extends Container {
       bill.rotation = Math.random() * Math.PI;
       bill.alpha = 0;
       bills.push(bill);
-      this.particles.addChild(bill);
       velocities.push({
         vx: (Math.random() - 0.5) * 220,
         vy: -(80 + Math.random() * 180),
@@ -378,17 +421,15 @@ export class EffectsLayer extends Container {
     // Gold coins mixed in
     const coinCount = Math.min(positions.length * 3, 20);
     for (let i = 0; i < coinCount; i++) {
-      const coin = new Graphics();
+      const coin = this.getObtainedCoin();
       const size = 4 + Math.random() * 5;
-      coin.circle(0, 0, size).fill(0xffd700);
-      coin.circle(0, 0, size * 0.65).fill(0xffec80);
+      coin.scale.set(size / 8);
       coin.position.set(
         rect.x + rect.width * (0.2 + Math.random() * 0.6),
         rect.y + rect.height * (0.3 + Math.random() * 0.4)
       );
       coin.alpha = 0;
       bills.push(coin);
-      this.particles.addChild(coin);
       velocities.push({
         vx: (Math.random() - 0.5) * 200,
         vy: -(100 + Math.random() * 160),
@@ -409,7 +450,13 @@ export class EffectsLayer extends Container {
         bill.scale.set(1 - progress * 0.3);
       });
     }, linear);
-    bills.forEach((bill) => bill.destroy());
+    bills.forEach((bill) => {
+      if (bill instanceof Graphics) {
+        this.returnCoin(bill);
+      } else {
+        this.returnBill(bill);
+      }
+    });
   }
 
   /* ─────────────────────────────────────────────────
@@ -477,7 +524,7 @@ export class EffectsLayer extends Container {
   /* ─────────────────────────────────────────────────
    *  KEY BEAM — laser lines from key to safes
    * ───────────────────────────────────────────────── */
-  async keyBeam(from: { x: number; y: number }, targets: Array<{ x: number; y: number }>, turbo: boolean): Promise<void> {
+  async keyBeam(from: { x: number; y: number }, targets: Array<{ x: number; y: number }>, turbo: boolean, color: number = 0x9ae64e): Promise<void> {
     const beams = new Graphics();
     this.addChild(beams);
 
@@ -493,8 +540,8 @@ export class EffectsLayer extends Container {
         glowBeams.moveTo(from.x, from.y).lineTo(ex, ey);
         beams.moveTo(from.x, from.y).lineTo(ex, ey);
       }
-      glowBeams.stroke({ color: 0x9ae64e, width: 12, alpha: 0.25 });
-      beams.stroke({ color: 0x9ae64e, width: 3, alpha: 0.95 });
+      glowBeams.stroke({ color: color, width: 12, alpha: 0.25 });
+      beams.stroke({ color: color, width: 3, alpha: 0.95 });
     });
 
     await tween(150, (progress) => {
@@ -585,6 +632,220 @@ export class EffectsLayer extends Container {
 
     // Phase 3: Fade out
     await tween(turbo ? 60 : 150, (p) => {
+      group.alpha = 1 - p;
+    });
+
+    group.destroy({ children: true });
+  }
+
+  async cinematicWin(
+    targetMultiplier: number,
+    betAmount: number,
+    rect: Rect,
+    turbo: boolean,
+    currency: string,
+    onUpdate: (amount: number) => void
+  ): Promise<void> {
+    const group = new Container();
+    const cx = rect.x + rect.width / 2;
+    const cy = rect.y + rect.height / 2;
+
+    // Tap/Click skip area covering the whole board
+    const interactionBlock = new Graphics();
+    interactionBlock.rect(rect.x, rect.y, rect.width, rect.height)
+      .fill({ color: 0x000000, alpha: 0.0001 }); // invisible block
+    interactionBlock.eventMode = "static";
+    interactionBlock.cursor = "pointer";
+    group.addChild(interactionBlock);
+
+    let slammed = false;
+    const onTap = () => {
+      slammed = true;
+    };
+    interactionBlock.on("pointerdown", onTap);
+
+    // Keyboard listener for Space/Enter skip
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Space" || e.code === "Enter") {
+        e.preventDefault();
+        slammed = true;
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+
+    // --- Dark overlay strip ---
+    const strip = new Graphics();
+    const stripH = 140;
+    strip.rect(rect.x, cy - stripH / 2, rect.width, stripH)
+      .fill({ color: 0x000000, alpha: 0.88 });
+    group.addChild(strip);
+
+    // --- Accent lines ---
+    const lineTop = new Graphics();
+    const lineBot = new Graphics();
+    group.addChild(lineTop, lineBot);
+
+    // Set initial lines to soft gold
+    lineTop.rect(rect.x, cy - stripH / 2, rect.width, 3.5).fill({ color: 0xffdf65, alpha: 0.8 });
+    lineBot.rect(rect.x, cy + stripH / 2 - 3.5, rect.width, 3.5).fill({ color: 0xffdf65, alpha: 0.8 });
+
+    // --- Title text ---
+    const msgText = new Text({
+      text: "WINNING",
+      style: new TextStyle({
+        fill: 0xffffff,
+        fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
+        fontSize: 28,
+        fontWeight: "900",
+        letterSpacing: 3,
+        align: "center",
+        dropShadow: { color: 0x000000, alpha: 0.8, blur: 8, distance: 2 }
+      })
+    });
+    msgText.anchor.set(0.5, 0.5);
+    msgText.position.set(cx, cy - 26);
+    group.addChild(msgText);
+
+    // --- Win amount text ---
+    const amtText = new Text({
+      text: "0.00",
+      style: new TextStyle({
+        fill: 0xffdf65,
+        fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
+        fontSize: 48,
+        fontWeight: "900",
+        letterSpacing: 2,
+        align: "center",
+        dropShadow: { color: 0x000000, alpha: 0.8, blur: 12, distance: 0 }
+      })
+    });
+    amtText.anchor.set(0.5, 0.5);
+    amtText.position.set(cx, cy + 28);
+    group.addChild(amtText);
+
+    this.addChild(group);
+
+    // Pacing calculations (max 6 seconds in normal mode)
+    const duration = turbo ? 800 : Math.min(6000, 1500 + targetMultiplier * 10);
+    let lastTier: "none" | "big" | "mega" | "grand" = "none";
+    let lastTickTime = 0;
+    const tickInterval = 75; // ms between ticks
+
+    const startTime = performance.now();
+
+    await new Promise<void>((resolve) => {
+      let animFrame = 0;
+
+      const tick = (now: number) => {
+        const elapsed = now - startTime;
+        let t = Math.min(1, elapsed / duration);
+
+        // Apply ease-out curve (staged velocity) to count up fast initially, slow later
+        let p = 1 - Math.pow(1 - t, 2.5);
+
+        if (slammed) {
+          p = 1;
+          t = 1;
+        }
+
+        const currentMult = targetMultiplier * p;
+        const currentAmount = currentMult * betAmount;
+
+        amtText.text = currentAmount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + currency;
+        onUpdate(currentAmount);
+
+        // Determine current tier
+        let activeTier: "none" | "big" | "mega" | "grand" = "none";
+        if (currentMult >= 500) activeTier = "grand";
+        else if (currentMult >= 100) activeTier = "mega";
+        else if (currentMult >= 20) activeTier = "big";
+
+        if (activeTier !== lastTier) {
+          lastTier = activeTier;
+          this.emit("win_tier_changed", activeTier);
+
+          // Transition pop and effects
+          if (activeTier === "big") {
+            msgText.text = "BIG WIN";
+            msgText.style.fill = 0xffdf65; // Gold
+            lineTop.clear().rect(rect.x, cy - stripH / 2, rect.width, 4).fill({ color: 0xffdf65 });
+            lineBot.clear().rect(rect.x, cy + stripH / 2 - 4, rect.width, 4).fill({ color: 0xffdf65 });
+            
+            if (!turbo) {
+              void this.screenShake(this.parent as Container, turbo);
+              void this.goldCoinBurst(cx, cy, rect, turbo);
+            }
+          } else if (activeTier === "mega") {
+            msgText.text = "MEGA WIN";
+            msgText.style.fill = 0xe056fd; // Magenta/Purple
+            lineTop.clear().rect(rect.x, cy - stripH / 2, rect.width, 4).fill({ color: 0xe056fd });
+            lineBot.clear().rect(rect.x, cy + stripH / 2 - 4, rect.width, 4).fill({ color: 0xe056fd });
+
+            if (!turbo) {
+              void this.screenShake(this.parent as Container, turbo);
+              void this.cashRain(rect, turbo);
+              void this.goldCoinBurst(cx, cy, rect, turbo);
+              void pulseBloom(this, { scale: 1.2, duration: 900 });
+            }
+          } else if (activeTier === "grand") {
+            msgText.text = "GRAND WIN";
+            msgText.style.fill = 0xff4757; // Vibrant Neon Red
+            lineTop.clear().rect(rect.x, cy - stripH / 2, rect.width, 4).fill({ color: 0xff4757 });
+            lineBot.clear().rect(rect.x, cy + stripH / 2 - 4, rect.width, 4).fill({ color: 0xff4757 });
+
+            if (!turbo) {
+              void this.screenShake(this.parent as Container, turbo);
+              void this.cashRain(rect, turbo);
+              void this.goldCoinBurst(cx, cy, rect, turbo);
+              void pulseBloom(this, { scale: 1.7, duration: 900 });
+              void pulseChromaticAberration(this, { intensity: 10, duration: 600 });
+            }
+          }
+
+          // Pop title text
+          msgText.scale.set(1.4);
+          void tween(200, (pt) => {
+            msgText.scale.set(1.4 - 0.4 * pt);
+          });
+        }
+
+        // Ticking audio triggers (throttle using elapsed time)
+        if (!slammed && (elapsed - lastTickTime >= tickInterval)) {
+          lastTickTime = elapsed;
+          this.emit("win_tick", activeTier);
+        }
+
+        // Text bounce during updates
+        amtText.scale.set(1.0 + Math.sin(p * Math.PI * 8) * 0.05);
+
+        if (t < 1 && !slammed) {
+          animFrame = requestAnimationFrame(tick);
+        } else {
+          resolve();
+        }
+      };
+
+      animFrame = requestAnimationFrame(tick);
+    });
+
+    // Cleanup listeners
+    window.removeEventListener("keydown", onKeyDown);
+    interactionBlock.off("pointerdown", onTap);
+
+    // Final confirmations
+    const finalAmount = targetMultiplier * betAmount;
+    amtText.text = finalAmount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + currency;
+    amtText.scale.set(1);
+    onUpdate(finalAmount);
+
+    // Climax jingle triggers
+    this.emit("win_climax", lastTier);
+
+    // Hold at end: shorter for skipped, normal for fully played
+    await wait(slammed ? 750 : turbo ? 300 : 1200);
+
+    // Fade out
+    await tween(250, (p) => {
       group.alpha = 1 - p;
     });
 

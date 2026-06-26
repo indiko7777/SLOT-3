@@ -524,7 +524,7 @@ export class EventAudioBus {
      ═══════════════════════════════════════════════ */
 
   /** Fire a one-shot sound (layers on top of everything) */
-  private fire(track: TrackName, volumeScale = 1): void {
+  fire(track: TrackName, volumeScale = 1): void {
     if (!this.ctx) return;
     const buf = this.buffers.get(track);
     if (!buf) { this.synthTone(track); return; }
@@ -536,6 +536,25 @@ export class EventAudioBus {
     source.connect(gain).connect(this.ctx.destination);
     source.start();
     // source auto-disconnects when finished
+  }
+
+  playWinTick(pitchLevel: "normal" | "medium" | "high"): void {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    
+    const freq = pitchLevel === "high" ? 880 : pitchLevel === "medium" ? 660 : 440;
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(freq, t);
+    
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.035, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+    
+    osc.connect(g).connect(this.ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.09);
   }
 
   /** Start a looping track in a named slot */

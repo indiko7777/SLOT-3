@@ -8,7 +8,7 @@ import { BonusView } from "./BonusView";
 import { EffectsLayer } from "./EffectsLayer";
 import { HudView } from "./HudView";
 import { PaytableView } from "./PaytableView";
-import { SymbolView } from "./SymbolView";
+import { SymbolView, WIN_ACCENT, DEFAULT_ACCENT } from "./SymbolView";
 import { computeLayout } from "./layout";
 import { getExtraTexture } from "./assets";
 import { tween, wait, easeInOutCubic, easeOutBack, easeOutCubic } from "./tween";
@@ -67,6 +67,29 @@ export class PixiGameScene {
       this.gallery
     );
     this.app.stage.addChild(this.root);
+
+    // Cinematic win event listeners to bridge EffectsLayer to HUD & Audio
+    this.effects.on("win_count_update", (amount: number) => {
+      this.hud.setWinAmountDirect(amount);
+    });
+    this.effects.on("win_tick", (tier: string) => {
+      if (this.runtime.playAudio) {
+        const soundKey = tier === "grand" ? "win_tick_high" : tier === "mega" ? "win_tick_mid" : "win_tick_low";
+        this.runtime.playAudio(soundKey);
+      }
+    });
+    this.effects.on("win_tier_changed", (tier: string) => {
+      if (this.runtime.playAudio) {
+        const soundKey = tier === "grand" ? "win_tick_high" : tier === "mega" ? "win_tick_mid" : "win_tick_low";
+        this.runtime.playAudio(soundKey);
+      }
+    });
+    this.effects.on("win_climax", (tier: string) => {
+      if (this.runtime.playAudio) {
+        const soundKey = tier === "grand" ? "mega_win" : tier === "mega" ? "win_big" : "win_big";
+        this.runtime.playAudio(soundKey, 1.0);
+      }
+    });
   }
 
   /** Called on window resize — recomputes layout and immediately redraws all panels. */
@@ -179,12 +202,21 @@ export class PixiGameScene {
 
   /** Big-win cinematic for a tier (banner + bloom + chromatic glitch). */
   async debugBigWin(intensity: "mid" | "high" | "grand"): Promise<void> {
-    const title = intensity === "grand" ? "GRAND WIN" : intensity === "high" ? "MEGA WIN" : "BIG WIN";
-    const amount = intensity === "grand" ? "5,000x" : intensity === "high" ? "250x" : "25x";
+    const mult = intensity === "grand" ? 5000 : intensity === "high" ? 250 : 25;
+    const bet = 1.0;
+    const currency = this.runtime.getCurrency();
     void this.board.highlight(this.allPositions(), false);
-    this.effects.cashRain(this.layout.board, false);
-    this.effects.screenShake(this.root, false);
-    await this.effects.banner(title, amount, this.layout.board, false, intensity);
+
+    // Reset HUD win display to 0 for debugging count up
+    this.hud.setWinAmountDirect(0);
+    await this.effects.cinematicWin(
+      mult,
+      bet,
+      this.layout.board,
+      false,
+      currency,
+      (amt) => this.hud.setWinAmountDirect(amt)
+    );
   }
 
   /** Single dispatcher for the dev feature tester. */
@@ -242,7 +274,7 @@ export class PixiGameScene {
         this.board.setInstant(b);
         this.hasBoard = true;
         await wait(350);                                  // see the board first
-        void this.effects.clusterLink(win.map((p) => this.board.centerOf(p)), 0xffd95c, turbo);
+        void this.playCombinationAnimation("CASH", win, turbo);
         await this.board.highlight(win, turbo);           // light the combination
         await wait(300);
         await this.board.remove(win, turbo);              // clear + gravity refill
@@ -312,21 +344,21 @@ export class PixiGameScene {
         await wait(turbo ? 120 : 500);
 
         // Cascade 1
-        void this.effects.clusterLink(win1.map((p) => this.board.centerOf(p)), 0xe056fd, turbo);
+        void this.playCombinationAnimation("CASH", win1, turbo);
         await this.board.highlight(win1, turbo);
         await this.board.clearWins(win1, turbo);
         await this.board.tumbleTo(b1, turbo);
         await wait(turbo ? 80 : 300);
 
         // Cascade 2
-        void this.effects.clusterLink(win2.map((p) => this.board.centerOf(p)), 0xe056fd, turbo);
+        void this.playCombinationAnimation("CASH", win2, turbo);
         await this.board.highlight(win2, turbo);
         await this.board.clearWins(win2, turbo);
         await this.board.tumbleTo(b2, turbo);
         await wait(turbo ? 80 : 300);
 
         // Cascade 3 — Heat 3 fires: Bust the Stash
-        void this.effects.clusterLink(win3.map((p) => this.board.centerOf(p)), 0xe056fd, turbo);
+        void this.playCombinationAnimation("CASH", win3, turbo);
         await this.board.highlight(win3, turbo);
         // Banner announces Bust the Stash before the board changes
         await this.effects.banner("Bust the Stash", "", this.layout.board, turbo);
@@ -466,6 +498,24 @@ export class PixiGameScene {
     }
   }
 
+  playCombinationAnimation(symbolId: SymbolId, positions: Position[], turbo: boolean): Promise<void> {
+    const accent = WIN_ACCENT[symbolId] ?? DEFAULT_ACCENT;
+    const centers = positions.map((p) => this.board.centerOf(p));
+    const isGreen = symbolId === "WILD" || symbolId === "CAR_WILD" || accent === 0x9ae64e;
+
+    if (isGreen) {
+      return this.effects.clusterLink(centers, 0xffd95c, turbo);
+    } else if (accent === 0xe056fd) {
+      if (centers.length > 1) {
+        return this.effects.keyBeam(centers[0], centers.slice(1), turbo, accent);
+      } else {
+        return this.effects.clusterLink(centers, accent, turbo);
+      }
+    } else {
+      return this.effects.clusterLink(centers, accent, turbo);
+    }
+  }
+
   async playEvent(event: GameEvent, snapshot: PlaybackSnapshot): Promise<void> {
     this.currentSnapshot = snapshot;
     // Only update the HUD — do NOT resize or rebuild the board
@@ -501,9 +551,7 @@ export class PixiGameScene {
         await this.effects.banner(snapshot.lastMessage, "", this.layout.board, turbo);
         return;
       case "cluster_win": {
-        // Glowing trails connect the winning symbols so you SEE the combination.
-        const centers = event.positions.map((p) => this.board.centerOf(p));
-        void this.effects.clusterLink(centers, 0xffd95c, turbo);
+        void this.playCombinationAnimation(event.symbol, event.positions, turbo);
         await this.board.highlight(event.positions, turbo);
         // No per-cascade pop-up — total win is shown at round_end like normal slots.
         return;
@@ -538,7 +586,6 @@ export class PixiGameScene {
         return;
       case "global_multiplier_apply":
         this.hud.draw(this.layout, snapshot);
-        await this.effects.banner("Max Heat", `${event.value}x`, this.layout.board, turbo);
         return;
       case "bonus_trigger":
         this.bonusDeadSpins = 0;
@@ -589,15 +636,25 @@ export class PixiGameScene {
           await wait(turbo ? 20 : 80);
           return;
         }
-        const tier = winTier(event.payoutMultiplier);
-        if (tier.intensity !== "low") {
-          this.effects.screenShake(this.root, turbo);
+
+        // Only show banners for wins >= 20x, matching industrial slot standards.
+        if (event.payoutMultiplier >= 20) {
+          const currency = this.runtime.getCurrency();
+          // Reset HUD win text to 0 so it counts up in sync with the cinematic win counter
+          this.hud.setWinAmountDirect(0);
+          await this.effects.cinematicWin(
+            event.payoutMultiplier,
+            snapshot.betAmount,
+            this.layout.board,
+            turbo,
+            currency,
+            (amt) => this.hud.setWinAmountDirect(amt)
+          );
+        } else {
+          // Wins < 20x: No banner, just wait briefly.
+          // The total win is already drawn in the bottom panel (the HUD win text) during hud.draw().
+          await wait(turbo ? 50 : 250);
         }
-        // GPU bloom + chromatic aberration are applied inside effects.banner (on the
-        // mask-free effects layer) based on the win tier.
-        const winAmount = event.payoutMultiplier * snapshot.betAmount;
-        await this.effects.banner(tier.title, formatWin(winAmount, snapshot.betAmount), this.layout.board, turbo, tier.intensity);
-        await wait(turbo ? 40 : 120);
         return;
       }
       default:

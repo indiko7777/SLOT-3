@@ -49,6 +49,7 @@ export interface SceneRuntime {
   onReelStop?: (col: number, total: number) => void;
   /** Fired once when a 2+-scatter anticipation spin begins — drives the tension riser. */
   onAnticipation?: () => void;
+  playAudio?(track: string, volumeScale?: number): void;
   previewRecord: RoundRecord;
 }
 

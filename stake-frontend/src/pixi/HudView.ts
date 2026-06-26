@@ -7,6 +7,43 @@ import { ambientTicker, tween, wait, easeOutBack, linear } from "./tween";
 import type { LayoutMetrics, Rect, SceneRuntime } from "./types";
 import { OutlineFilter, DropShadowFilter } from "pixi-filters";
 
+const IDLE_MESSAGES = [
+  "PLACE YOUR BET",
+  "HOLD SPACE FOR TURBO!",
+  "TRY TURBO FOR RAPID SPINS!",
+  "THE GETAWAY AWAITS!",
+  "CRANK UP THE HEAT!",
+  "GET THE ESCAPE DRIVER READY!",
+  "OUTRUN THE LAW FOR BIG WINS!"
+];
+
+const SPIN_START_MESSAGES = [
+  "GOOD LUCK!",
+  "THE CHASE IS ON!",
+  "HERE WE GO!",
+  "START THE ENGINE!",
+  "SPINNING!"
+];
+
+const SPIN_MID_MESSAGES = [
+  "OUTRUN THE COPS!",
+  "DRIVE FAST, WIN BIG!",
+  "NO SPEED LIMITS!",
+  "CHASING THE GOLD!",
+  "HEAT UP THE REELS!",
+  "HOLD SPACE FOR TURBO!",
+  "TRY TURBO FOR RAPID SPINS!"
+];
+
+const TUMBLE_MESSAGES = [
+  "CASCADING!",
+  "CRANKING THE HEAT!",
+  "NEW LOOT INCOMING!",
+  "MORE COPS INCOMING!",
+  "BUILDING THE MULTIPLIER!",
+  "READY FOR ESCAPE!"
+];
+
 export class HudView extends Container {
   private ambientCbs: Array<(dt: number, elapsed: number) => void> = [];
   private statusText: Text | null = null;
@@ -23,6 +60,12 @@ export class HudView extends Container {
   private starDrawRect: Rect | null = null;
   private starRadius = 0;
 
+  private lastState = "idle";
+  private currentSpinMessage = "GOOD LUCK!";
+  private currentMidSpinMessage = "OUTRUN THE COPS!";
+  private currentTumbleMessage = "CASCADING!";
+  private currentIdleMessage = "PLACE YOUR BET";
+
   constructor(private readonly runtime: SceneRuntime) {
     super();
   }
@@ -34,6 +77,7 @@ export class HudView extends Container {
     this.starDrawRect = null;
     this.statusText = null;
     this.winText = null;
+    this.updateStateMessages(snapshot.state);
     this.drawBackground(layout, snapshot);
     if (layout.leftPanel) this.drawBuyPanel(layout.leftPanel);
     if (layout.artPanel) this.drawArt(layout.artPanel, snapshot);
@@ -45,19 +89,28 @@ export class HudView extends Container {
 
   /** Lightweight update — only changes the status/win text. No rebuild, no flash. */
   updateStatus(layout: LayoutMetrics, snapshot: PlaybackSnapshot): void {
+    const bet = snapshot.betAmount || this.runtime.getBetLevel();
+    const roundWinAmount = snapshot.roundWin * bet;
+
+    this.updateStateMessages(snapshot.state);
+
     if (this.statusText) {
-      const label = snapshot.state === "idle" ? "" : snapshot.state.replaceAll("_", " ").toUpperCase();
-      this.statusText.text = label;
-    }
-    if (this.winText && snapshot.roundWin > 0) {
-      // roundWin is the payout in multiples of the base bet; show the real money.
-      const bet = snapshot.betAmount || this.runtime.getBetLevel();
-      this.animateWinTo(snapshot.roundWin * bet);
-    } else if (this.winText) {
-      this.winText.text = "";
-      this.displayedWin = 0;
-      this.targetWin = 0;
-      this.cancelWinAnim();
+      if (roundWinAmount > 0) {
+        this.animateWinTo(roundWinAmount);
+      } else {
+        this.cancelWinAnim();
+        this.displayedWin = 0;
+        this.targetWin = 0;
+        
+        if (snapshot.state !== "idle") {
+          this.statusText.text = this.getStatusMessage(snapshot.state);
+          this.statusText.style.fill = 0xffffff;
+        } else {
+          // Returning to idle with 0 win: show default starting text (idle cycling will run if active)
+          this.statusText.text = "PLACE YOUR BET";
+          this.statusText.style.fill = 0xffffff;
+        }
+      }
     }
     // Update credit display (deduct could happen externally)
     if (this.creditText) {
@@ -129,6 +182,18 @@ export class HudView extends Container {
     if (this.winAnimFrame) {
       cancelAnimationFrame(this.winAnimFrame);
       this.winAnimFrame = 0;
+    }
+  }
+
+  setWinAmountDirect(amount: number): void {
+    this.cancelWinAnim();
+    this.displayedWin = amount;
+    this.targetWin = amount;
+    if (this.winText) {
+      const currency = this.runtime.getCurrency();
+      this.winText.text = amount > 0 ? `WIN ${this.fmtMoney(amount)} ${currency}` : "";
+      this.winText.style.fill = 0xffdf65;
+      this.winText.scale.set(1);
     }
   }
 
@@ -402,37 +467,115 @@ export class HudView extends Container {
     this.betText.position.set(rect.x + 180, rect.y + 44);
     this.addChild(this.betText);
 
-    // ── Centre column: a richer info stack (tagline → status → win → power-level
-    //    collection hint → controls hint). All values are dynamic / RGS-driven. ──
+    // ── Centre column: single large text field centered in the panel ──
     const cx = rect.x + rect.width / 2;
-    // Line 1 — game tagline + max win (the headline promise).
-    this.addChild(makeText(`${TEXT.bonus.toUpperCase()} · ${TEXT.maxWin.toUpperCase()}`, 11, 0xffb000, cx, rect.y + 8, "center"));
+    const cy = rect.y + rect.height / 2;
 
-    // Line 2 — live round status.
-    const stateLabel = snapshot.state === "idle" ? "PLACE YOUR BET" : snapshot.state.replaceAll("_", " ").toUpperCase();
-    this.statusText = makeText(stateLabel, 18, 0xffffff, cx, rect.y + 26, "center");
+    this.statusText = new Text({
+      text: "",
+      style: new TextStyle({
+        fill: 0xffffff,
+        fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
+        fontSize: 24,
+        fontWeight: "900",
+        letterSpacing: 2,
+        align: "center",
+        dropShadow: { color: 0x000000, alpha: 0.8, blur: 6, distance: 0 }
+      })
+    });
+    this.statusText.anchor.set(0.5, 0.5);
+    this.statusText.position.set(cx, cy);
     this.addChild(this.statusText);
 
-    // Line 3 — win counter, shown as the real money amount won.
+    // Keep winText as a reference pointing to statusText for clean backwards compatibility!
+    this.winText = this.statusText;
+
     const initBet = snapshot.betAmount || betLevel;
     const initWin = snapshot.roundWin > 0 ? snapshot.roundWin * initBet : 0;
-    this.winText = makeText(initWin > 0 ? `WIN ${this.fmtMoney(initWin)} ${currency}` : "", 16, 0xffdf65, cx, rect.y + 50, "center");
-    this.addChild(this.winText);
+
+    if (snapshot.state === "idle") {
+      if (initWin > 0) {
+        this.statusText.text = `WIN ${this.fmtMoney(initWin)} ${currency}`;
+        this.statusText.style.fill = 0xffdf65; // Gold
+      } else {
+        this.statusText.text = this.currentIdleMessage;
+        this.statusText.style.fill = 0xffffff; // White
+      }
+    } else {
+      if (initWin > 0) {
+        this.statusText.text = `WIN ${this.fmtMoney(initWin)} ${currency}`;
+        this.statusText.style.fill = 0xffdf65;
+      } else {
+        this.statusText.text = this.getStatusMessage(snapshot.state);
+        this.statusText.style.fill = 0xffffff;
+      }
+    }
+
     this.displayedWin = initWin;
     this.targetWin = initWin;
     this.cancelWinAnim();
-
-    // Line 4 — Power-Level / collection status (dynamic).
-    this.addChild(makeText(this.centerHint(), 11, 0x9fb4d0, cx, rect.y + 74, "center"));
-
-    // Line 5 — controls hint (very subtle).
-    this.addChild(makeText(`${TEXT.turboHint.toUpperCase()}  ·  ☰ MENU FOR TURBO & AUTOPLAY`, 9, 0x4a5a6c, cx, rect.y + 92, "center"));
 
     // Right side: bet controls + spin
     const right = rect.x + rect.width - 220;
     this.betButton(right, rect.y + rect.height / 2 - 20, 42, "−", "minus");
     this.spinButton(right + 64, rect.y + rect.height / 2 - 44);
     this.betButton(right + 160, rect.y + rect.height / 2 - 20, 42, "+", "plus");
+  }
+
+  private updateStateMessages(state: string): void {
+    if (state !== this.lastState) {
+      if (state === "spinning") {
+        this.currentSpinMessage = SPIN_START_MESSAGES[Math.floor(Math.random() * SPIN_START_MESSAGES.length)]!;
+      }
+      if (state === "board_settle" || state === "cluster_evaluate") {
+        this.currentMidSpinMessage = SPIN_MID_MESSAGES[Math.floor(Math.random() * SPIN_MID_MESSAGES.length)]!;
+      }
+      if (state === "tumble") {
+        this.currentTumbleMessage = TUMBLE_MESSAGES[Math.floor(Math.random() * TUMBLE_MESSAGES.length)]!;
+      }
+      if (state === "idle") {
+        // 70% chance of "PLACE YOUR BET", 30% chance of a random other tip
+        if (Math.random() < 0.7) {
+          this.currentIdleMessage = "PLACE YOUR BET";
+        } else {
+          const tips = IDLE_MESSAGES.filter(m => m !== "PLACE YOUR BET");
+          this.currentIdleMessage = tips[Math.floor(Math.random() * tips.length)]!;
+        }
+      }
+      this.lastState = state;
+    }
+  }
+
+  private getStatusMessage(state: string): string {
+    if (state === "spinning") {
+      return this.currentSpinMessage;
+    }
+    if (state === "board_settle" || state === "cluster_evaluate" || state === "win_highlight") {
+      return this.currentMidSpinMessage;
+    }
+    if (state === "tumble") {
+      return this.currentTumbleMessage;
+    }
+    switch (state) {
+      case "idle":
+        return this.currentIdleMessage;
+      case "bonus_intro":
+        return "THE GETAWAY CHASE!";
+      case "bonus_respin":
+        return "POLICE CHASE ACTIVE!";
+      case "bonus_collect":
+        return "COLLECTING THE STASH!";
+      case "bonus_key_crack":
+        return "CRACKING SAFES!";
+      case "heat_advance":
+        return "HEAT LEVEL INCREASED!";
+      case "heat_feature_transform":
+        return "BUST THE STASH!";
+      case "round_complete":
+        return "SPIN COMPLETED!";
+      default:
+        return state.replaceAll("_", " ").toUpperCase();
+    }
   }
 
   private drawArt(rect: Rect, _snapshot: PlaybackSnapshot): void {

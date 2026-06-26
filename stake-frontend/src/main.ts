@@ -3,11 +3,10 @@ import { EventAudioBus } from "./audio";
 import type { GameEvent, RoundRecord } from "./domain";
 import { hideLoader, showLoader, updateLoader } from "./loader";
 import { applyEvent, INITIAL_SNAPSHOT, type PlaybackSnapshot } from "./playback";
-import { GIRLS, type PieceGain } from "./meta/collection";
+import { GIRLS, type PieceGain, collectWild as collectWildPiece, sanitize as sanitizeGallery, emptyGallery, type GalleryData } from "./meta/collection";
 import {
   activeTier,
   addPoints,
-  cardProgress,
   consumeHeadStart,
   effectiveTier,
   recordSpin,
@@ -82,75 +81,63 @@ let snapshot: PlaybackSnapshot = INITIAL_SNAPSHOT;
 const powerStore = createPlayerStateStore();
 let power: PowerState = powerStore.load();
 
+// Separate 1:1 gallery state (1 WILD = 1 body part revealed).
+// This is the collection.ts system — completely distinct from powerLevel points.
+const GALLERY_STORAGE_KEY = "heatchase.gallery.v1";
+function loadGallery(): GalleryData {
+  try {
+    const raw = localStorage.getItem(GALLERY_STORAGE_KEY);
+    if (!raw) return emptyGallery();
+    return sanitizeGallery(JSON.parse(raw) as Partial<GalleryData>);
+  } catch {
+    return emptyGallery();
+  }
+}
+function saveGallery(data: GalleryData): void {
+  try { localStorage.setItem(GALLERY_STORAGE_KEY, JSON.stringify(data)); } catch { /* quota/private */ }
+}
+let gallery: GalleryData = loadGallery();
+
 // Per-spin collection context, set in playRound before replay.
 let spinBet = 0; // the spin's base bet — one WILD awards exactly this many points
 let spinOrganic = false; // base/ante/tier spin (points accrue) vs a bought bonus
 
 const currentBet = (): number => betLevels[betIndex] ?? 0;
 
-/** Add one landed WILD's points (= base bet). Returns a card-reveal to animate
- *  only when this WILD's points just unlocked a new card; persists state. */
-  function onWildCollected(): PieceGain | null {
-    if (!spinOrganic) return null; // points only accrue on base/ante play
+/** Called once per WILD that lands. Uses the 1:1 collection.ts system:
+ *  every single WILD reveals exactly one body part — always, immediately.
+ *  Also adds power-level points for the head-start routing (separate system). */
+function onWildCollected(): PieceGain | null {
+  // Always call collectWild so every WILD reveals a piece, regardless of bet mode.
+  const { data: nextGallery, gain } = collectWildPiece(gallery);
+  gallery = nextGallery;
+  saveGallery(gallery);
 
-    const oldProg = galleryProgress();
-    const oldPieces = oldProg.pieces;
-
-    const { state, gain } = addPoints(power, spinBet);
+  // Also add power-level points (head-start routing), but only on organic spins.
+  if (spinOrganic && spinBet > 0) {
+    const { state } = addPoints(power, spinBet);
     power = state;
     powerStore.save(power);
-
-    const newProg = galleryProgress();
-    const newPieces = newProg.pieces;
-
-    const card = gain.cardUnlocked;
-    if (card) {
-      const pieces = GIRLS[card.id]?.pieces ?? 8;
-      return {
-        girlId: card.id,
-        pieceIndex: pieces,
-        totalPieces: pieces,
-        artPrefix: card.artPrefix,
-        completedGirl: true,
-        galleryComplete: gain.cardsUnlocked >= NUM_CARDS,
-        unlockId: GIRLS[card.id]?.unlockId ?? null
-      };
-    } else if (newPieces > oldPieces && newProg.girlId === oldProg.girlId) {
-      return {
-        girlId: newProg.girlId,
-        pieceIndex: newProg.pieces,
-        totalPieces: newProg.totalPieces,
-        artPrefix: newProg.artPrefix,
-        completedGirl: false,
-        galleryComplete: false,
-        unlockId: null
-      };
-    }
-
-    return null;
   }
 
-/** Project the Power-Level state onto the HUD/gallery's card view. The visible
- *  cards = thresholds crossed; the in-progress card's silhouette fills with the
- *  player's points progress toward the next threshold. */
+  return gain; // null only when the entire gallery is already mastered
+}
+
+/** Project the 1:1 gallery state onto the HUD/gallery's view. */
 function galleryProgress(): GalleryProgress {
-  const cards = power.cardsUnlocked;
-  const mastered = cards >= NUM_CARDS;
-  const idx = Math.min(cards, GIRLS.length - 1);
+  const { currentGirl: girlIdx, pieces } = gallery;
+  const mastered = girlIdx >= GIRLS.length;
+  const idx = Math.min(girlIdx, GIRLS.length - 1);
   const girl = GIRLS[idx] ?? GIRLS[GIRLS.length - 1]!;
-  let pieces = girl.pieces;
-  if (!mastered) {
-    const { into, needed } = cardProgress(power);
-    pieces = needed > 0 ? Math.min(girl.pieces, Math.floor((into / needed) * girl.pieces)) : 0;
-  }
+  const completedGirls = gallery.completed.length;
   return {
     girlId: girl.id,
     girlName: girl.name,
     artPrefix: girl.artPrefix,
-    pieces,
+    pieces: mastered ? girl.pieces : Math.min(pieces, girl.pieces),
     totalPieces: girl.pieces,
-    completedGirls: cards,
-    totalGirls: NUM_CARDS,
+    completedGirls,
+    totalGirls: GIRLS.length,
     mastered
   };
 }
@@ -234,6 +221,14 @@ async function boot(): Promise<void> {
     },
     onReelStop: (col, total) => audioBus.reelStop(col, total, muted),
     onAnticipation: () => audioBus.anticipation(muted),
+    playAudio: (track, volumeScale) => {
+      if (!muted) {
+        if (track === "win_tick_low") audioBus.playWinTick("normal");
+        else if (track === "win_tick_mid") audioBus.playWinTick("medium");
+        else if (track === "win_tick_high") audioBus.playWinTick("high");
+        else audioBus.fire(track as any, volumeScale);
+      }
+    },
     previewRecord: PREVIEW_RECORD
   });
 
