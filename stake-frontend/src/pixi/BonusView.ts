@@ -21,7 +21,7 @@ const HEAT_PERIOD = [0.5, 0.34, 0.22, 0.12]; // seconds per red/blue pulse by he
 const POLICE_RED = 0xff1f2e;
 const POLICE_BLUE = 0x1a6bff;
 
-// Measured from brinks_truck_frame.png (1024×572): the transparent door opening.
+// Measured from brinks_truck_frame.webp (1024×572): the transparent door opening.
 // Used to align the grid exactly inside the truck's window.
 const TRUCK_OPENING = { wFrac: 0.3262, hFrac: 0.507, cxFrac: 0.5, cyFrac: 0.4441, aspect: 334 / 290 };
 
