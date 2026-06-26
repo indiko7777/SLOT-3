@@ -17,6 +17,10 @@ export interface PlaybackSnapshot {
   respins: number;
   capApplied: boolean;
   collectionCount: number;
+  /** Base bet (display units) wagered on this round, so the win counter can show
+   *  the real money amount (roundWin × betAmount) and stay correct even if the
+   *  player changes the bet after the round. 0 until a spin sets it. */
+  betAmount: number;
 }
 
 export const INITIAL_SNAPSHOT: PlaybackSnapshot = {
@@ -35,7 +39,8 @@ export const INITIAL_SNAPSHOT: PlaybackSnapshot = {
   scatterPositions: [],
   respins: 3,
   capApplied: false,
-  collectionCount: 0
+  collectionCount: 0,
+  betAmount: 0
 };
 
 export function applyEvent(snapshot: PlaybackSnapshot, event: GameEvent, record: RoundRecord): PlaybackSnapshot {
@@ -54,6 +59,7 @@ export function applyEvent(snapshot: PlaybackSnapshot, event: GameEvent, record:
         state: "spinning",
         modeLabel: event.mode,
         collectionCount: snapshot.collectionCount,
+        betAmount: snapshot.betAmount,
         lastMessage: `Dispatch locked: ${event.boardSeedLabel}`
       };
     case "board_settle":

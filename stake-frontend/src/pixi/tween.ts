@@ -26,11 +26,25 @@ export const easeOutBack: Ease = (t) => {
   return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2);
 };
 
+/**
+ * Global animation speed multiplier. 1 = normal; >1 runs every tween/wait faster.
+ * "Extra Turbo" sets this above 1 to compress the whole playback uniformly,
+ * stacking on top of the per-animation turbo branches. Never <=0.
+ */
+let timeScale = 1;
+export function setTimeScale(scale: number): void {
+  timeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+}
+export function getTimeScale(): number {
+  return timeScale;
+}
+
 export function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
+  return new Promise((resolve) => window.setTimeout(resolve, ms / timeScale));
 }
 
 export function tween(duration: number, update: (progress: number) => void, ease: Ease = easeOutCubic): Promise<void> {
+  duration = duration / timeScale;
   if (duration <= 0) {
     update(1);
     return Promise.resolve();

@@ -149,7 +149,16 @@ export function simulateRound(
     // EARLY (transform @2, mega-wild @3) so deep chains — and the 5★ Wanted
     // trigger — are reachable, not a 1-in-thousands event, on this small grid.
     if (from < 2 && heat >= 2) {
-      const positions = findSymbols(board, LOW_SYMBOLS);
+      // Transform only the low symbols that SURVIVE this tumble. The just-won
+      // cells (in `removed`) are cleared on screen and discarded by gravity
+      // below, so transforming them would (a) refill the holes the win just made
+      // — the cluster appears to "switch symbol" instead of disappearing — and
+      // (b) be meaningless to the result. Excluding them is RTP-neutral: gravity
+      // replaces those cells regardless, so the post-tumble board is identical.
+      const removedSet = new Set(removed.map(([c, r]) => `${c}:${r}`));
+      const positions = findSymbols(board, LOW_SYMBOLS).filter(
+        ([c, r]) => !removedSet.has(`${c}:${r}`)
+      );
       if (positions.length > 0) {
         for (const [c, r] of positions) board[c]![r] = "CASH";
         events.push({

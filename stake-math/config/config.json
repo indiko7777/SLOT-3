@@ -31,7 +31,7 @@
       "maxWin": 5000,
       "booksFile": {
         "file": "books_base.jsonl.zst",
-        "sha256": "334c1403ef2e0723a7d4988649746df385df9b8615462b700bafe95a75516f86"
+        "sha256": "234d1159e5bde92c80f43625a804853b5b6af3abad587b3f3c7f6f7176f2cb24"
       },
       "forceFile": {
         "file": "force.json",
@@ -55,7 +55,7 @@
       "maxWin": 5000,
       "booksFile": {
         "file": "books_ante.jsonl.zst",
-        "sha256": "498e405e8bcfbd3b10ae7da94f9eb7fee06a276c4f0406d7c9de6c021da83ebd"
+        "sha256": "6c37a6b29029558c64fd8d3a29f7b2aaeebf157d74c832e38957c14b6336628d"
       },
       "forceFile": {
         "file": "force.json",
@@ -79,7 +79,7 @@
       "maxWin": 5000,
       "booksFile": {
         "file": "books_buy.jsonl.zst",
-        "sha256": "ca086dc66d576484803036e7d41a569899fb03f0e4c25c93cbfe3c6e40d0de3f"
+        "sha256": "8aa53acc51cfe3c774b5803213a495fd3235f6014ce646de1646b820ab487b22"
       },
       "forceFile": {
         "file": "force.json",
@@ -103,7 +103,7 @@
       "maxWin": 5000,
       "booksFile": {
         "file": "books_super_buy.jsonl.zst",
-        "sha256": "f319dda05b7417a41b4e79584ce4391d0609bfb736851a58e8ad96158d7f3e59"
+        "sha256": "91eed41e065d82fa6d98127c28809efda7a9da75ec06639328dc9cf41bda69c4"
       },
       "forceFile": {
         "file": "force.json",
@@ -127,7 +127,7 @@
       "maxWin": 5000,
       "booksFile": {
         "file": "books_base_tier1.jsonl.zst",
-        "sha256": "623b5fdc2c944d1588130cb9dd6cd786cde0820e90c1cdecf33b617c6fad4b65"
+        "sha256": "0e0b7aec201588d79d5c1f6970a629f3496d9498d9f4b43650a690d2fd999a78"
       },
       "forceFile": {
         "file": "force.json",
@@ -151,7 +151,7 @@
       "maxWin": 5000,
       "booksFile": {
         "file": "books_base_tier2.jsonl.zst",
-        "sha256": "436ea8b9dcf6bb0caca087b3893c4a7b2f87da86ecfd0e65b574aa4c4bb170c6"
+        "sha256": "6a17239f4b4faa757fa234c09bc5604bffa5a6ef03a4a72e31a5ce6259fda710"
       },
       "forceFile": {
         "file": "force.json",
@@ -175,7 +175,7 @@
       "maxWin": 5000,
       "booksFile": {
         "file": "books_base_tier3.jsonl.zst",
-        "sha256": "922276e8264687bf0e1c4f4444f93e953e2ac88a980779357b7cb28af199154a"
+        "sha256": "b2d4aa5832f9176fa21be12ebf375a35bc26d492a4ad7d52384f67d115f10b70"
       },
       "forceFile": {
         "file": "force.json",

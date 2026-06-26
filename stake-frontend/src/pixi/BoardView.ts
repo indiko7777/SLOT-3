@@ -334,20 +334,27 @@ export class BoardView extends Container {
 
   async transform(board: Board, positions: Position[], turbo: boolean): Promise<void> {
     this.currentBoard = board;
-    // Only rebuild the specific transformed positions
+    // Swap ONLY existing symbols in place. A position with no current symbol is a
+    // hole left by tumble_remove this cascade — it must stay empty for tumbleTo()
+    // to refill, never be re-created here (that would make a cleared winning
+    // cluster reappear as a different symbol instead of disappearing).
+    const transformed: Position[] = [];
     for (const [col, row] of positions) {
       const key = keyOf([col, row]);
       const old = this.symbols.get(key);
-      if (old) { old.destroy({ children: true }); this.symbols.delete(key); }
+      if (!old) continue; // hole — leave it for the drop
+      old.destroy({ children: true });
+      this.symbols.delete(key);
       const id = board[col][row];
       const view = new SymbolView(id);
       view.layout(this.cellWidth, this.cellHeight);
       view.position.set(this.cellX(col), this.cellY(row));
       this.symbols.set(key, view);
       this.reelContainer.addChild(view);
+      transformed.push([col, row]);
     }
-    this.markPositions(positions, "transform");
-    await Promise.all(positions.map((p) => this.symbols.get(keyOf(p))?.winCelebrate(turbo) ?? Promise.resolve()));
+    this.markPositions(transformed, "transform");
+    await Promise.all(transformed.map((p) => this.symbols.get(keyOf(p))?.winCelebrate(turbo) ?? Promise.resolve()));
     await wait(turbo ? 40 : 150);
   }
 

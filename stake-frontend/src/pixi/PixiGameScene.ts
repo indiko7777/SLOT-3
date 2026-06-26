@@ -368,8 +368,8 @@ export class PixiGameScene {
               await wait(turbo ? 150 : 400);
             }
           }
-          this.devGalleryProgress = null;
-          this.hud.draw(this.layout, this.currentSnapshot);
+          // Do not reset devGalleryProgress so the user can see the final state
+          if (this.currentSnapshot) this.hud.draw(this.layout, this.currentSnapshot);
         }
         return;
       }
@@ -588,7 +588,7 @@ export class PixiGameScene {
         }
 
         const rawSilScale = Math.min((this.layout.width - 40) / silTex.width, (this.layout.height - 300) / silTex.height);
-        const silScale = prefix === "char2" ? rawSilScale * 1.25 : rawSilScale;
+        const silScale = prefix !== "char" ? rawSilScale * 1.25 : rawSilScale;
         charContainer.scale.set(silScale);
         charContainer.position.set(width / 2, height / 2 - 40);
         overlay.addChild(charContainer);
@@ -604,17 +604,15 @@ export class PixiGameScene {
           flySprite.anchor.set(0.5);
           const targetX = charContainer.x;
           const targetY = charContainer.y;
-          const dropSourceY = targetY - 200;
-          const startScale = silScale * 1.35;
-          flySprite.position.set(targetX, dropSourceY);
+          const startScale = silScale * 3.0; // Start huge!
+          flySprite.position.set(targetX, targetY);
           flySprite.scale.set(startScale);
           flySprite.alpha = 0;
           overlay.addChild(flySprite);
 
-          await tween(turbo ? 300 : 700, (p) => {
-            flySprite.y = dropSourceY + (targetY - dropSourceY) * p;
-            flySprite.scale.set(startScale + (silScale - startScale) * p);
-            flySprite.alpha = Math.min(1, p * 2);
+          await tween(turbo ? 200 : 500, (p) => {
+            flySprite.scale.set(startScale + (silScale - startScale) * p); // Zoom in
+            flySprite.alpha = Math.min(1, p * 2); // Quick fade in
           }, easeOutBack);
 
           flySprite.destroy();
@@ -646,7 +644,7 @@ export class PixiGameScene {
           const boxW = artRect.width - 24;
           const boxH = artRect.height - 84;
           const rawEndScale = Math.min(boxW / silTex.width, boxH / silTex.height);
-          const endScale = prefix === "char2" ? rawEndScale * 1.25 : rawEndScale;
+          const endScale = prefix !== "char" ? rawEndScale * 1.25 : rawEndScale;
           const targetX = artRect.x + artRect.width / 2;
           const targetY = artRect.y + 60 + (artRect.height - 60) / 2;
 
@@ -654,17 +652,15 @@ export class PixiGameScene {
           if (pieceTex) {
             const flySprite = new Sprite(pieceTex);
             flySprite.anchor.set(0.5);
-            const dropSourceY = targetY - 200;
-            const startScale = endScale * 1.35;
-            flySprite.position.set(targetX, dropSourceY);
+            const startScale = endScale * 3.0; // Start huge!
+            flySprite.position.set(targetX, targetY);
             flySprite.scale.set(startScale);
             flySprite.alpha = 0;
             this.root.addChild(flySprite);
 
-            await tween(turbo ? 300 : 700, (p) => {
-              flySprite.y = dropSourceY + (targetY - dropSourceY) * p;
-              flySprite.scale.set(startScale + (endScale - startScale) * p);
-              flySprite.alpha = Math.min(1, p * 2);
+            await tween(turbo ? 200 : 500, (p) => {
+              flySprite.scale.set(startScale + (endScale - startScale) * p); // Zoom in
+              flySprite.alpha = Math.min(1, p * 2); // Quick fade in
             }, easeOutBack);
 
             flySprite.destroy();

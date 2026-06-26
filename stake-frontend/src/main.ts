@@ -19,11 +19,13 @@ import { createPlayerStateStore } from "./meta/PlayerStateStore";
 import type { GalleryProgress } from "./pixi/types";
 import { loadSymbolTextures } from "./pixi/assets";
 import { PixiGameScene } from "./pixi/PixiGameScene";
+import { setTimeScale } from "./pixi/tween";
 import { RadioWheel } from "./radio";
 import { RgsClient, RgsError, toDisplay } from "./rgs/client";
 import { readSession } from "./rgs/session";
 import type { BetModeObject, Jurisdiction } from "./rgs/types";
 import { showConfirmPopup } from "./confirmPopup";
+import { SettingsMenu, type TurboMode } from "./settingsMenu";
 
 const root = document.querySelector<HTMLDivElement>("#app");
 if (!root) throw new Error("Missing #app root");
@@ -51,9 +53,17 @@ let jurisdiction: Jurisdiction | null = null;
 let pixi: Application;
 let scene: PixiGameScene;
 let radioWheel: RadioWheel;
+let settingsMenu: SettingsMenu;
 let activeModeKey = "base";
 let anteEnabled = false;
-let turbo = false;
+// Spin speed: persistent mode set from the ☰ menu (Normal / Turbo / Extra Turbo)
+// plus a momentary hold via the spacebar. Extra Turbo additionally time-scales
+// the whole animation layer (see applyTurboMode).
+let turboMode: TurboMode = "off";
+let turboHeld = false;
+// Autoplay: number of spins remaining (Infinity = endless until stopped/funds out).
+let autoplayRemaining = 0;
+let autoplayStop = false;
 let muted = false;
 let isPlaying = false;
 let snapshot: PlaybackSnapshot = INITIAL_SNAPSHOT;
@@ -179,11 +189,12 @@ async function boot(): Promise<void> {
     getMode: () => activeModeKey,
     isAnteEnabled: () => anteEnabled,
     isMuted: () => muted,
-    isTurbo: () => turbo,
+    isTurbo: () => isTurbo(),
     isPlaying: () => isPlaying,
     getBetLevel: () => betLevels[betIndex] ?? 0,
     getCredit: () => balance,
     getCurrency: () => currency,
+    getCostMultiplier: (mode) => betModes[mode]?.costMultiplier ?? 1,
     getWantedLevel: () => snapshot.heatLevel, // stars = live in-spin cascade Heat (0–5)
     getCollectionCount: () => galleryProgress().pieces,
     collectWild: onWildCollected,
@@ -229,6 +240,26 @@ async function boot(): Promise<void> {
     scene.renderSnapshot(snapshot); // refresh the radio button state
   }, "heat");
 
+  // ☰ burger-menu popup: spin speed (Turbo / Extra Turbo) + Autoplay. All options
+  // respect the RGS jurisdiction flags so a disabled feature is greyed out.
+  settingsMenu = new SettingsMenu({
+    getTurboMode: () => turboMode,
+    setTurboMode: (mode) => {
+      turboMode = mode;
+      applyTurboMode();
+      scene.renderSnapshot(snapshot);
+    },
+    isAutoplayActive: () => autoplayRemaining > 0,
+    startAutoplay: (count) => void startAutoplay(count),
+    stopAutoplay,
+    getFlags: () => ({
+      disabledTurbo: Boolean(jurisdiction?.disabledTurbo),
+      disabledSuperTurbo: Boolean(jurisdiction?.disabledSuperTurbo),
+      disabledAutoplay: Boolean(jurisdiction?.disabledAutoplay)
+    }),
+    playClick: () => { if (!muted) audioBus.playUI("click", false); }
+  });
+
   // Observe the canvas directly with ResizeObserver for smooth, continuous,
   // real-time layout updates. A plain 'resize' event fires lazily (only on
   // pointer-up in some browsers), causing the layout to snap rather than track.
@@ -248,13 +279,13 @@ async function boot(): Promise<void> {
   window.addEventListener("keydown", (event) => {
     if (event.code === "Space" && !turboDisabled()) {
       event.preventDefault();
-      turbo = true;
+      turboHeld = true;
       scene.renderSnapshot(snapshot);
     }
   });
   window.addEventListener("keyup", (event) => {
     if (event.code === "Space") {
-      turbo = false;
+      turboHeld = false;
       scene.renderSnapshot(snapshot);
     }
   });
@@ -267,8 +298,10 @@ async function handleAction(action: string): Promise<void> {
 
   switch (action) {
     case "info":
-    case "menu":
       scene.togglePaytable();
+      return;
+    case "menu": // ☰ — open the game menu (spin speed + autoplay)
+      settingsMenu.toggle();
       return;
     case "mute": // repurposed: open the GTA-style radio wheel
       await audioBus.unlock();
@@ -303,23 +336,73 @@ async function handleAction(action: string): Promise<void> {
         currency,
         () => {
           if (!muted) audioBus.playUI("click", false);
-        }
+        },
+        betModes[action]?.costMultiplier ?? (action === "super_buy" ? 500 : 100)
       );
       if (confirmed) {
         await playRound(action);
       }
       return;
     case "spin":
-      // Tier routing: the collection picks the certified table for this base
-      // spin (base, or base_tierN when a head-start is active AND the bet is at
-      // or below that tier's average-bet lock). Ante is its own table.
-      if (anteEnabled && betModes.ante) {
-        await playRound("ante");
-      } else {
-        await playRound(routeMode(power, currentBet()));
+      // A manual spin while autoplay is running stops the autoplay sequence.
+      if (autoplayRemaining > 0) {
+        stopAutoplay();
+        return;
       }
+      await playRound(spinModeForUser());
       return;
   }
+}
+
+/** The bet mode a user "spin" should request: ante if enabled, else the
+ *  collection-routed base table (base / base_tierN). */
+function spinModeForUser(): string {
+  if (anteEnabled && betModes.ante) return "ante";
+  return routeMode(power, currentBet());
+}
+
+/** True when animations should run at turbo speed (persistent mode or held space). */
+function isTurbo(): boolean {
+  return turboMode !== "off" || turboHeld;
+}
+
+/** Apply the persistent turbo mode to the global animation time-scale. Extra
+ *  Turbo compresses the whole playback; Turbo/Normal run at 1x (Turbo already
+ *  picks the fast per-animation branches via isTurbo()). */
+function applyTurboMode(): void {
+  setTimeScale(turboMode === "super" ? 2 : 1);
+}
+
+/** Start an autoplay run of `count` spins (Infinity = endless). */
+async function startAutoplay(count: number): Promise<void> {
+  if (jurisdiction?.disabledAutoplay) return;
+  if (autoplayRemaining > 0) return; // already running
+  autoplayStop = false;
+  autoplayRemaining = count;
+  while (autoplayRemaining > 0 && !autoplayStop) {
+    if (isPlaying) break; // safety — should never happen (we await each round)
+    const mode = spinModeForUser();
+    const bet = currentBet();
+    const cost = bet * (betModes[mode]?.costMultiplier ?? 1);
+    if (cost <= 0 || cost > balance) break; // out of funds for the next spin
+    await playRound(mode);
+    if (autoplayStop) break;
+    if (autoplayRemaining !== Infinity) autoplayRemaining -= 1;
+    if (autoplayRemaining > 0) await delay(turboMode === "super" ? 120 : 320);
+  }
+  autoplayRemaining = 0;
+  autoplayStop = false;
+  scene.renderSnapshot(snapshot);
+}
+
+function stopAutoplay(): void {
+  autoplayStop = true;
+  autoplayRemaining = 0;
+  scene.renderSnapshot(snapshot);
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 async function playRound(modeKey: string, free = false): Promise<void> {
@@ -336,7 +419,8 @@ async function playRound(modeKey: string, free = false): Promise<void> {
   activeModeKey = modeKey;
   snapshot = {
     ...INITIAL_SNAPSHOT,
-    collectionCount: galleryProgress().pieces
+    collectionCount: galleryProgress().pieces,
+    betAmount // base bet wagered → win counter shows the real money amount
   };
   scene.resetRound(snapshot);
 
@@ -388,7 +472,7 @@ async function playRound(modeKey: string, free = false): Promise<void> {
 async function replayRound(record: RoundRecord, active: boolean): Promise<void> {
   for (const event of record.events as GameEvent[]) {
     snapshot = applyEvent(snapshot, event, record);
-    audioBus.playEvent(event, muted, turbo);
+    audioBus.playEvent(event, muted, isTurbo());
     await scene.playEvent(event, snapshot);
   }
   // Settle the round with the RGS; the final balance is whatever it returns.

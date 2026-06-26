@@ -203,12 +203,16 @@ export class GalleryView extends Container {
             card.addChild(artSprite);
           }
         } else {
-          // Placeholder completed mark
-          const completeIcon = new Graphics();
-          completeIcon.circle(0, 0, 22).fill({ color: themeColor, alpha: 0.2 }).stroke({ color: themeColor, width: 2 });
-          completeIcon.moveTo(-8, -2).lineTo(-2, 5).lineTo(10, -6).stroke({ color: themeColor, width: 3.5 });
-          completeIcon.y = -6;
-          card.addChild(completeIcon);
+          // Vega full art exists!
+          const fullTex = getExtraTexture("char3_full");
+          if (fullTex) {
+            const artSprite = new Sprite(fullTex);
+            artSprite.anchor.set(0.5);
+            const scale = Math.min((cardW - 14) / fullTex.width, (cardH - 50) / fullTex.height);
+            artSprite.scale.set(scale * 1.25);
+            artSprite.y = 4;
+            card.addChild(artSprite);
+          }
         }
 
         const statusLbl = makeText("UNLOCKED", 11, themeColor, 0, cardH / 2 - 24, "center");
@@ -270,13 +274,32 @@ export class GalleryView extends Container {
             card.addChild(assembly);
           }
         } else {
-          // Progress placeholder spinner
-          const spinIcon = new Graphics();
-          spinIcon.circle(0, 0, 20).stroke({ color: themeColor, width: 2.5, alpha: 0.4 });
-          spinIcon.arc(0, 0, 20, 0, Math.PI * 1.3).stroke({ color: themeColor, width: 2.5 });
-          spinIcon.circle(0, 0, 8).fill(themeColor);
-          spinIcon.y = -6;
-          card.addChild(spinIcon);
+          const assembly = new Container();
+          const silTex = getExtraTexture("char3_silhouette");
+          if (silTex) {
+            const silSprite = new Sprite(silTex);
+            silSprite.anchor.set(0.5);
+            silSprite.x = 0;
+            silSprite.y = 0;
+            silSprite.tint = 0x000000;
+            silSprite.alpha = 0.8;
+            assembly.addChild(silSprite);
+
+            const collectedPieces = prog.pieces;
+            for (let p = 1; p <= Math.min(8, collectedPieces); p++) {
+              const pieceTex = getExtraTexture(`char3_piece_${p}`);
+              if (pieceTex) {
+                const pieceSprite = new Sprite(pieceTex);
+                pieceSprite.anchor.set(0.5);
+                assembly.addChild(pieceSprite);
+              }
+            }
+
+            const scale = Math.min((cardW - 16) / silTex.width, (cardH - 56) / silTex.height);
+            assembly.scale.set(scale * 1.05 * 1.25);
+            assembly.y = 4;
+            card.addChild(assembly);
+          }
         }
 
         const statusLbl = makeText(`${prog.pieces} / 8 PARTS`, 11, TEXT_WHITE, 0, cardH / 2 - 24, "center");

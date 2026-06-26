@@ -56,6 +56,33 @@ function synthSim(id: number, payoutX: number, criteria: Criteria): Sim {
   };
 }
 
+describe("cascade / heat_transform", () => {
+  it("never transforms a cell that the same cascade just removed", () => {
+    // Regression: if heat_transform targets a just-won (removed) cell, the
+    // renderer refills the hole and the winning cluster appears to switch symbol
+    // instead of disappearing. The transform must only touch SURVIVING symbols.
+    const key = (p: [number, number]) => `${p[0]}:${p[1]}`;
+    const crits: Criteria[] = ["basegame", "basebig", "freegame", "wincap"];
+    let transforms = 0;
+    let overlaps = 0;
+    for (const mode of ["base", "base_tier3"] as const) {
+      for (let seed = 1; seed <= 3000; seed++) {
+        const { record } = simulateRound(mode, crits[seed % crits.length]!, seed * 7919, seed);
+        let removed = new Set<string>();
+        for (const ev of record.events) {
+          if (ev.type === "tumble_remove") removed = new Set(ev.positions.map(key));
+          else if (ev.type === "heat_transform") {
+            transforms++;
+            for (const p of ev.positions) if (removed.has(key(p))) overlaps++;
+          }
+        }
+      }
+    }
+    expect(transforms).toBeGreaterThan(0); // the pattern is actually exercised
+    expect(overlaps).toBe(0);
+  });
+});
+
 describe("optimizer", () => {
   it("hits 96% RTP within tolerance for a cash-mode sim set", () => {
     const sims: Sim[] = [];

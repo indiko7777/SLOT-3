@@ -252,13 +252,16 @@ export class CardPeekView extends Container {
             card.addChild(artSprite);
           }
         } else {
-          // Vega prop placeholder completed art
-          const completeIcon = new Graphics();
-          completeIcon.circle(0, 0, 16).fill({ color: borderGlowColor, alpha: 0.25 }).stroke({ color: borderGlowColor, width: 1.5 });
-          // Checkmark
-          completeIcon.moveTo(-6, -1).lineTo(-2, 4).lineTo(7, -5).stroke({ color: borderGlowColor, width: 2.5 });
-          completeIcon.y = -4;
-          card.addChild(completeIcon);
+          // Vega full art exists!
+          const fullTex = getExtraTexture("char3_full");
+          if (fullTex) {
+            const artSprite = new Sprite(fullTex);
+            artSprite.anchor.set(0.5);
+            const scale = Math.min((this.cardWidth - 10) / fullTex.width, (this.cardHeight - 40) / fullTex.height);
+            artSprite.scale.set(scale * 1.25);
+            artSprite.y = 5;
+            card.addChild(artSprite);
+          }
         }
 
         const statusText = makeText("UNLOCKED", 10, borderGlowColor, 0, this.cardHeight / 2 - 20, "center");
@@ -325,13 +328,34 @@ export class CardPeekView extends Container {
             card.addChild(assembly);
           }
         } else {
-          // Vega in progress prop placeholders
-          const progIcon = new Graphics();
-          // Draw a stylized pulsing circle/gear to represent progress
-          progIcon.circle(0, 0, 15).stroke({ color: borderGlowColor, width: 2, alpha: 0.5 });
-          progIcon.circle(0, 0, 8).fill(borderGlowColor);
-          progIcon.y = -6;
-          card.addChild(progIcon);
+          // Vega interactive progress assembly
+          const assembly = new Container();
+          const silTex = getExtraTexture("char3_silhouette");
+          if (silTex) {
+            const silSprite = new Sprite(silTex);
+            silSprite.anchor.set(0.5);
+            silSprite.x = 0;
+            silSprite.y = 0;
+            silSprite.tint = 0x000000;
+            silSprite.alpha = 0.8;
+            assembly.addChild(silSprite);
+
+            // Overlay pieces
+            const collectedPieces = prog.pieces;
+            for (let p = 1; p <= Math.min(8, collectedPieces); p++) {
+              const pieceTex = getExtraTexture(`char3_piece_${p}`);
+              if (pieceTex) {
+                const pieceSprite = new Sprite(pieceTex);
+                pieceSprite.anchor.set(0.5);
+                assembly.addChild(pieceSprite);
+              }
+            }
+
+            const scale = Math.min((this.cardWidth - 12) / silTex.width, (this.cardHeight - 44) / silTex.height);
+            assembly.scale.set(scale * 1.05 * 1.25);
+            assembly.y = 4;
+            card.addChild(assembly);
+          }
         }
 
         const progText = makeText(`${prog.pieces} / 8`, 11, 0xffffff, 0, this.cardHeight / 2 - 20, "center");

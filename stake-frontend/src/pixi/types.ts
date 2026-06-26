@@ -22,6 +22,9 @@ export interface SceneRuntime {
   getBetLevel(): number;
   getCredit(): number;
   getCurrency(): string;
+  /** Cost multiplier for a bet mode, sourced from the RGS betModes config
+   *  (e.g. buy = 100, super_buy = 500, ante = 1.5). Falls back to 1 if unknown. */
+  getCostMultiplier?(mode: string): number;
   /** Live in-spin Wanted level = cascade Heat, 0–5. At 5★ the Getaway triggers. */
   getWantedLevel(): number;
   /** Pieces shown for the current girl (0..her piece count). */

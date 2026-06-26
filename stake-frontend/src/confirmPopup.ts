@@ -223,12 +223,14 @@ export function showConfirmPopup(
   action: "buy" | "super_buy",
   betAmount: number,
   currency: string,
-  playAudio: () => void
+  playAudio: () => void,
+  /** Cost multiplier sourced from the RGS bet-mode config (never hardcoded). */
+  costMultiplier?: number
 ): Promise<boolean> {
   injectStyles();
 
   return new Promise<boolean>((resolve) => {
-    const multiplier = action === "super_buy" ? 500 : 100;
+    const multiplier = costMultiplier ?? (action === "super_buy" ? 500 : 100);
     const totalCost = betAmount * multiplier;
     
     const formattedCost = totalCost.toLocaleString("en-US", {

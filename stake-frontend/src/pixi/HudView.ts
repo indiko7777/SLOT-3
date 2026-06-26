@@ -45,7 +45,9 @@ export class HudView extends Container {
       this.statusText.text = label;
     }
     if (this.winText && snapshot.roundWin > 0) {
-      this.animateWinTo(snapshot.roundWin);
+      // roundWin is the payout in multiples of the base bet; show the real money.
+      const bet = snapshot.betAmount || this.runtime.getBetLevel();
+      this.animateWinTo(snapshot.roundWin * bet);
     } else if (this.winText) {
       this.winText.text = "";
       this.displayedWin = 0;
@@ -58,7 +60,12 @@ export class HudView extends Container {
     }
   }
 
-  /** Animate the win counter from current displayed value to target */
+  /** Money formatter shared by the win counter, credit and bet displays. */
+  private fmtMoney(amount: number): string {
+    return amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  /** Animate the win counter (in real money) from the current value to target. */
   private animateWinTo(target: number): void {
     if (!this.winText) return;
     this.targetWin = target;
@@ -67,7 +74,8 @@ export class HudView extends Container {
 
     const startVal = this.displayedWin;
     const startTime = performance.now();
-    const duration = Math.min(800, 200 + Math.abs(target - startVal) * 120);
+    const currency = this.runtime.getCurrency();
+    const duration = Math.min(900, 250 + Math.abs(target - startVal) * 6);
 
     const tick = (now: number) => {
       const raw = Math.min(1, (now - startTime) / duration);
@@ -76,7 +84,7 @@ export class HudView extends Container {
       const current = startVal + (this.targetWin - startVal) * t;
       this.displayedWin = current;
       if (this.winText) {
-        this.winText.text = `WIN ${current.toLocaleString("en-US", { maximumFractionDigits: 2 })}x`;
+        this.winText.text = `WIN ${this.fmtMoney(current)} ${currency}`;
         this.winText.style.fill = 0xffdf65;
         // Pulse the text size slightly during counting
         const pulse = 1 + Math.sin(raw * Math.PI) * 0.15;
@@ -88,12 +96,28 @@ export class HudView extends Container {
         this.winAnimFrame = 0;
         this.displayedWin = this.targetWin;
         if (this.winText) {
-          this.winText.text = `WIN ${this.targetWin.toLocaleString("en-US", { maximumFractionDigits: 2 })}x`;
+          this.winText.text = `WIN ${this.fmtMoney(this.targetWin)} ${currency}`;
           this.winText.scale.set(1);
         }
       }
     };
     this.winAnimFrame = requestAnimationFrame(tick);
+  }
+
+  /** RGS-sourced cost multiplier for a bet mode (buy/super_buy/ante), default 1. */
+  private costX(mode: string): number {
+    return this.runtime.getCostMultiplier?.(mode) ?? 1;
+  }
+
+  /** Dynamic one-line collection / Power-Level status for the centre of the bar. */
+  private centerHint(): string {
+    const tier = this.runtime.getActiveTier?.() ?? 0;
+    const active = this.runtime.isHeadStartActive?.() ?? false;
+    const prog = this.runtime.getGalleryProgress();
+    if (tier > 0 && active) return `POWER LEVEL ${tier} ACTIVE · ${tier}★ HEAD-START`;
+    if (tier > 0 && !active) return `LOWER BET TO ARM YOUR TIER ${tier} HEAD-START`;
+    if (prog.mastered) return "GALLERY MASTERED · COLLECT TO RESET";
+    return `COLLECT WILDS TO UNLOCK ${prog.girlName.toUpperCase()}`;
   }
 
   private cancelWinAnim(): void {
@@ -150,17 +174,23 @@ export class HudView extends Container {
 
   private drawBuyPanel(rect: Rect): void {
     const panelWidth = rect.width;
+    // Cost values are sourced from the RGS bet-mode config, never hardcoded.
+    const buyX = this.costX("buy");
+    const superX = this.costX("super_buy");
+    const antePct = `+${Math.round((this.costX("ante") - 1) * 100)}%`;
+    const anteVal = this.runtime.isAnteEnabled() ? "ON" : "OFF";
+    const anteSub = this.runtime.isAnteEnabled() ? "ACTIVE" : antePct;
     if (rect.height < 130) {
       const slot = (rect.width - 16) / 3;
-      this.panelButton(rect.x, rect.y, slot, rect.height, "BUY", "GETAWAY", "100x", "buy");
-      this.panelButton(rect.x + slot + 8, rect.y, slot, rect.height, "BUY", "SUPER", "500x", "super_buy");
-      this.panelButton(rect.x + (slot + 8) * 2, rect.y, slot, rect.height, "ANTE", this.runtime.isAnteEnabled() ? "ACTIVE" : "+50%", this.runtime.isAnteEnabled() ? "ON" : "OFF", "ante");
+      this.panelButton(rect.x, rect.y, slot, rect.height, "BUY", "GETAWAY", `${buyX}x`, "buy");
+      this.panelButton(rect.x + slot + 8, rect.y, slot, rect.height, "BUY", "SUPER", `${superX}x`, "super_buy");
+      this.panelButton(rect.x + (slot + 8) * 2, rect.y, slot, rect.height, "ANTE", anteSub, anteVal, "ante");
       return;
     }
 
-    this.panelButton(rect.x, rect.y, panelWidth, 112, "BUY", TEXT.buy, "100.00x", "buy");
-    this.panelButton(rect.x, rect.y + 124, panelWidth, 124, "BUY", TEXT.superBuy, "500.00x", "super_buy");
-    this.panelButton(rect.x, rect.y + 262, panelWidth, 134, TEXT.ante, this.runtime.isAnteEnabled() ? "ACTIVE" : "+50%", this.runtime.isAnteEnabled() ? "ON" : "OFF", "ante");
+    this.panelButton(rect.x, rect.y, panelWidth, 112, "BUY", TEXT.buy, `${buyX.toFixed(2)}x`, "buy");
+    this.panelButton(rect.x, rect.y + 124, panelWidth, 124, "BUY", TEXT.superBuy, `${superX.toFixed(2)}x`, "super_buy");
+    this.panelButton(rect.x, rect.y + 262, panelWidth, 134, TEXT.ante, anteSub, anteVal, "ante");
 
     // Game name & logo below the button stack — LANDSCAPE ONLY (the compact
     // portrait layout returned above). A deliberately bigger gap separates it
@@ -332,12 +362,13 @@ export class HudView extends Container {
     const credit = this.runtime.getCredit();
     const betLevel = this.runtime.getBetLevel();
     const currency = this.runtime.getCurrency();
-    const anteMult = this.runtime.isAnteEnabled() ? 1.5 : 1;
+    // Effective bet uses the ante cost multiplier straight from the RGS config.
+    const anteMult = this.runtime.isAnteEnabled() ? this.costX("ante") : 1;
     const effectiveBet = betLevel * anteMult;
 
     // Credit display
     this.creditText = new Text({
-      text: `Credit ${credit.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`,
+      text: `Credit ${this.fmtMoney(credit)} ${currency}`,
       style: new TextStyle({
         fill: 0xffffff,
         fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
@@ -352,7 +383,7 @@ export class HudView extends Container {
 
     // Bet display
     this.betText = new Text({
-      text: `Bet ${effectiveBet.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`,
+      text: `Bet ${this.fmtMoney(effectiveBet)} ${currency}`,
       style: new TextStyle({
         fill: 0xffdf65,
         fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
@@ -366,20 +397,31 @@ export class HudView extends Container {
     this.betText.position.set(rect.x + 180, rect.y + 44);
     this.addChild(this.betText);
 
-    // Status text (center)
-    const stateLabel = snapshot.state === "idle" ? "" : snapshot.state.replaceAll("_", " ").toUpperCase();
-    this.statusText = makeText(stateLabel, 20, 0xffffff, rect.x + rect.width / 2, rect.y + 18, "center");
+    // ── Centre column: a richer info stack (tagline → status → win → power-level
+    //    collection hint → controls hint). All values are dynamic / RGS-driven. ──
+    const cx = rect.x + rect.width / 2;
+    // Line 1 — game tagline + max win (the headline promise).
+    this.addChild(makeText(`${TEXT.bonus.toUpperCase()} · ${TEXT.maxWin.toUpperCase()}`, 11, 0xffb000, cx, rect.y + 8, "center"));
+
+    // Line 2 — live round status.
+    const stateLabel = snapshot.state === "idle" ? "PLACE YOUR BET" : snapshot.state.replaceAll("_", " ").toUpperCase();
+    this.statusText = makeText(stateLabel, 18, 0xffffff, cx, rect.y + 26, "center");
     this.addChild(this.statusText);
 
-    // Win counter
-    this.winText = makeText("", 15, 0xffdf65, rect.x + rect.width / 2, rect.y + 50, "center");
+    // Line 3 — win counter, shown as the real money amount won.
+    const initBet = snapshot.betAmount || betLevel;
+    const initWin = snapshot.roundWin > 0 ? snapshot.roundWin * initBet : 0;
+    this.winText = makeText(initWin > 0 ? `WIN ${this.fmtMoney(initWin)} ${currency}` : "", 16, 0xffdf65, cx, rect.y + 50, "center");
     this.addChild(this.winText);
-    this.displayedWin = 0;
-    this.targetWin = 0;
+    this.displayedWin = initWin;
+    this.targetWin = initWin;
     this.cancelWinAnim();
 
-    // Turbo hint (very subtle)
-    this.addChild(makeText(TEXT.turboHint.toUpperCase(), 10, 0x4a5a6c, rect.x + rect.width / 2, rect.y + 72, "center"));
+    // Line 4 — Power-Level / collection status (dynamic).
+    this.addChild(makeText(this.centerHint(), 11, 0x9fb4d0, cx, rect.y + 74, "center"));
+
+    // Line 5 — controls hint (very subtle).
+    this.addChild(makeText(`${TEXT.turboHint.toUpperCase()}  ·  ☰ MENU FOR TURBO & AUTOPLAY`, 9, 0x4a5a6c, cx, rect.y + 92, "center"));
 
     // Right side: bet controls + spin
     const right = rect.x + rect.width - 220;
@@ -433,9 +475,6 @@ export class HudView extends Container {
 
     for (let i = 0; i < 5; i++) {
       const sx = startX + i * (starR * 2 + gap);
-      // Quantize to 0, 0.5, or 1 — never three-quarters or any other fraction.
-      const rawFill = Math.max(0, Math.min(1, meter - i));
-      const fill = rawFill < 0.25 ? 0 : rawFill < 0.75 ? 0.5 : 1;
       const pts = this.starPoints(sx, starCY, starR, starIR);
 
       const base = new Graphics();
@@ -443,19 +482,27 @@ export class HudView extends Container {
       base.poly(pts).stroke({ color: 0x4a5570, width: 2.5, alpha: 0.6 });
       this.addChild(base);
 
-      // Head-start underlay: pre-lit gold for active stars; a dim gold outline
-      // when the tier is unlocked but locked out by the current bet.
-      if (i < headStart && fill < 1) {
+      // The first `headStart` stars are the pre-lit gold advantage; the live heat
+      // climb fills the stars AFTER them, so head-start + climb tops out at 5★
+      // exactly when the Getaway triggers on a tier book.
+      if (i < headStart) {
         const hs = new Graphics();
-        hs.poly(pts).fill({ color: 0xffcf40, alpha: 0.85 });
-        hs.poly(pts).stroke({ color: 0xffe680, width: 1.5, alpha: 0.9 });
+        hs.poly(pts).fill({ color: 0xffcf40, alpha: 0.9 });
+        hs.poly(pts).stroke({ color: 0xffe680, width: 1.5, alpha: 0.95 });
         this.addChild(hs);
-      } else if (i < activeTier && i >= headStart) {
+        continue; // a head-start star carries no live (white) fill
+      }
+      // Tier unlocked but dimmed (bet above the average-bet lock → advantage off).
+      if (i < activeTier) {
         const dim = new Graphics();
         dim.poly(pts).fill({ color: 0xffcf40, alpha: 0.12 });
         dim.poly(pts).stroke({ color: 0xffcf40, width: 1.5, alpha: 0.4 });
         this.addChild(dim);
       }
+
+      // Quantize to 0, 0.5, or 1 — never three-quarters or any other fraction.
+      const rawFill = Math.max(0, Math.min(1, meter - (i - headStart)));
+      const fill = rawFill < 0.25 ? 0 : rawFill < 0.75 ? 0.5 : 1;
 
       if (fill > 0) {
         const filled = new Graphics();
@@ -526,7 +573,7 @@ export class HudView extends Container {
     const boxW = rect.width - 24;
     const boxH = rect.height - 84;
     const scale = Math.min(boxW / silTex.width, boxH / silTex.height);
-    const multiplier = prog.artPrefix === "char2" ? 1.25 : 1.0;
+    const multiplier = prog.artPrefix !== "char" ? 1.25 : 1.0;
     assembly.scale.set(scale * multiplier);
     assembly.position.set(rect.x + rect.width / 2, rect.y + 60 + (rect.height - 60) / 2);
     this.addChild(assembly);

@@ -191,16 +191,17 @@ export function addPoints(s: PowerState, bet: number): { state: PowerState; gain
  * head-start, nothing happens). Consuming the Tier 3 head-start = Grand Reset.
  */
 export function consumeHeadStart(s: PowerState, effTier: number): ConsumeResult {
+  // `effTier` is the tier the spin was actually routed to (0 = no head-start was
+  // in play → nothing happens). It is always ≤ the active tier; consume exactly
+  // it so a card that unlocks on this same spin keeps its (unused) head-start.
   if (effTier < 1) return { state: s, grandReset: false, consumedTier: 0 };
-  const t = activeTier(s);
-  if (t < 1) return { state: s, grandReset: false, consumedTier: 0 };
-  if (t >= NUM_CARDS) {
-    return { state: grandReset(s), grandReset: true, consumedTier: t };
+  if (effTier >= NUM_CARDS) {
+    return { state: grandReset(s), grandReset: true, consumedTier: effTier };
   }
   return {
-    state: { ...s, consumed: s.cardsUnlocked },
+    state: { ...s, consumed: Math.max(s.consumed, effTier) },
     grandReset: false,
-    consumedTier: t
+    consumedTier: effTier
   };
 }
 
