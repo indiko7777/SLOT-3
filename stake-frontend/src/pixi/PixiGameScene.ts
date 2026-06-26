@@ -121,6 +121,9 @@ export class PixiGameScene {
     // call, causing a visible lag where the board and HUD are misaligned.
     if (this.currentSnapshot) {
       this.hud.draw(this.layout, this.currentSnapshot);
+      // hud.draw always resets children but does NOT touch .visible.
+      // However, guard it explicitly in case behaviour changes.
+      if (this.bonusActive) this.hud.visible = false;
     }
   }
 
@@ -153,6 +156,11 @@ export class PixiGameScene {
     }
 
     this.hud.draw(this.layout, snapshot);
+    // Ensure HUD and cardPeek visibility matches bonus state
+    // (e.g. window resize while bonus is running must not reveal the HUD).
+    if (this.bonusActive || isBonusActive) {
+      this.hud.visible = false;
+    }
     // Only rebuild the board if we don't already have one showing.
     // After a spin/tumble round the board is already in the correct state
     // from the animations — rebuilding would cause a visible flash.
@@ -202,7 +210,7 @@ export class PixiGameScene {
   }
 
   private async ensureBonusVisible(): Promise<void> {
-    if (!this.bonus.visible) { this.bonusActive = true; await this.bonus.intro(true); }
+    if (!this.bonus.visible) { this.bonusActive = true; this.hud.visible = false; await this.bonus.intro(true); }
   }
 
   /** Restore a clean idle base board (used by the panel's Reset). */
@@ -211,6 +219,8 @@ export class PixiGameScene {
     this.devGalleryProgress = null;
     this.bonus.hide();
     this.bonusActive = false;
+    // Always restore HUD on reset
+    this.hud.visible = true;
     if (this.currentSnapshot) { this.hasBoard = false; this.renderSnapshot(this.currentSnapshot); }
   }
 
@@ -624,6 +634,9 @@ export class PixiGameScene {
         this.bonusDeadSpins = 0;
         this.bonusActive = true;
         this.cardPeek.visible = false;
+        // Hide the entire HUD (character, wanted stars, left buttons, bet panel)
+        // so the bonus board has the full screen to itself.
+        this.hud.visible = false;
         await this.bonus.intro(turbo);
         return;
       case "bonus_spin": {
@@ -661,6 +674,8 @@ export class PixiGameScene {
           this.bonusActive = false;
           await wait(turbo ? 40 : 140);
           await this.bonus.fadeOutAndHide(turbo);
+          // Restore HUD (character art, wanted stars, left buttons, bet panel)
+          this.hud.visible = true;
           this.cardPeek.visible = true;
           this.cardPeek.layout(this.layout);
           return;
