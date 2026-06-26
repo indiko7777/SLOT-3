@@ -2,24 +2,50 @@ import { Container, Graphics, Text, TextStyle, Sprite } from "pixi.js";
 import type { Position } from "../domain";
 import type { Rect } from "./types";
 import { makeText } from "./text";
-import { tween, wait, easeOutBack, easeOutCubic, easeInOutCubic, easeOutElastic, linear } from "./tween";
+import { tween, wait, easeOutBack, easeOutCubic, easeInOutCubic, easeOutElastic, linear, ambientTicker } from "./tween";
 import { pulseBloom, pulseChromaticAberration } from "../vfx/Shaders";
 import { getExtraTexture } from "./assets";
 
 export class EffectsLayer extends Container {
-  private readonly particles = new Container();
+  public readonly particles = new Container();
   private readonly coinPool: Graphics[] = [];
   private readonly billPool: Container[] = [];
+  private pileHeights: number[] = [];
+  private readonly numCols = 15;
+  private maxWinActive = false;
+  private shouldStack = false;
 
-  constructor() {
+  private readonly activeParticles: Array<{
+    view: Container | Graphics;
+    isBill: boolean;
+    x0: number;
+    y0: number;
+    vx: number;
+    vy: number;
+    spin: number;
+    delay: number;
+    elapsed: number;
+    fullScreen: boolean;
+    rect: Rect;
+    stacked?: boolean;
+    pileOffset?: number;
+    targetRotation?: number;
+    elapsedAfterStacked?: number;
+    driftX?: number;        // accumulated horizontal drift from vx
+    flutterPhase?: number;  // per-bill sway phase so the rain is not synchronized
+    flutterFreq?: number;   // per-bill sway frequency
+    flutterAmp?: number;    // per-bill sway amplitude
+  }> = [];
+
+  constructor(private readonly particleLayer: Container) {
     super();
-    this.addChild(this.particles);
+    this.particleLayer.addChild(this.particles);
     this.preWarmPools();
   }
 
   private preWarmPools(): void {
-    // Pre-warm coins pool
-    for (let i = 0; i < 60; i++) {
+    // Pre-warm coins pool to 250 for continuous emission support
+    for (let i = 0; i < 250; i++) {
       const coin = new Graphics();
       const size = 8;
       coin.circle(0, 0, size).fill(0xffd700);
@@ -31,9 +57,9 @@ export class EffectsLayer extends Container {
       this.coinPool.push(coin);
     }
 
-    // Pre-warm bills pool
+    // Pre-warm bills pool to 250 for continuous emission support
     const billTex = getExtraTexture("real_bill");
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 250; i++) {
       const bill = new Container();
       if (billTex) {
         const spr = new Sprite(billTex);
@@ -107,6 +133,137 @@ export class EffectsLayer extends Container {
     bill.visible = false;
     this.billPool.push(bill);
   }
+
+  private updateParticles = (dt: number): void => {
+    const canvas = document.querySelector("canvas");
+    const screenHeight = canvas ? canvas.clientHeight : (window.innerHeight ?? 900);
+    const screenWidth = canvas ? canvas.clientWidth : (window.innerWidth ?? 1024);
+    const colWidth = screenWidth / this.numCols;
+
+    for (let i = this.activeParticles.length - 1; i >= 0; i--) {
+      const p = this.activeParticles[i];
+      p.elapsed += dt;
+
+      const t = p.elapsed - p.delay;
+      if (t <= 0) {
+        p.view.alpha = 0;
+        p.view.visible = false;
+        continue;
+      }
+
+      p.view.visible = true;
+
+      if (p.isBill) {
+        if (this.shouldStack) {
+          // Stacking logic for Grand and Max wins
+          const colIndex = Math.max(0, Math.min(this.numCols - 1, Math.floor(p.view.x / colWidth)));
+          const currentPile = this.pileHeights[colIndex] ?? 0;
+          
+          const bottomLimit = screenHeight;
+          const pileOffset = p.pileOffset ?? 0;
+          const landingY = bottomLimit - pileOffset - currentPile;
+
+          if (p.stacked) {
+            // Smoothly settle the bill over 300ms using simple easing interpolation
+            if (p.elapsedAfterStacked === undefined) {
+              p.elapsedAfterStacked = 0;
+            }
+            p.elapsedAfterStacked += dt;
+
+            if (p.elapsedAfterStacked < 0.3) {
+              p.view.x += (p.x0 - p.view.x) * 0.15;
+              p.view.y += (p.y0 - p.view.y) * 0.15;
+              p.view.rotation += ((p.targetRotation ?? 0) - p.view.rotation) * 0.15;
+            } else {
+              p.view.position.set(p.x0, p.y0);
+              p.view.rotation = p.targetRotation ?? 0;
+            }
+            p.view.alpha = 1;
+          } else {
+            const distToLand = landingY - p.view.y;
+
+            if (p.view.y >= landingY || distToLand <= 0) {
+              // Landed! Set target values and mark stacked
+              p.stacked = true;
+              p.y0 = landingY;
+              p.x0 = p.view.x;
+              p.targetRotation = (Math.random() - 0.5) * 0.45; // slight tilt
+              p.elapsedAfterStacked = 0;
+
+              // Add height to pile map and distribute to neighbors for natural mound formation
+              const increment = this.maxWinActive ? 5.5 : 3.5;
+              this.pileHeights[colIndex] += increment;
+              if (colIndex > 0) this.pileHeights[colIndex - 1] += increment * 0.4;
+              if (colIndex < this.numCols - 1) this.pileHeights[colIndex + 1] += increment * 0.4;
+            } else {
+              let currentVy = p.vy;
+              let currentVx = p.vx;
+              let currentSpin = p.spin;
+
+              if (distToLand < 100) {
+                const f = Math.max(0.15, distToLand / 100);
+                currentVy *= f;
+                currentVx *= f;
+                currentSpin *= f;
+              }
+
+              p.driftX = (p.driftX ?? 0) + currentVx * dt;
+              p.view.y += currentVy * dt;
+              // Organic per-bill sway (desynchronized) instead of a uniform wave
+              const flutter = Math.sin(p.elapsed * (p.flutterFreq ?? 2) + (p.flutterPhase ?? 0)) * (p.flutterAmp ?? 30);
+              p.view.x = p.x0 + (p.driftX ?? 0) + flutter;
+              p.view.rotation += currentSpin * dt;
+
+              p.view.alpha = Math.min(1, t * 6.5);
+            }
+          }
+        } else {
+          // No stacking (Big & Mega wins fall past the screen and fade out smoothly)
+          p.driftX = (p.driftX ?? 0) + p.vx * dt;
+          p.view.y += p.vy * dt;
+          const flutter = Math.sin(p.elapsed * (p.flutterFreq ?? 2) + (p.flutterPhase ?? 0)) * (p.flutterAmp ?? 30);
+          p.view.x = p.x0 + (p.driftX ?? 0) + flutter;
+          p.view.rotation += p.spin * dt;
+
+          const fadeIn = Math.min(1, t * 6.5);
+          let fadeOut = 1;
+          if (p.view.y > screenHeight - 150) {
+            fadeOut = Math.max(0, 1 - (p.view.y - (screenHeight - 150)) / 150);
+          }
+          p.view.alpha = fadeIn * fadeOut;
+
+          if (p.view.y >= screenHeight + 50 || p.view.alpha <= 0) {
+            p.view.visible = false;
+            this.returnBill(p.view as Container);
+            this.activeParticles.splice(i, 1);
+          }
+        }
+      } else {
+        // Coins do not stack (standard physics + fade out at bottom)
+        p.view.y += p.vy * dt;
+        p.view.x += p.vx * dt;
+        p.view.rotation += p.spin * dt;
+
+        const fadeIn = Math.min(1, t * 6.5);
+        let fadeOut = 1;
+        if (p.view.y > screenHeight - 120) {
+          fadeOut = Math.max(0, 1 - (p.view.y - (screenHeight - 120)) / 120);
+        }
+
+        p.view.alpha = fadeIn * fadeOut;
+
+        if (p.view.y >= screenHeight || p.view.alpha <= 0) {
+          p.view.visible = false;
+          this.returnCoin(p.view as Graphics);
+          this.activeParticles.splice(i, 1);
+        }
+      }
+    }
+
+    if (this.activeParticles.length === 0) {
+      ambientTicker.remove(this.updateParticles);
+    }
+  };
 
   /* ─────────────────────────────────────────────────
    *  BANNER — the main win/event announcement
@@ -280,51 +437,57 @@ export class EffectsLayer extends Container {
   }
 
   /* ─────────────────────────────────────────────────
-   *  CASH RAIN — big green bills fall from the top
+   *  SPAWN SINGLE BILL — spawns one bill for continuous rain
    * ───────────────────────────────────────────────── */
-  async cashRain(rect: Rect, turbo: boolean): Promise<void> {
-    if (turbo) return;
-    const billCount = 40;
-    const bills: Container[] = [];
-    const billData: Array<{ vx: number; vy: number; spin: number; delay: number }> = [];
+  spawnSingleBill(rect: Rect, fullScreen: boolean): void {
+    const activeBillsCount = this.activeParticles.filter(p => p.isBill).length;
+    // Cap at 300 active bills to avoid performance issues
+    if (activeBillsCount >= 300) return;
 
     const billTex = getExtraTexture("real_bill");
+    const width = window.innerWidth || 1024;
+    const startX = 0;
+    const startY = 0;
 
-    for (let i = 0; i < billCount; i++) {
-      const bill = this.getObtainedBill(billTex);
-      // Randomize scale for variance
-      const targetWidth = 65 + Math.random() * 25;
-      const baseW = billTex ? billTex.width : 30;
-      bill.scale.set(targetWidth / baseW);
+    const startActive = this.activeParticles.length === 0;
 
-      bill.position.set(
-        rect.x - 30 + Math.random() * (rect.width + 60),
-        rect.y - 40 - Math.random() * 120
-      );
-      bill.rotation = (Math.random() - 0.5) * 1.2;
-      bill.alpha = 0;
-      bills.push(bill);
-      billData.push({
-        vx: (Math.random() - 0.5) * 50,
-        vy: 100 + Math.random() * 160,
-        spin: (Math.random() - 0.5) * 3,
-        delay: Math.random() * 0.35
-      });
+    const bill = this.getObtainedBill(billTex);
+    // Increase size slightly to fill space better
+    const targetWidth = 75 + Math.random() * 40;
+    const baseW = billTex ? billTex.width : 30;
+    bill.scale.set(targetWidth / baseW);
+
+    const x0 = startX - 50 + Math.random() * (width + 100);
+    const y0 = startY - 100 - Math.random() * 120;
+    bill.position.set(x0, y0);
+    bill.visible = false;
+    bill.alpha = 0;
+
+    this.activeParticles.push({
+      view: bill,
+      isBill: true,
+      x0,
+      y0,
+      vx: (Math.random() - 0.5) * 36,
+      vy: 220 + Math.random() * 150, // slower, smoother fall speed
+      spin: (Math.random() - 0.5) * 1.5, // slower rotation
+      delay: Math.random() * 0.05, // very short delay for continuous flow
+      elapsed: 0,
+      fullScreen: true,
+      rect,
+      stacked: false,
+      pileOffset: -12 + Math.random() * 24,
+      driftX: 0,
+      // Each bill flutters on its own phase/freq/amplitude so the rain reads as
+      // independent falling cash, never a synchronized wave.
+      flutterPhase: Math.random() * Math.PI * 2,
+      flutterFreq: 1.4 + Math.random() * 1.8,
+      flutterAmp: 16 + Math.random() * 32
+    });
+
+    if (startActive && this.activeParticles.length > 0) {
+      ambientTicker.add(this.updateParticles);
     }
-
-    await tween(1500, (p) => {
-      bills.forEach((bill, i) => {
-        const d = billData[i];
-        const t = Math.max(0, p - d.delay) / (1 - d.delay);
-        if (t <= 0) return;
-        bill.alpha = t < 0.08 ? t * 12 : t > 0.65 ? (1 - t) / 0.35 : 1;
-        bill.x += d.vx * 0.013;
-        bill.y += d.vy * 0.013;
-        d.vx += (Math.random() - 0.5) * 3; // flutter sideways
-        bill.rotation += d.spin * 0.013;
-      });
-    }, linear);
-    bills.forEach((b) => this.returnBill(b));
   }
 
   /* ─────────────────────────────────────────────────
@@ -673,10 +836,12 @@ export class EffectsLayer extends Container {
     };
     window.addEventListener("keydown", onKeyDown);
 
-    // --- Dark overlay strip ---
+    // --- Dark overlay strip (spans full width of the screen) ---
     const strip = new Graphics();
     const stripH = 140;
-    strip.rect(rect.x, cy - stripH / 2, rect.width, stripH)
+    const stripX = 0;
+    const stripW = window.innerWidth || 1024;
+    strip.rect(stripX, cy - stripH / 2, stripW, stripH)
       .fill({ color: 0x000000, alpha: 0.88 });
     group.addChild(strip);
 
@@ -686,8 +851,8 @@ export class EffectsLayer extends Container {
     group.addChild(lineTop, lineBot);
 
     // Set initial lines to soft gold
-    lineTop.rect(rect.x, cy - stripH / 2, rect.width, 3.5).fill({ color: 0xffdf65, alpha: 0.8 });
-    lineBot.rect(rect.x, cy + stripH / 2 - 3.5, rect.width, 3.5).fill({ color: 0xffdf65, alpha: 0.8 });
+    lineTop.rect(stripX, cy - stripH / 2, stripW, 3.5).fill({ color: 0xffdf65, alpha: 0.8 });
+    lineBot.rect(stripX, cy + stripH / 2 - 3.5, stripW, 3.5).fill({ color: 0xffdf65, alpha: 0.8 });
 
     // --- Title text ---
     const msgText = new Text({
@@ -730,6 +895,47 @@ export class EffectsLayer extends Container {
     let lastTier: "none" | "big" | "mega" | "grand" = "none";
     let lastTickTime = 0;
     const tickInterval = 75; // ms between ticks
+    let billSpawnTimer = 0;
+    let coinSpawnTimer = 0;
+    let elapsedMs = 0;
+    let isDone = false;
+
+    this.pileHeights = new Array(this.numCols).fill(0);
+    this.maxWinActive = targetMultiplier >= 5000;
+    this.shouldStack = targetMultiplier >= 500; // Grand/Max wins stack, Big/Mega do not
+    this.particles.alpha = 1;
+
+    // Use target multiplier from the start to determine the continuous flow tier
+    const targetTier = targetMultiplier >= 5000 ? "max" : targetMultiplier >= 500 ? "grand" : targetMultiplier >= 100 ? "mega" : targetMultiplier >= 20 ? "big" : "none";
+
+    // Continuous spawner running in background based on target tier until fadeout starts
+    const spawner = (dt: number) => {
+      if (isDone || turbo) return;
+      elapsedMs += dt * 1000;
+
+      if (targetTier !== "none") {
+        const isGrandRain = targetTier === "grand" || targetTier === "max";
+        
+        // Target spawn intervals in ms (significantly faster for dense continuous flow)
+        const billInterval = targetTier === "max" ? 6 : targetTier === "grand" ? 12 : targetTier === "mega" ? 20 : 35;
+        const coinInterval = targetTier === "max" ? 80 : targetTier === "grand" ? 120 : targetTier === "mega" ? 180 : 250;
+
+        billSpawnTimer += dt * 1000;
+        coinSpawnTimer += dt * 1000;
+
+        if (billSpawnTimer >= billInterval) {
+          billSpawnTimer = 0;
+          this.spawnSingleBill(rect, isGrandRain);
+        }
+
+        if (coinSpawnTimer >= coinInterval) {
+          coinSpawnTimer = 0;
+          void this.goldCoinBurst(cx, cy, rect, false);
+        }
+      }
+    };
+
+    ambientTicker.add(spawner);
 
     const startTime = performance.now();
 
@@ -740,8 +946,9 @@ export class EffectsLayer extends Container {
         const elapsed = now - startTime;
         let t = Math.min(1, elapsed / duration);
 
-        // Apply ease-out curve (staged velocity) to count up fast initially, slow later
-        let p = 1 - Math.pow(1 - t, 2.5);
+        // Apply ease-in curve (accelerating velocity) so the count up starts slow
+        // (allowing the big and mega win banners to be clearly seen) and speeds up.
+        let p = Math.pow(t, 2.5);
 
         if (slammed) {
           p = 1;
@@ -768,8 +975,8 @@ export class EffectsLayer extends Container {
           if (activeTier === "big") {
             msgText.text = "BIG WIN";
             msgText.style.fill = 0xffdf65; // Gold
-            lineTop.clear().rect(rect.x, cy - stripH / 2, rect.width, 4).fill({ color: 0xffdf65 });
-            lineBot.clear().rect(rect.x, cy + stripH / 2 - 4, rect.width, 4).fill({ color: 0xffdf65 });
+            lineTop.clear().rect(stripX, cy - stripH / 2, stripW, 4).fill({ color: 0xffdf65 });
+            lineBot.clear().rect(stripX, cy + stripH / 2 - 4, stripW, 4).fill({ color: 0xffdf65 });
             
             if (!turbo) {
               void this.screenShake(this.parent as Container, turbo);
@@ -778,24 +985,22 @@ export class EffectsLayer extends Container {
           } else if (activeTier === "mega") {
             msgText.text = "MEGA WIN";
             msgText.style.fill = 0xe056fd; // Magenta/Purple
-            lineTop.clear().rect(rect.x, cy - stripH / 2, rect.width, 4).fill({ color: 0xe056fd });
-            lineBot.clear().rect(rect.x, cy + stripH / 2 - 4, rect.width, 4).fill({ color: 0xe056fd });
+            lineTop.clear().rect(stripX, cy - stripH / 2, stripW, 4).fill({ color: 0xe056fd });
+            lineBot.clear().rect(stripX, cy + stripH / 2 - 4, stripW, 4).fill({ color: 0xe056fd });
 
             if (!turbo) {
               void this.screenShake(this.parent as Container, turbo);
-              void this.cashRain(rect, turbo);
               void this.goldCoinBurst(cx, cy, rect, turbo);
               void pulseBloom(this, { scale: 1.2, duration: 900 });
             }
           } else if (activeTier === "grand") {
             msgText.text = "GRAND WIN";
             msgText.style.fill = 0xff4757; // Vibrant Neon Red
-            lineTop.clear().rect(rect.x, cy - stripH / 2, rect.width, 4).fill({ color: 0xff4757 });
-            lineBot.clear().rect(rect.x, cy + stripH / 2 - 4, rect.width, 4).fill({ color: 0xff4757 });
+            lineTop.clear().rect(stripX, cy - stripH / 2, stripW, 4).fill({ color: 0xff4757 });
+            lineBot.clear().rect(stripX, cy + stripH / 2 - 4, stripW, 4).fill({ color: 0xff4757 });
 
             if (!turbo) {
               void this.screenShake(this.parent as Container, turbo);
-              void this.cashRain(rect, turbo);
               void this.goldCoinBurst(cx, cy, rect, turbo);
               void pulseBloom(this, { scale: 1.7, duration: 900 });
               void pulseChromaticAberration(this, { intensity: 10, duration: 600 });
@@ -828,10 +1033,6 @@ export class EffectsLayer extends Container {
       animFrame = requestAnimationFrame(tick);
     });
 
-    // Cleanup listeners
-    window.removeEventListener("keydown", onKeyDown);
-    interactionBlock.off("pointerdown", onTap);
-
     // Final confirmations
     const finalAmount = targetMultiplier * betAmount;
     amtText.text = finalAmount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + currency;
@@ -841,13 +1042,63 @@ export class EffectsLayer extends Container {
     // Climax jingle triggers
     this.emit("win_climax", lastTier);
 
-    // Hold at end: shorter for skipped, normal for fully played
-    await wait(slammed ? 750 : turbo ? 300 : 1200);
+    // Stop spawning new money immediately when the money counter stops!
+    isDone = true;
+    ambientTicker.remove(spawner);
 
-    // Fade out
-    await tween(250, (p) => {
+    const isMaxWin = this.maxWinActive;
+
+    if (isMaxWin) {
+      // For max win, we wait for a second tap/click or keyboard press to dismiss
+      let dismissed = false;
+
+      // Update interaction block event handler for dismissal
+      interactionBlock.off("pointerdown", onTap);
+      const onDismissTap = () => {
+        dismissed = true;
+      };
+      interactionBlock.on("pointerdown", onDismissTap);
+
+      // Update keyboard listener
+      window.removeEventListener("keydown", onKeyDown);
+      const onDismissKeyDown = (e: KeyboardEvent) => {
+        if (e.code === "Space" || e.code === "Enter") {
+          e.preventDefault();
+          dismissed = true;
+        }
+      };
+      window.addEventListener("keydown", onDismissKeyDown);
+
+      // Keep running until dismissed
+      while (!dismissed) {
+        await wait(50);
+      }
+
+      // Cleanup the dismiss listeners
+      interactionBlock.off("pointerdown", onDismissTap);
+      window.removeEventListener("keydown", onDismissKeyDown);
+    } else {
+      // Normal win hold - wait for normal hold duration
+      await wait(slammed ? 750 : turbo ? 300 : 1200);
+
+      // Cleanup listeners
+      window.removeEventListener("keydown", onKeyDown);
+      interactionBlock.off("pointerdown", onTap);
+    }
+
+    // Fade out banner and piled particles together
+    await tween(600, (p) => {
       group.alpha = 1 - p;
+      this.particles.alpha = 1 - p;
     });
+
+    // Reset particles alpha and return all active/stacked particles to pools
+    this.particles.alpha = 1;
+    this.activeParticles.forEach(p => {
+      if (p.isBill) this.returnBill(p.view as Container);
+      else this.returnCoin(p.view as Graphics);
+    });
+    this.activeParticles.length = 0;
 
     group.destroy({ children: true });
   }

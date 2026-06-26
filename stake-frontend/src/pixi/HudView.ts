@@ -66,14 +66,36 @@ export class HudView extends Container {
   private currentTumbleMessage = "CASCADING!";
   private currentIdleMessage = "PLACE YOUR BET";
 
-  constructor(private readonly runtime: SceneRuntime) {
+  public readonly bgContainer: Container;
+  public readonly underParticlesContainer: Container;
+
+  override get visible(): boolean {
+    return super.visible;
+  }
+  override set visible(val: boolean) {
+    super.visible = val;
+    if (this.bgContainer) this.bgContainer.visible = val;
+    if (this.underParticlesContainer) this.underParticlesContainer.visible = val;
+  }
+
+  constructor(
+    private readonly runtime: SceneRuntime,
+    private readonly layers: {
+      bg: Container;
+      underParticles: Container;
+    }
+  ) {
     super();
+    this.bgContainer = layers.bg;
+    this.underParticlesContainer = layers.underParticles;
   }
 
   /** Full rebuild — call on initial load, window resize, and major state changes (heat advance, round end) */
   draw(layout: LayoutMetrics, snapshot: PlaybackSnapshot): void {
     this.cleanupAmbient();
     this.removeChildren();
+    if (this.bgContainer) this.bgContainer.removeChildren();
+    if (this.underParticlesContainer) this.underParticlesContainer.removeChildren();
     this.starDrawRect = null;
     this.statusText = null;
     this.winText = null;
@@ -223,11 +245,11 @@ export class HudView extends Container {
       sprite.scale.set(scale);
       sprite.anchor.set(0, 1); // Anchor at bottom-left so logo is fully visible
       sprite.position.set(0, layout.height);
-      this.addChild(sprite);
+      this.bgContainer.addChild(sprite);
       // Dim overlay so UI remains readable
       const dim = new Graphics();
       dim.rect(0, 0, layout.width, layout.height).fill({ color: 0x000000, alpha: 0.15 });
-      this.addChild(dim);
+      this.bgContainer.addChild(dim);
     } else {
       // Fallback procedural background
       const g = new Graphics();
@@ -238,7 +260,7 @@ export class HudView extends Container {
         g.rect(0, 0, layout.width / 2, layout.height).fill({ color: 0xffb000, alpha: 0.14 });
         g.rect(layout.width / 2, 0, layout.width / 2, layout.height).fill({ color: 0x7cf595, alpha: 0.14 });
       }
-      this.addChild(g);
+      this.bgContainer.addChild(g);
     }
   }
 
@@ -415,7 +437,7 @@ export class HudView extends Container {
       .stroke({ color: 0x9ae64e, width: 2, alpha: 0.45 });
     frame.roundRect(rect.x, rect.y, rect.width, rect.height, 10)
       .stroke({ color: 0x9ae64e, width: 1, alpha: 0.25 });
-    this.addChild(frame);
+    this.underParticlesContainer.addChild(frame);
   }
 
   private drawControls(rect: Rect, snapshot: PlaybackSnapshot): void {
@@ -608,7 +630,7 @@ export class HudView extends Container {
     // Expanding ring that radiates outward from the star
     const ring = new Graphics();
     ring.circle(sx, starCY, starR).stroke({ color: 0xffd700, width: 5, alpha: 1 });
-    this.addChild(ring);
+    this.underParticlesContainer.addChild(ring);
 
     // Overlay star — pops in dramatically, then fades to reveal the static star beneath
     const starGfx = new Graphics();
@@ -616,7 +638,7 @@ export class HudView extends Container {
     starGfx.poly(pts).fill(0xffffff);
     starGfx.poly(pts).stroke({ color: 0xffd700, width: 3, alpha: 1 });
     starGfx.scale.set(0);
-    this.addChild(starGfx);
+    this.underParticlesContainer.addChild(starGfx);
 
     // Phase 1: fast zoom-in to 2.5× then spring back to 1×
     await tween(300, (p) => {
@@ -666,7 +688,7 @@ export class HudView extends Container {
     const activeTier = Math.max(0, Math.min(5, this.runtime.getActiveTier?.() ?? 0));
 
     // "WANTED LEVEL" label centred above the star row
-    this.addChild(makeText(
+    this.underParticlesContainer.addChild(makeText(
       "WANTED LEVEL",
       labelSize,
       0x9fb4d0,
@@ -682,7 +704,7 @@ export class HudView extends Container {
       const base = new Graphics();
       base.poly(pts).fill({ color: 0x000000, alpha: 0.5 });
       base.poly(pts).stroke({ color: 0x4a5570, width: 2.5, alpha: 0.6 });
-      this.addChild(base);
+      this.underParticlesContainer.addChild(base);
 
       // The first `headStart` stars are the pre-lit gold advantage; the live heat
       // climb fills the stars AFTER them, so head-start + climb tops out at 5★
@@ -691,7 +713,7 @@ export class HudView extends Container {
         const hs = new Graphics();
         hs.poly(pts).fill({ color: 0xffcf40, alpha: 0.9 });
         hs.poly(pts).stroke({ color: 0xffe680, width: 1.5, alpha: 0.95 });
-        this.addChild(hs);
+        this.underParticlesContainer.addChild(hs);
         continue; // a head-start star carries no live (white) fill
       }
       // Tier unlocked but dimmed (bet above the average-bet lock → advantage off).
@@ -699,7 +721,7 @@ export class HudView extends Container {
         const dim = new Graphics();
         dim.poly(pts).fill({ color: 0xffcf40, alpha: 0.12 });
         dim.poly(pts).stroke({ color: 0xffcf40, width: 1.5, alpha: 0.4 });
-        this.addChild(dim);
+        this.underParticlesContainer.addChild(dim);
       }
 
       // Quantize to 0, 0.5, or 1 — never three-quarters or any other fraction.
@@ -710,14 +732,14 @@ export class HudView extends Container {
         const filled = new Graphics();
         filled.poly(pts).fill(0xffffff);
         filled.poly(pts).stroke({ color: 0xffffff, width: 1.5, alpha: 0.75 });
-        this.addChild(filled);
+        this.underParticlesContainer.addChild(filled);
         if (fill < 1) {
           // Reveal the leftmost `fill` fraction of the star horizontally (left-to-right fill).
           // Star bounding box: x ∈ [sx - starR, sx + starR], y ∈ [starCY - starR, starCY + starR]
           const filledW = 2 * starR * fill;
           const mask = new Graphics();
           mask.rect(sx - starR, starCY - starR, filledW, starR * 2).fill(0xffffff);
-          this.addChild(mask);
+          this.underParticlesContainer.addChild(mask);
           filled.mask = mask;
         }
         filledStars.push(filled);
@@ -778,7 +800,7 @@ export class HudView extends Container {
     const multiplier = prog.artPrefix !== "char" ? 1.25 : 1.0;
     assembly.scale.set(scale * multiplier);
     assembly.position.set(rect.x + rect.width / 2, rect.y + 60 + (rect.height - 60) / 2);
-    this.addChild(assembly);
+    this.underParticlesContainer.addChild(assembly);
   }
 
   /** Generate points for a 5-pointed star polygon */

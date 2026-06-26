@@ -19,10 +19,14 @@ import { GalleryView } from "./GalleryView";
 
 export class PixiGameScene {
   private readonly root = new Container();
+  private readonly bgLayer = new Container();
+  private readonly underParticlesLayer = new Container();
+  private readonly particleLayer = new Container();
+
   private readonly hud: HudView;
   private readonly board = new BoardView();
   private readonly bonus = new BonusView();
-  private readonly effects = new EffectsLayer();
+  private readonly effects: EffectsLayer;
   private readonly paytable = new PaytableView();
   private readonly cardPeek: CardPeekView;
   private readonly gallery: GalleryView;
@@ -44,7 +48,16 @@ export class PixiGameScene {
       ...runtime,
       getGalleryProgress: () => this.devGalleryProgress || runtime.getGalleryProgress()
     };
-    this.hud = new HudView(runtimeProxy);
+
+    // Disable hit-testing on the particle layer to avoid hit-testing overhead
+    this.particleLayer.eventMode = "none";
+
+    this.hud = new HudView(runtimeProxy, {
+      bg: this.bgLayer,
+      underParticles: this.underParticlesLayer
+    });
+    this.effects = new EffectsLayer(this.particleLayer);
+
     this.board.setAudioHooks({
       onReelStop: (col, total) => runtime.onReelStop?.(col, total),
       onAnticipation: () => runtime.onAnticipation?.(),
@@ -54,14 +67,15 @@ export class PixiGameScene {
     });
     this.gallery = new GalleryView(runtimeProxy);
     
-    // Layer order: hud, board, and cardPeek are base layers.
-    // bonus, effects are transient overlays on top.
-    // paytable and gallery are fullscreen modals covering everything.
+    // Layer order: bgLayer, board, cardPeek, bonus, underParticlesLayer, particleLayer, hud, effects, paytable, gallery.
     this.root.addChild(
-      this.hud,
+      this.bgLayer,
       this.board,
       this.cardPeek,
       this.bonus,
+      this.underParticlesLayer,
+      this.particleLayer,
+      this.hud,
       this.effects,
       this.paytable,
       this.gallery
@@ -200,6 +214,21 @@ export class PixiGameScene {
     if (this.currentSnapshot) { this.hasBoard = false; this.renderSnapshot(this.currentSnapshot); }
   }
 
+  /** Light "NICE WIN" flourish (5x–20x band): coin burst + small banner, no takeover. */
+  async debugNiceWin(): Promise<void> {
+    const mult = 8;
+    const bet = 1.0;
+    const currency = this.runtime.getCurrency();
+    const winAmount = mult * bet;
+    const amtStr = winAmount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + currency;
+    const cx = this.layout.board.x + this.layout.board.width / 2;
+    const cy = this.layout.board.y + this.layout.board.height / 2;
+    void this.board.highlight(this.allPositions(), false);
+    this.hud.setWinAmountDirect(winAmount);
+    void this.effects.goldCoinBurst(cx, cy, this.layout.board, false);
+    await this.effects.banner("NICE WIN", amtStr, this.layout.board, false, "low");
+  }
+
   /** Big-win cinematic for a tier (banner + bloom + chromatic glitch). */
   async debugBigWin(intensity: "mid" | "high" | "grand"): Promise<void> {
     const mult = intensity === "grand" ? 5000 : intensity === "high" ? 250 : 25;
@@ -241,7 +270,11 @@ export class PixiGameScene {
       }
 
       case "tier":
-        await this.debugBigWin((arg ?? "mid") as "mid" | "high" | "grand");
+        if (arg === "nice") {
+          await this.debugNiceWin();
+        } else {
+          await this.debugBigWin((arg ?? "mid") as "mid" | "high" | "grand");
+        }
         return;
 
       case "fx": {
@@ -637,7 +670,11 @@ export class PixiGameScene {
           return;
         }
 
-        // Only show banners for wins >= 20x, matching industrial slot standards.
+        // Win-celebration ladder (multiplier-based, so it's bet-size independent):
+        //   >= 20x  → full cinematic count-up banner (BIG / MEGA / GRAND / MAX)
+        //   5x–20x  → light "NICE WIN" flourish + coin burst — the frequent little
+        //             dopamine hit. Does NOT take over the screen or block the spin.
+        //   < 5x    → silent tally in the bottom panel
         if (event.payoutMultiplier >= 20) {
           const currency = this.runtime.getCurrency();
           // Reset HUD win text to 0 so it counts up in sync with the cinematic win counter
@@ -650,8 +687,19 @@ export class PixiGameScene {
             currency,
             (amt) => this.hud.setWinAmountDirect(amt)
           );
+        } else if (event.payoutMultiplier >= 5) {
+          // NICE WIN — light, non-blocking celebration with a gold coin burst.
+          const currency = this.runtime.getCurrency();
+          const winAmount = event.payoutMultiplier * snapshot.betAmount;
+          const amtStr = winAmount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + currency;
+          const cx = this.layout.board.x + this.layout.board.width / 2;
+          const cy = this.layout.board.y + this.layout.board.height / 2;
+          this.hud.setWinAmountDirect(winAmount);
+          // Fire the coin burst alongside the banner so they play together.
+          void this.effects.goldCoinBurst(cx, cy, this.layout.board, turbo);
+          await this.effects.banner("NICE WIN", amtStr, this.layout.board, turbo, "low");
         } else {
-          // Wins < 20x: No banner, just wait briefly.
+          // Wins < 5x: No banner, just wait briefly.
           // The total win is already drawn in the bottom panel (the HUD win text) during hud.draw().
           await wait(turbo ? 50 : 250);
         }
@@ -1078,12 +1126,3 @@ function formatWin(amount: number, bet: number): string {
   return `${amount.toLocaleString("en-US", { maximumFractionDigits: 2 })}x`;
 }
 
-type WinIntensity = "low" | "mid" | "high" | "grand";
-
-function winTier(mult: number): { title: string; intensity: WinIntensity } {
-  if (mult >= 5000) return { title: "GRAND WIN", intensity: "grand" };
-  if (mult >= 100)  return { title: "MEGA WIN", intensity: "high" };
-  if (mult >= 20)   return { title: "BIG WIN", intensity: "mid" };
-  if (mult >= 5)    return { title: "NICE WIN", intensity: "low" };
-  return { title: "WIN", intensity: "low" };
-}

@@ -3,7 +3,7 @@ import { GRID_COLUMNS, GRID_ROWS, type BonusCell, type Position } from "../domai
 import { getExtraTexture } from "./assets";
 import { tween, wait, easeOutBack, easeOutCubic, linear, ambientTicker } from "./tween";
 import type { Rect } from "./types";
-import { shockwave } from "../vfx/Shaders";
+import { shockwave, pulseBloom, pulseChromaticAberration } from "../vfx/Shaders";
 
 /* ═══════════════════════════════════════════════════════════════════
    "THE GETAWAY" — POV police-chase Hold & Spin.
@@ -20,6 +20,17 @@ const HEAT_PERIOD = [0.5, 0.34, 0.22, 0.12]; // seconds per red/blue pulse by he
 // Police strobe channels — real emergency lighting: vivid red paired with blue.
 const POLICE_RED = 0xff1f2e;
 const POLICE_BLUE = 0x1a6bff;
+
+// Cinematic palette — warm, filmic gold (NOT candy-neon) for the escape, cold
+// gunmetal steel for the bust. Kept realistic so the pop-ups read like a GTA
+// cutscene rather than an arcade machine.
+const GOLD = 0xe6b24a;
+const GOLD_HI = 0xf6d684;
+const GOLD_DEEP = 0x6a4410;
+const STEEL = 0xc7d0dc;
+const STEEL_DEEP = 0x2a3340;
+const INK = 0x07080c;       // near-black card body
+const CINEMA_BAR = 0x050507; // letterbox bar colour
 
 // Measured from brinks_truck_frame.webp (1024×572): the transparent door opening.
 // Used to align the grid exactly inside the truck's window.
@@ -173,40 +184,91 @@ export class BonusView extends Container {
 
     // 1. Crossfade the chase scene in over the base game.
     this.alpha = 0;
-    void tween(560, (p) => { this.alpha = p; }, easeOutCubic);
+    void tween(620, (p) => { this.alpha = p; }, easeOutCubic);
 
-    // 2. A big "THE GETAWAY" title card slams in, with a red siren wash.
-    const flash = new Graphics();
-    flash.rect(0, 0, W, H).fill({ color: POLICE_RED, alpha: 0 });
-    this.hudLayer.addChild(flash);
+    // 2. Cinematic cold-open: letterbox bars + vignette glide in.
+    const lb = this.buildLetterbox();
+    const vig = this.buildVignette();
+    vig.alpha = 0;
+    this.hudLayer.addChildAt(vig, 0);
+    void tween(620, (p) => {
+      const e = easeOutCubic(p);
+      lb.top.y = -lb.barH + lb.barH * e;
+      lb.bot.y = H - lb.barH * e;
+      vig.alpha = e * 0.85;
+    }, linear);
 
+    // 3. Distant siren wash — slow red→blue sweep across the frame (not a flash).
+    const wash = new Graphics();
+    this.hudLayer.addChild(wash);
+    void tween(1700, (p) => {
+      wash.clear();
+      const r = Math.max(0, Math.sin(p * Math.PI * 2.2));
+      const b = Math.max(0, Math.sin(p * Math.PI * 2.2 - Math.PI));
+      wash.rect(0, 0, W, H).fill({ color: POLICE_RED, alpha: r * 0.10 * (1 - p) });
+      wash.rect(0, 0, W, H).fill({ color: POLICE_BLUE, alpha: b * 0.10 * (1 - p) });
+    }).then(() => wash.destroy());
+
+    // 4. The title group. A radio-dispatch kicker, then "THE GETAWAY" with a
+    //    slow camera PUSH (no arcade bounce) and a headlight sweep behind it.
     const card = new Container();
     card.position.set(W / 2, H * 0.42);
     this.hudLayer.addChild(card);
-    const kicker = new Text({ text: "THE", style: new TextStyle({ fill: 0xffffff, fontFamily: FONT, fontSize: Math.min(34, W / 26), fontWeight: "900", letterSpacing: 10, dropShadow: { color: 0x000000, alpha: 0.8, blur: 8, distance: 0, angle: 0 } }) });
-    kicker.anchor.set(0.5, 1);
-    kicker.position.set(0, -Math.min(34, W / 26) * 0.4);
-    const big = new Text({ text: "GETAWAY", style: new TextStyle({ fill: 0xffd95c, fontFamily: FONT, fontSize: Math.min(96, W / 9), fontWeight: "900", letterSpacing: 6, stroke: { color: 0x3a2400, width: 7 }, dropShadow: { color: 0xff6a00, alpha: 0.7, blur: 22, distance: 0, angle: 0 } }) });
-    big.anchor.set(0.5, 0);
-    big.position.set(0, -Math.min(34, W / 26) * 0.2);
-    card.addChild(kicker, big);
 
-    card.scale.set(0.55);
+    const theSize = Math.min(30, W / 30);
+    const bigSize = Math.min(92, W / 9.2);
+
+    // soft headlight that slides behind the title once
+    const beam = new Graphics();
+    beam.ellipse(0, bigSize * 0.5, bigSize * 1.4, bigSize * 0.7).fill({ color: 0xfff0cf, alpha: 0.16 });
+    beam.filters = [new BlurFilter({ strength: 26, quality: 2 })];
+    beam.x = -W * 0.5;
+    card.addChild(beam);
+
+    const kicker = new Text({ text: "DISPATCH · ALL UNITS — SUSPECT FLEEING", style: new TextStyle({ fill: 0x9fb4d0, fontFamily: FONT, fontSize: Math.min(14, W / 60), fontWeight: "400", letterSpacing: 4 }) });
+    kicker.anchor.set(0.5, 1);
+    kicker.position.set(0, -theSize * 1.5);
+    const the = new Text({ text: "THE", style: new TextStyle({ fill: 0xffffff, fontFamily: FONT, fontSize: theSize, fontWeight: "900", letterSpacing: 12, dropShadow: { color: 0x000000, alpha: 0.7, blur: 6, distance: 0, angle: 0 } }) });
+    the.anchor.set(0.5, 1);
+    the.position.set(0, -theSize * 0.2);
+    const big = new Text({ text: "GETAWAY", style: new TextStyle({ fill: GOLD_HI, fontFamily: FONT, fontSize: bigSize, fontWeight: "900", letterSpacing: 6, stroke: { color: GOLD_DEEP, width: 6 }, dropShadow: { color: 0x000000, alpha: 0.55, blur: 8, distance: 3, angle: Math.PI / 2 } }) });
+    big.anchor.set(0.5, 0);
+    big.position.set(0, -theSize * 0.05);
+    // thin gold rule drawn under the title
+    const rule = new Graphics();
+    rule.position.set(0, bigSize * 1.06);
+    card.addChild(kicker, the, big, rule);
+
     card.alpha = 0;
-    await tween(520, (p) => {
-      card.scale.set(0.55 + 0.45 * easeOutBack(p));
-      card.alpha = Math.min(1, p * 2.4);
-      flash.alpha = Math.sin(p * Math.PI) * 0.22;
+    card.scale.set(1.06);
+    await tween(640, (p) => {
+      const e = easeOutCubic(p);
+      card.alpha = Math.min(1, p * 2.2);
+      card.scale.set(1.06 - 0.06 * e);           // slow push IN, no overshoot
+      card.y = H * 0.42 - 10 * (1 - e);
+      beam.x = -W * 0.5 + W * e;                  // headlight sweeps across
+      const rw = bigSize * 4.4 * e;
+      rule.clear();
+      rule.rect(-rw / 2, 0, rw, 2).fill({ color: GOLD, alpha: 0.85 });
     }, linear);
     card.scale.set(1);
     card.alpha = 1;
-    flash.destroy();
 
-    await wait(720); // hold the title
+    await wait(900); // hold the title
 
-    // 3. Title flies up and fades, revealing the ready reel.
-    await tween(440, (p) => { card.y = H * 0.42 - 40 * p; card.scale.set(1 + 0.25 * p); card.alpha = 1 - p; }, easeOutCubic);
+    // 5. Title drifts up + fades; letterbox & vignette retract to reveal the reel.
+    await tween(560, (p) => {
+      const e = easeOutCubic(p);
+      card.y = H * 0.42 - 36 * e;
+      card.alpha = 1 - e;
+      lb.top.y = -lb.barH * e;
+      lb.bot.y = H - lb.barH * (1 - e);
+      vig.alpha = (1 - e) * 0.85;
+    }, linear);
     card.destroy();
+    lb.top.destroy();
+    lb.bot.destroy();
+    vig.destroy();
     this.alpha = 1;
   }
 
@@ -473,31 +535,47 @@ export class BonusView extends Container {
    *  A big, dramatic result card with the win amount that stays up until the
    *  player taps/clicks — the bonus never auto-dismisses. */
   async finish(filled: boolean, totalX: number, turbo: boolean): Promise<void> {
-    if (filled) { void this.grandEscape(turbo); }
-    else { this.busted = true; this.heat = 3; void this.bustedFlash(turbo); }
-
     const W = this.rect.width;
     const H = this.rect.height;
-    // Heavy dim so the result really pops.
+
+    // Cinematic outro framing — vignette behind, dim, rays, card, letterbox on top.
+    const vig = this.buildVignette();
+    vig.alpha = 0;
+    this.hudLayer.addChild(vig);
+
+    // The bust desaturates the world with a cold slate; the escape goes near-black
+    // so the warm gold pops.
     const dim = new Graphics();
-    dim.rect(0, 0, W, H).fill({ color: 0x000000, alpha: 1 });
+    dim.rect(0, 0, W, H).fill({ color: filled ? 0x000000 : 0x0a0d14, alpha: 1 });
     dim.alpha = 0;
     this.hudLayer.addChild(dim);
 
-    // Radiating light burst behind the card (premium finish).
-    const rays = this.buildResultRays(filled);
-    this.hudLayer.addChild(rays);
+    // Only the triumphant escape gets a sunburst; the bust stays grim.
+    const rays = filled ? this.buildResultRays(true) : null;
+    if (rays) this.hudLayer.addChild(rays);
+
+    // Kick off the signature sequence behind the card.
+    if (filled) { void this.grandEscape(turbo); }
+    else { this.busted = true; this.heat = 3; void this.bustedSequence(turbo); }
 
     const card = this.buildResultCard(filled);
     this.hudLayer.addChild(card);
     this.resultCard = card;
-    card.scale.set(0.6);
+
+    const lb = this.buildLetterbox();
+
+    card.scale.set(1.08);
     card.alpha = 0;
-    await tween(turbo ? 280 : 640, (p) => {
-      dim.alpha = p * 0.72;
-      rays.alpha = p * (filled ? 0.9 : 0.5);
-      card.alpha = Math.min(1, p * 2);
-      card.scale.set(0.6 + 0.4 * easeOutBack(p));
+    // Slow, weighty settle — a camera push, never an arcade bounce.
+    await tween(turbo ? 300 : 760, (p) => {
+      const e = easeOutCubic(p);
+      dim.alpha = e * (filled ? 0.74 : 0.84);
+      vig.alpha = e * 0.9;
+      if (rays) rays.alpha = e * 0.85;
+      lb.top.y = -lb.barH + lb.barH * e;
+      lb.bot.y = H - lb.barH * e;
+      card.alpha = Math.min(1, p * 2.2);
+      card.scale.set(1.08 - 0.08 * e);
     }, linear);
     card.scale.set(1);
     card.alpha = 1;
@@ -510,11 +588,11 @@ export class BonusView extends Container {
     // Keep it alive: slowly rotate the rays, pulse the amount + the tap hint,
     // until the player acknowledges the win.
     const hint = card.getChildByLabel("hint") as Text | null;
-    const baseRot = rays.rotation;
+    const baseRot = rays ? rays.rotation : 0;
     const idle = (_dt: number, elapsed: number): void => {
-      rays.rotation = baseRot + elapsed * 0.18;
-      if (payout) payout.scale.set(1 + Math.sin(elapsed * 2) * 0.025);
-      if (hint) hint.alpha = 0.45 + 0.45 * Math.abs(Math.sin(elapsed * 2.2));
+      if (rays) rays.rotation = baseRot + elapsed * 0.12;
+      if (payout) payout.scale.set(1 + Math.sin(elapsed * 2) * 0.022);
+      if (hint) hint.alpha = 0.4 + 0.45 * Math.abs(Math.sin(elapsed * 2.2));
     };
     ambientTicker.add(idle);
 
@@ -523,23 +601,129 @@ export class BonusView extends Container {
 
     ambientTicker.remove(idle);
     // A small acknowledge pop on tap before the round_end fade takes over.
-    await tween(turbo ? 120 : 200, (p) => { card.scale.set(1 + 0.06 * Math.sin(p * Math.PI)); });
+    await tween(turbo ? 120 : 200, (p) => { card.scale.set(1 + 0.05 * Math.sin(p * Math.PI)); });
     card.scale.set(1);
   }
 
-  /** Radiating sunburst behind the result card. */
+  // ── cinematic helpers (shared by intro + finish) ─────────────────────
+  /**
+   * Letterbox bars (top + bottom) — the single biggest "this is a movie cutscene"
+   * cue. Returns the two bars plus their height so the caller can slide them in/out.
+   * They start fully off-screen.
+   */
+  private buildLetterbox(): { top: Graphics; bot: Graphics; barH: number } {
+    const W = this.rect.width;
+    const H = this.rect.height;
+    const barH = Math.round(H * 0.114);
+    const top = new Graphics();
+    top.rect(0, 0, W, barH).fill(CINEMA_BAR);
+    // a hairline highlight along the inner edge sells it as a physical bar
+    top.rect(0, barH - 1.5, W, 1.5).fill({ color: 0xffffff, alpha: 0.05 });
+    top.y = -barH;
+    const bot = new Graphics();
+    bot.rect(0, 0, W, barH).fill(CINEMA_BAR);
+    bot.rect(0, 0, W, 1.5).fill({ color: 0xffffff, alpha: 0.05 });
+    bot.y = H;
+    this.hudLayer.addChild(top, bot);
+    return { top, bot, barH };
+  }
+
+  /** Soft filmic vignette — a blurred dark frame with a clear centre. Static; the
+   *  caller animates its container alpha. */
+  private buildVignette(): Graphics {
+    const W = this.rect.width;
+    const H = this.rect.height;
+    const g = new Graphics();
+    g.rect(-W * 0.1, -H * 0.1, W * 1.2, H * 1.2).fill({ color: 0x000000, alpha: 0.92 });
+    // punch a soft hole in the middle; the blur turns the hard cut into a gradient
+    g.ellipse(W / 2, H * 0.46, W * 0.6, H * 0.56).cut();
+    g.filters = [new BlurFilter({ strength: Math.max(28, Math.min(W, H) * 0.07), quality: 3 })];
+    return g;
+  }
+
+  /**
+   * Cinematic cash-rain for the Grand Escape — realistic falling bank notes and
+   * gold coins with gravity + sway, NOT arcade confetti squares. Fire-and-forget;
+   * cleans itself up.
+   */
+  private cashRain(turbo: boolean): void {
+    const W = this.rect.width;
+    const H = this.rect.height;
+    const n = turbo ? 26 : 64;
+    const notes: Array<{ g: Graphics; x0: number; vy: number; swayAmp: number; swayFreq: number; phase: number; spin: number; rot: number; isCoin: boolean }> = [];
+    for (let i = 0; i < n; i++) {
+      const g = new Graphics();
+      const isCoin = Math.random() < 0.28;
+      if (isCoin) {
+        const s = 7 + Math.random() * 6;
+        g.circle(0, 0, s).fill(GOLD);
+        g.circle(0, 0, s * 0.66).fill(GOLD_HI);
+        g.circle(-s * 0.22, -s * 0.22, s * 0.22).fill({ color: 0xffffff, alpha: 0.55 });
+      } else {
+        const w = 30 + Math.random() * 18;
+        const h = w * 0.46;
+        // a bank note: muted green with a gold band + dark frame (realistic, not neon)
+        g.roundRect(-w / 2, -h / 2, w, h, 2).fill(0x2f6f4e);
+        g.roundRect(-w / 2, -h / 2, w, h, 2).stroke({ color: 0x16331f, width: 1, alpha: 0.7 });
+        g.circle(0, 0, h * 0.3).fill({ color: 0xdfe9c8, alpha: 0.5 });
+        g.rect(-w / 2 + 2, -h / 2 + 2, 3, h - 4).fill({ color: GOLD, alpha: 0.55 });
+      }
+      const x0 = Math.random() * W;
+      g.position.set(x0, -40 - Math.random() * H * 0.5);
+      g.rotation = Math.random() * Math.PI;
+      this.fxLayer.addChild(g);
+      notes.push({
+        g, x0,
+        vy: H * (0.42 + Math.random() * 0.34),
+        swayAmp: 18 + Math.random() * 34,
+        swayFreq: 1.2 + Math.random() * 1.6,
+        phase: Math.random() * Math.PI * 2,
+        spin: (Math.random() - 0.5) * 4,
+        rot: g.rotation,
+        isCoin
+      });
+    }
+    let elapsed = 0;
+    const dur = turbo ? 1.0 : 2.6;
+    const cb = (dt: number): void => {
+      elapsed += dt;
+      const k = elapsed / dur;
+      for (const p of notes) {
+        const y = p.g.y + p.vy * dt;
+        p.g.y = y;
+        p.g.x = p.x0 + Math.sin(elapsed * p.swayFreq + p.phase) * p.swayAmp;
+        p.rot += p.spin * dt;
+        p.g.rotation = p.rot;
+        // fade the last 25% out, and once past the bottom
+        if (y > H + 30 || k > 1) p.g.alpha = Math.max(0, p.g.alpha - dt * 1.4);
+        else if (k > 0.75) p.g.alpha = Math.max(0, 1 - (k - 0.75) / 0.25);
+      }
+      if (k >= 1.2) {
+        ambientTicker.remove(cb);
+        notes.forEach((p) => p.g.destroy());
+      }
+    };
+    ambientTicker.add(cb);
+  }
+
+  /** Soft volumetric sunburst behind the result card — blurred light shafts, not
+   *  flat triangles, so it reads as god-rays rather than a cartoon star. */
   private buildResultRays(filled: boolean): Container {
     const c = new Container();
-    c.position.set(this.rect.width / 2, this.rect.height / 2);
+    c.position.set(this.rect.width / 2, this.rect.height * 0.46);
     const g = new Graphics();
-    const color = filled ? 0xffd95c : 0xff6a00;
-    const R = Math.max(this.rect.width, this.rect.height);
-    const n = 18;
+    const color = filled ? GOLD : 0xff6a00;
+    const R = Math.max(this.rect.width, this.rect.height) * 1.15;
+    const n = 26;
     for (let i = 0; i < n; i++) {
       const a0 = (i / n) * Math.PI * 2;
-      const a1 = a0 + (Math.PI * 2 / n) * 0.5;
-      g.moveTo(0, 0).lineTo(Math.cos(a0) * R, Math.sin(a0) * R).lineTo(Math.cos(a1) * R, Math.sin(a1) * R).fill({ color, alpha: 0.13 });
+      const spread = (Math.PI * 2 / n) * 0.3;
+      g.moveTo(0, 0)
+        .lineTo(Math.cos(a0 - spread) * R, Math.sin(a0 - spread) * R)
+        .lineTo(Math.cos(a0 + spread) * R, Math.sin(a0 + spread) * R)
+        .fill({ color, alpha: 0.06 });
     }
+    g.filters = [new BlurFilter({ strength: 12, quality: 2 })];
     c.addChild(g);
     c.alpha = 0;
     return c;
@@ -566,44 +750,56 @@ export class BonusView extends Container {
     const W = this.rect.width;
     const H = this.rect.height;
     const c = new Container();
-    c.position.set(W / 2, H / 2);
-    const accent = filled ? 0xffd95c : 0xffb000;
-    // Much bigger card so the win is the hero of the screen.
-    const pw = Math.min(W * 0.8, 720);
-    const ph = Math.min(H * 0.6, 430);
+    c.position.set(W / 2, H * 0.46);
+    const accent = filled ? GOLD : STEEL;
+    const accentDeep = filled ? GOLD_DEEP : STEEL_DEEP;
+    const pw = Math.min(W * 0.82, 700);
+    const ph = Math.min(H * 0.56, 400);
 
+    // Premium dark-glass slab — soft shadow, near-black body, top sheen, a hairline
+    // inner bevel and a thin accent frame. No thick candy outline.
     const g = new Graphics();
-    g.roundRect(-pw / 2 - 8, -ph / 2 - 8, pw + 16, ph + 16, 28).fill({ color: 0x000000, alpha: 0.5 });
-    g.roundRect(-pw / 2, -ph / 2, pw, ph, 24).fill({ color: 0x000000, alpha: 0.96 });
-    g.roundRect(-pw / 2, -ph / 2, pw, ph, 24).stroke({ color: accent, width: 5 });
+    g.roundRect(-pw / 2 - 10, -ph / 2 - 4, pw + 20, ph + 24, 26).fill({ color: 0x000000, alpha: 0.55 });
+    g.roundRect(-pw / 2, -ph / 2, pw, ph, 20).fill({ color: INK, alpha: 0.97 });
+    g.roundRect(-pw / 2, -ph / 2, pw, ph * 0.44, 20).fill({ color: 0xffffff, alpha: 0.035 });
+    g.roundRect(-pw / 2 + 4, -ph / 2 + 4, pw - 8, ph - 8, 16).stroke({ color: 0xffffff, width: 1, alpha: 0.08 });
+    g.roundRect(-pw / 2, -ph / 2, pw, ph, 20).stroke({ color: accent, width: 2, alpha: 0.9 });
+    // small header tab rule
+    g.roundRect(-pw * 0.14, -ph / 2 + 14, pw * 0.28, 3, 2).fill({ color: accent, alpha: 0.85 });
     c.addChild(g);
 
     const title = new Text({
-      text: filled ? "GRAND ESCAPE!" : "BUSTED",
-      style: new TextStyle({ fill: accent, fontFamily: FONT, fontSize: Math.min(74, pw / 8), fontWeight: "900", letterSpacing: 3, stroke: { color: 0x000000, width: 6 }, dropShadow: { color: accent, alpha: 0.6, blur: 24, distance: 0, angle: 0 } })
+      text: filled ? "GRAND ESCAPE" : "BUSTED",
+      style: new TextStyle({ fill: filled ? GOLD_HI : STEEL, fontFamily: FONT, fontSize: Math.min(70, pw / 8.5), fontWeight: "900", letterSpacing: filled ? 3 : 9, stroke: { color: accentDeep, width: 5 }, dropShadow: { color: filled ? 0x000000 : 0x3a0a0a, alpha: 0.6, blur: 12, distance: 2, angle: Math.PI / 2 } })
     });
     title.anchor.set(0.5);
-    title.position.set(0, -ph * 0.3);
+    title.position.set(0, -ph * 0.28);
     c.addChild(title);
 
-    const sub = new Text({ text: filled ? "FULL HAUL — MAX WIN" : "TOTAL WIN", style: new TextStyle({ fill: 0x9fb4d0, fontFamily: FONT, fontSize: Math.min(22, pw / 26), letterSpacing: 4 }) });
+    const sub = new Text({ text: filled ? "CLEAN GETAWAY · TOTAL HAUL" : "TAKEN DOWN · FINAL TAKE", style: new TextStyle({ fill: 0x9fb4d0, fontFamily: FONT, fontSize: Math.min(18, pw / 30), letterSpacing: 4 }) });
     sub.anchor.set(0.5);
-    sub.position.set(0, -ph * 0.06);
+    sub.position.set(0, -ph * 0.05);
     c.addChild(sub);
+
+    // hairline divider between the label and the haul
+    const rule = new Graphics();
+    rule.rect(-pw * 0.28, 0, pw * 0.56, 1).fill({ color: accent, alpha: 0.28 });
+    rule.position.set(0, ph * 0.02);
+    c.addChild(rule);
 
     const payout = new Text({
       text: "0x",
-      style: new TextStyle({ fill: 0xffd95c, fontFamily: FONT, fontSize: Math.min(112, pw / 5), fontWeight: "900", letterSpacing: 1, stroke: { color: 0x3a2400, width: 8 }, dropShadow: { color: 0xff6a00, alpha: 0.85, blur: 22, distance: 0, angle: 0 } })
+      style: new TextStyle({ fill: filled ? GOLD_HI : 0xd8c08a, fontFamily: FONT, fontSize: Math.min(104, pw / 5.4), fontWeight: "900", letterSpacing: 1, stroke: { color: accentDeep, width: 7 }, dropShadow: { color: 0x000000, alpha: 0.6, blur: 10, distance: 2, angle: Math.PI / 2 } })
     });
     payout.anchor.set(0.5);
-    payout.position.set(0, ph * 0.17);
+    payout.position.set(0, ph * 0.22);
     payout.label = "payout";
     c.addChild(payout);
 
-    const hint = new Text({ text: "TAP TO CONTINUE", style: new TextStyle({ fill: 0xffffff, fontFamily: FONT, fontSize: Math.min(18, pw / 30), letterSpacing: 3 }) });
+    const hint = new Text({ text: "TAP TO CONTINUE", style: new TextStyle({ fill: 0xffffff, fontFamily: FONT, fontSize: Math.min(17, pw / 32), letterSpacing: 3 }) });
     hint.anchor.set(0.5);
-    hint.position.set(0, ph * 0.42);
-    hint.alpha = 0.6;
+    hint.position.set(0, ph * 0.43);
+    hint.alpha = 0.55;
     hint.label = "hint";
     c.addChild(hint);
     return c;
@@ -1179,59 +1375,76 @@ export class BonusView extends Container {
     }).then(() => f.destroy());
   }
 
-  private async bustedFlash(turbo: boolean): Promise<void> {
+  /**
+   * GTA-style BUST: a chromatic jolt, the police strobes slam in from both sides
+   * and converge, then everything settles to a slow, grim red heartbeat. No
+   * fireworks — the world goes cold and you got caught.
+   */
+  private async bustedSequence(turbo: boolean): Promise<void> {
     const W = this.rect.width;
     const H = this.rect.height;
-    const f = new Graphics();
-    this.fxLayer.addChild(f);
-    await tween(turbo ? 200 : 700, (p) => {
-      f.clear();
-      f.rect(0, 0, W, H).fill({ color: POLICE_RED, alpha: (1 - p) * 0.45 });
-    });
-    f.destroy();
+    // a hard camera jolt as the cuffs go on
+    void pulseChromaticAberration(this, { intensity: turbo ? 6 : 13, duration: turbo ? 300 : 700 });
+
+    const lights = new Graphics();
+    this.fxLayer.addChild(lights);
+    lights.filters = [new BlurFilter({ strength: 44, quality: 2 })];
+
+    await tween(turbo ? 320 : 1600, (p) => {
+      lights.clear();
+      // red (left) + blue (right) strobes slam in from the sides, then fade back.
+      const conv = easeOutCubic(Math.min(1, p * 2.4));
+      const redX = -W * 0.15 + W * 0.32 * conv;     // slides in from off the left edge
+      const blueX = W * 1.15 - W * 0.32 * conv;     // slides in from off the right edge
+      const strobe = Math.abs(Math.sin(p * Math.PI * (turbo ? 7 : 11)));
+      const fade = p > 0.62 ? 1 - (p - 0.62) / 0.38 : 1;
+      lights.ellipse(redX, H * 0.52, W * 0.38, H * 0.64)
+        .fill({ color: POLICE_RED, alpha: strobe * 0.46 * fade });
+      lights.ellipse(blueX, H * 0.52, W * 0.38, H * 0.64)
+        .fill({ color: POLICE_BLUE, alpha: (1 - strobe) * 0.46 * fade });
+      // deep red vignette heartbeat in the back half — the grim settle
+      const beat = p > 0.5 ? Math.abs(Math.sin((p - 0.5) * Math.PI * 3)) * 0.14 : 0;
+      lights.rect(0, 0, W, H).fill({ color: 0x4a0808, alpha: beat });
+    }, linear);
+    lights.destroy();
   }
 
+  /**
+   * GRAND ESCAPE: a warm bloom surge over the whole scene, a soft gold light ring
+   * blooming outward, and a cinematic rain of bank notes + coins. Filmic, not
+   * arcade confetti.
+   */
   private async grandEscape(turbo: boolean): Promise<void> {
     const W = this.rect.width;
     const H = this.rect.height;
-    const cx = W / 2, cy = H / 2;
+    const cx = W / 2, cy = H * 0.46;
+
+    // the lights surge — GPU bloom over the entire bonus
+    void pulseBloom(this, { scale: turbo ? 0.8 : 1.5, duration: turbo ? 520 : 1150 });
+
+    // warm flash that decays
     const flash = new Graphics();
-    flash.rect(0, 0, W, H).fill({ color: 0xfff2c0, alpha: 0.85 });
+    flash.rect(0, 0, W, H).fill({ color: 0xfff0cf, alpha: 0.72 });
     this.fxLayer.addChild(flash);
+
+    // soft blooming light ring (blurred → a shockwave of light, not a hoop)
     const ring = new Graphics();
+    ring.filters = [new BlurFilter({ strength: 9, quality: 2 })];
     this.fxLayer.addChild(ring);
-    const parts: Graphics[] = [];
-    const data: Array<{ vx: number; vy: number; spin: number }> = [];
-    const n = turbo ? 28 : 90;
-    for (let i = 0; i < n; i++) {
-      const g = new Graphics();
-      const sz = 4 + Math.random() * 9;
-      g.rect(-sz / 2, -sz / 2, sz, sz).fill([0xffd95c, 0xffec80, 0xff6a00, 0xffffff][i % 4]);
-      g.position.set(cx, cy);
-      g.rotation = Math.random() * Math.PI;
-      this.fxLayer.addChild(g);
-      parts.push(g);
-      const ang = (Math.PI * 2 * i) / n + Math.random() * 0.5;
-      const sp = 240 + Math.random() * 380;
-      data.push({ vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, spin: (Math.random() - 0.5) * 10 });
-    }
+
+    // cinematic cash-rain
+    this.cashRain(turbo);
+
     const reach = Math.max(W, H) * 0.62;
-    await tween(turbo ? 280 : 1000, (p) => {
-      flash.alpha = (1 - p) * 0.85;
+    await tween(turbo ? 320 : 1150, (p) => {
+      const e = easeOutCubic(p);
+      flash.alpha = (1 - p) * 0.72;
       ring.clear();
-      ring.circle(cx, cy, reach * p).stroke({ color: 0xffd95c, width: Math.max(1, 18 * (1 - p)), alpha: (1 - p) * 0.85 });
-      ring.circle(cx, cy, reach * p * 0.7).stroke({ color: 0xffffff, width: Math.max(1, 9 * (1 - p)), alpha: (1 - p) * 0.6 });
-      parts.forEach((g, i) => {
-        g.x = cx + data[i].vx * p;
-        g.y = cy + data[i].vy * p + 150 * p * p;
-        g.alpha = 1 - p * p;
-        g.rotation += data[i].spin * 0.02;
-        g.scale.set(1 - p * 0.4);
-      });
-    }, easeOutCubic);
+      ring.circle(cx, cy, reach * e).stroke({ color: GOLD, width: Math.max(1, 16 * (1 - p)), alpha: (1 - p) * 0.7 });
+      ring.circle(cx, cy, reach * e * 0.66).stroke({ color: 0xffffff, width: Math.max(1, 7 * (1 - p)), alpha: (1 - p) * 0.45 });
+    }, linear);
     flash.destroy();
     ring.destroy();
-    parts.forEach((g) => g.destroy());
   }
 
   // ── ambient + totals ─────────────────────────────────────────────────

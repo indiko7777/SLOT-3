@@ -29,6 +29,7 @@ const GROUPS: Group[] = [
   {
     title: "Win tier (banner + shaders)",
     buttons: [
+      { label: "NICE WIN 8x", action: "tier:nice" },
       { label: "BIG WIN", action: "tier:mid" },
       { label: "MEGA WIN", action: "tier:high" },
       { label: "GRAND WIN 5000x", action: "tier:grand" },
