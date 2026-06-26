@@ -90,24 +90,45 @@ const currentBet = (): number => betLevels[betIndex] ?? 0;
 
 /** Add one landed WILD's points (= base bet). Returns a card-reveal to animate
  *  only when this WILD's points just unlocked a new card; persists state. */
-function onWildCollected(): PieceGain | null {
-  if (!spinOrganic) return null; // points only accrue on base/ante play
-  const { state, gain } = addPoints(power, spinBet);
-  power = state;
-  powerStore.save(power);
-  const card = gain.cardUnlocked;
-  if (!card) return null; // points added, but no new card revealed this WILD
-  const pieces = GIRLS[card.id]?.pieces ?? 8;
-  return {
-    girlId: card.id,
-    pieceIndex: pieces,
-    totalPieces: pieces,
-    artPrefix: card.artPrefix,
-    completedGirl: true,
-    galleryComplete: gain.cardsUnlocked >= NUM_CARDS,
-    unlockId: null
-  };
-}
+  function onWildCollected(): PieceGain | null {
+    if (!spinOrganic) return null; // points only accrue on base/ante play
+
+    const oldProg = galleryProgress();
+    const oldPieces = oldProg.pieces;
+
+    const { state, gain } = addPoints(power, spinBet);
+    power = state;
+    powerStore.save(power);
+
+    const newProg = galleryProgress();
+    const newPieces = newProg.pieces;
+
+    const card = gain.cardUnlocked;
+    if (card) {
+      const pieces = GIRLS[card.id]?.pieces ?? 8;
+      return {
+        girlId: card.id,
+        pieceIndex: pieces,
+        totalPieces: pieces,
+        artPrefix: card.artPrefix,
+        completedGirl: true,
+        galleryComplete: gain.cardsUnlocked >= NUM_CARDS,
+        unlockId: GIRLS[card.id]?.unlockId ?? null
+      };
+    } else if (newPieces > oldPieces && newProg.girlId === oldProg.girlId) {
+      return {
+        girlId: newProg.girlId,
+        pieceIndex: newProg.pieces,
+        totalPieces: newProg.totalPieces,
+        artPrefix: newProg.artPrefix,
+        completedGirl: false,
+        galleryComplete: false,
+        unlockId: null
+      };
+    }
+
+    return null;
+  }
 
 /** Project the Power-Level state onto the HUD/gallery's card view. The visible
  *  cards = thresholds crossed; the in-progress card's silhouette fills with the

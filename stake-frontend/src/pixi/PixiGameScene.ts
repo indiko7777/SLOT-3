@@ -569,8 +569,8 @@ export class PixiGameScene {
         const charContainer = new Container();
         const silSprite = new Sprite(silTex);
         silSprite.anchor.set(0.5);
-        silSprite.x = 57.5; // Shift shadow right to align with the pieces
-        silSprite.y = 27.5; // Shift shadow down to align with the pieces
+        silSprite.x = prefix === "char" ? 57.5 : 0; // Shift shadow right to align with the pieces
+        silSprite.y = prefix === "char" ? 27.5 : 0; // Shift shadow down to align with the pieces
         silSprite.tint = 0x000000;
         const outline = new OutlineFilter({ thickness: 2, color: 0xffffff, quality: 1.0 });
         outline.resolution = window.devicePixelRatio || 1;
@@ -605,12 +605,13 @@ export class PixiGameScene {
           const targetX = charContainer.x;
           const targetY = charContainer.y;
           const startScale = silScale * 3.0; // Start huge!
-          flySprite.position.set(targetX, targetY);
+          flySprite.position.set(sourceX, sourceY);
           flySprite.scale.set(startScale);
           flySprite.alpha = 0;
           overlay.addChild(flySprite);
 
           await tween(turbo ? 200 : 500, (p) => {
+            flySprite.position.set(sourceX + (targetX - sourceX) * p, sourceY + (targetY - sourceY) * p);
             flySprite.scale.set(startScale + (silScale - startScale) * p); // Zoom in
             flySprite.alpha = Math.min(1, p * 2); // Quick fade in
           }, easeOutBack);
@@ -653,12 +654,13 @@ export class PixiGameScene {
             const flySprite = new Sprite(pieceTex);
             flySprite.anchor.set(0.5);
             const startScale = endScale * 3.0; // Start huge!
-            flySprite.position.set(targetX, targetY);
+            flySprite.position.set(sourceX, sourceY);
             flySprite.scale.set(startScale);
             flySprite.alpha = 0;
             this.root.addChild(flySprite);
 
             await tween(turbo ? 200 : 500, (p) => {
+              flySprite.position.set(sourceX + (targetX - sourceX) * p, sourceY + (targetY - sourceY) * p);
               flySprite.scale.set(startScale + (endScale - startScale) * p); // Zoom in
               flySprite.alpha = Math.min(1, p * 2); // Quick fade in
             }, easeOutBack);
