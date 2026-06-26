@@ -3,7 +3,7 @@ import { TEXT, type Position } from "../domain";
 import type { PlaybackSnapshot } from "../playback";
 import { getExtraTexture } from "./assets";
 import { makeText } from "./text";
-import { ambientTicker } from "./tween";
+import { ambientTicker, tween, wait, easeOutBack, linear } from "./tween";
 import type { LayoutMetrics, Rect, SceneRuntime } from "./types";
 import { OutlineFilter, DropShadowFilter } from "pixi-filters";
 
@@ -19,6 +19,10 @@ export class HudView extends Container {
   private targetWin = 0;
   private winAnimFrame = 0;
 
+  /** Star position cache — set by drawWantedStars, read by animateStarFill */
+  private starDrawRect: Rect | null = null;
+  private starRadius = 0;
+
   constructor(private readonly runtime: SceneRuntime) {
     super();
   }
@@ -27,6 +31,7 @@ export class HudView extends Container {
   draw(layout: LayoutMetrics, snapshot: PlaybackSnapshot): void {
     this.cleanupAmbient();
     this.removeChildren();
+    this.starDrawRect = null;
     this.statusText = null;
     this.winText = null;
     this.drawBackground(layout, snapshot);
@@ -441,12 +446,66 @@ export class HudView extends Container {
   }
 
   /**
+   * Animate a single star filling in — call AFTER draw() so the static star is
+   * already rendered; this overlay pops on top then fades, directing the player's
+   * eye to the newly-earned heat star.
+   */
+  async animateStarFill(starIndex: number): Promise<void> {
+    const rect = this.starDrawRect;
+    if (!rect || starIndex < 0 || starIndex >= 5) return;
+
+    const starR = this.starRadius;
+    const gap = starR * 0.55;
+    const totalW = starR * 2 * 5 + gap * 4;
+    const startX = rect.x + (rect.width - totalW) / 2 + starR;
+    const labelSize = Math.min(13, rect.width * 0.04);
+    const starCY = rect.y + rect.height / 2 + labelSize * 0.5 + 2;
+    const sx = startX + starIndex * (starR * 2 + gap);
+
+    // Expanding ring that radiates outward from the star
+    const ring = new Graphics();
+    ring.circle(sx, starCY, starR).stroke({ color: 0xffd700, width: 5, alpha: 1 });
+    this.addChild(ring);
+
+    // Overlay star — pops in dramatically, then fades to reveal the static star beneath
+    const starGfx = new Graphics();
+    const pts = this.starPoints(sx, starCY, starR, starR * 0.42);
+    starGfx.poly(pts).fill(0xffffff);
+    starGfx.poly(pts).stroke({ color: 0xffd700, width: 3, alpha: 1 });
+    starGfx.scale.set(0);
+    this.addChild(starGfx);
+
+    // Phase 1: fast zoom-in to 2.5× then spring back to 1×
+    await tween(300, (p) => {
+      let s: number;
+      if (p < 0.45) {
+        s = (p / 0.45) * 2.5;
+      } else {
+        s = 2.5 - (2.5 - 1.0) * easeOutBack((p - 0.45) / 0.55);
+      }
+      starGfx.scale.set(Math.max(0, s));
+      ring.scale.set(1 + p * 3.5);
+      ring.alpha = (1 - p) * 0.85;
+    }, linear);
+
+    ring.destroy();
+    starGfx.scale.set(1);
+
+    // Phase 2: glow hold then fade out
+    await wait(60);
+    await tween(180, (p) => { starGfx.alpha = 1 - p; }, linear);
+    starGfx.destroy();
+  }
+
+  /**
    * Draw the 5 GTA-style wanted-level stars inside `rect`.
    * Works for both the landscape art panel (full height) and the portrait
    * starsBar strip (narrow strip above the board).
    */
   private drawWantedStars(rect: Rect): void {
+    this.starDrawRect = rect;
     const starR = Math.min(22, rect.width / 11); // outer radius
+    this.starRadius = starR;
     const starIR = starR * 0.42;                 // inner radius — sharper GTA points
     const gap = starR * 0.55;
     const totalW = starR * 2 * 5 + gap * 4;

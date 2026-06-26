@@ -38,7 +38,7 @@ const GROUPS: Group[] = [
     title: "Combination FX",
     buttons: [
       { label: "Cluster link", action: "fx:clusterLink" },
-      { label: "Cascade (tumble)", action: "cascade" },
+      { label: "Cascade (single tumble)", action: "cascade" },
       { label: "Cash spray", action: "fx:cashSpray" },
       { label: "Coin burst", action: "fx:coinBurst" },
       { label: "Screen shake", action: "fx:shake" },
@@ -49,7 +49,8 @@ const GROUPS: Group[] = [
   {
     title: "Heat features",
     buttons: [
-      { label: "Heat transform", action: "heat:transform" },
+      { label: "▶ Full cascade flow (Heat 3)", action: "cascade_flow" },
+      { label: "Heat transform only", action: "heat:transform" },
       { label: "Mega wild", action: "heat:megawild" },
     ],
   },

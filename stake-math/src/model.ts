@@ -43,6 +43,34 @@ export function cascadeMultiplier(cascadeIndex: number): number {
 }
 
 /**
+ * basegame "Wanted-tease" depth mix: how an ordinary base-cost winning spin is
+ * shaped, as weights over [stay at Heat 1, climb to 2, climb to 3, climb to 4].
+ * A tease climbs by planting a MINIMUM low-symbol cluster each tumble, so the
+ * payout stays under BASEBIG_THRESHOLD and the book stays a frequent basegame
+ * book — this is the visible "almost!" 2★ near-miss that makes the chase toward
+ * the rare Getaway feel alive.
+ *
+ * NOTE on the structural cap: reaching Heat 3 fires the Mega Wild, which near-
+ * guarantees the chain runs on to Heat 5 = the Getaway trigger. So a book CANNOT
+ * rest at 3★/4★ — those are transient states on the way to the bonus, and 3★ =
+ * 4★ = 5★ = the (deliberately rare, huge) Getaway rate. We therefore pour the
+ * tease budget into Heat 2 (the reachable near-miss) and leave the 3/4 weights
+ * at 0 so they don't just manufacture cheap bonus triggers. The optimizer holds
+ * every mode at exactly 96% RTP, so this reshapes VARIANCE only — never EV.
+ */
+export const BASEGAME_TEASE_WEIGHTS = [68, 32, 0, 0];
+
+/**
+ * basebig "Wanted-tease" depth mix: weights over [classic monster cluster,
+ * climb to Heat 3, climb to Heat 4]. Monster-dominant so the rare big-cascade
+ * tail stays intact; a minority climb visibly through 3-4 stars before they pay
+ * (or, occasionally, run on into the Getaway via the thematic Wanted path),
+ * enriching the mid-game without cheapening the rare jackpot. Variance only —
+ * the optimizer keeps every mode at exactly 96% RTP.
+ */
+export const BASEBIG_TEASE_WEIGHTS = [62, 22, 16];
+
+/**
  * How the 96% RTP is split across bands for the cash-play modes (fractions of
  * the total RTP). Bonus carries most of it -> high volatility. The optimizer
  * derives each band's published probability from these fractions and the
@@ -111,11 +139,11 @@ export const MODES: Record<BetMode, ModeConfig> = {
     sims: 40_000,
     // Coverage quotas (NOT final frequency). basebig gets generous COVERAGE so
     // the rare big-cascade tail is well sampled; its real probability is tiny.
-    criteria: { zero: 0.22, basegame: 0.46, basebig: 0.10, freegame: 0.20, wincap: 0.02 },
-    // basegame carries the FREQUENT small wins (high hit-rate); basebig carries
-    // the rare laddered monsters. Splitting them is what defeats the dead-spin
-    // problem at a fixed 96% RTP.
-    rtpSplit: { basegame: 0.22, basebig: 0.10, freegame: 0.62, wincap: 0.06 },
+    criteria: { zero: 0.20, basegame: 0.46, basebig: 0.12, freegame: 0.20, wincap: 0.02 },
+    // basegame carries the FREQUENT small wins (high hit-rate) AND the cheap
+    // heat-2 "almost!" teases (lower mean than before -> smaller basegame share);
+    // basebig carries the rare laddered monsters; freegame the rare, huge Getaway.
+    rtpSplit: { basegame: 0.23, basebig: 0.11, freegame: 0.60, wincap: 0.06 },
     reelWeights: baseReels(),
     safeValues: safeTable(1)
   },
@@ -124,8 +152,8 @@ export const MODES: Record<BetMode, ModeConfig> = {
     isFeature: true,
     isBuyBonus: false,
     sims: 40_000,
-    criteria: { zero: 0.20, basegame: 0.46, basebig: 0.10, freegame: 0.22, wincap: 0.02 },
-    rtpSplit: { basegame: 0.21, basebig: 0.10, freegame: 0.63, wincap: 0.06 },
+    criteria: { zero: 0.18, basegame: 0.46, basebig: 0.12, freegame: 0.22, wincap: 0.02 },
+    rtpSplit: { basegame: 0.22, basebig: 0.11, freegame: 0.61, wincap: 0.06 },
     reelWeights: anteReels(),
     safeValues: safeTable(1)
   },

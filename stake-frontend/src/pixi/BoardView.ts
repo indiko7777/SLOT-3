@@ -2,7 +2,7 @@ import { Container, Graphics, Sprite, Text, TextStyle } from "pixi.js";
 import { GRID_COLUMNS, GRID_ROWS, type Board, type Position, type SymbolId } from "../domain";
 import { getSymbolTexture } from "./assets";
 import { SymbolView } from "./SymbolView";
-import { tween, wait, easeOutQuad, easeOutBounce, easeInOutCubic, linear, ambientTicker } from "./tween";
+import { tween, wait, easeOutQuad, easeOutBounce, easeOutBack, easeInOutCubic, linear, ambientTicker } from "./tween";
 import type { Rect } from "./types";
 
 /** Symbols that may appear as spinning filler. All have loaded textures, so a
@@ -334,28 +334,82 @@ export class BoardView extends Container {
 
   async transform(board: Board, positions: Position[], turbo: boolean): Promise<void> {
     this.currentBoard = board;
-    // Swap ONLY existing symbols in place. A position with no current symbol is a
-    // hole left by tumble_remove this cascade — it must stay empty for tumbleTo()
-    // to refill, never be re-created here (that would make a cleared winning
-    // cluster reappear as a different symbol instead of disappearing).
+    // Swap ONLY existing symbols. Holes from a prior tumble_remove stay empty.
+
+    // Sort in diagonal wave order so the morph sweeps top-left → bottom-right.
+    const byWave = [...positions].sort(([c1, r1], [c2, r2]) => (c1 + r1) - (c2 + r2));
+
+    // Phase 1 — staggered shrink-out: each old symbol pulses then spins away.
+    const outAnims = byWave.map(([col, row], i) => {
+      const view = this.symbols.get(keyOf([col, row]));
+      if (!view) return Promise.resolve();
+      return wait(i * (turbo ? 20 : 45)).then(() =>
+        tween(turbo ? 80 : 200, (p) => {
+          const s = p < 0.25
+            ? 1 + (p / 0.25) * 0.22          // punch up to 1.22×
+            : 1.22 * (1 - (p - 0.25) / 0.75); // then shrink to 0
+          view.scale.set(Math.max(0, s));
+          view.alpha = p < 0.3 ? 1 : 1 - (p - 0.3) / 0.7;
+          view.rotation = p * 0.5;
+        }, linear)
+      ).then(() => { view.scale.set(0); view.alpha = 0; view.rotation = 0; });
+    });
+    await Promise.all(outAnims);
+
+    // Destroy old views, spawn new ones at scale=0, alpha=0 (invisible so far).
     const transformed: Position[] = [];
     for (const [col, row] of positions) {
       const key = keyOf([col, row]);
       const old = this.symbols.get(key);
-      if (!old) continue; // hole — leave it for the drop
+      if (!old) continue;
       old.destroy({ children: true });
       this.symbols.delete(key);
       const id = board[col][row];
-      const view = new SymbolView(id);
-      view.layout(this.cellWidth, this.cellHeight);
-      view.position.set(this.cellX(col), this.cellY(row));
-      this.symbols.set(key, view);
-      this.reelContainer.addChild(view);
+      const newView = new SymbolView(id);
+      newView.layout(this.cellWidth, this.cellHeight);
+      newView.position.set(this.cellX(col), this.cellY(row));
+      newView.alpha = 0;
+      newView.scale.set(0);
+      this.symbols.set(key, newView);
+      this.reelContainer.addChild(newView);
       transformed.push([col, row]);
     }
+    if (transformed.length === 0) return;
+
+    // Golden flash burst that blankets the affected cells and fades out while the
+    // new symbols pop in — this is the "reveal" moment, not a glitch.
+    if (!turbo) {
+      const burst = new Graphics();
+      for (const [col, row] of transformed) {
+        const cx = this.cellX(col) + this.cellWidth / 2;
+        const cy = this.cellY(row) + this.cellHeight / 2;
+        burst.circle(cx, cy, this.cellWidth * 0.65).fill({ color: 0xffd700, alpha: 0.45 });
+        burst.circle(cx, cy, this.cellWidth * 0.32).fill({ color: 0xffffff, alpha: 0.55 });
+      }
+      burst.alpha = 0;
+      this.addChild(burst);
+      tween(340, (p) => {
+        burst.alpha = p < 0.12 ? p / 0.12 : (1 - p) / 0.88;
+      }, linear).then(() => burst.destroy());
+    }
+
+    // Phase 2 — staggered pop-in of new symbols with an easeOutBack bounce.
+    const sortedIn = [...transformed].sort(([c1, r1], [c2, r2]) => (c1 + r1) - (c2 + r2));
+    const inAnims = sortedIn.map(([col, row], i) => {
+      const view = this.symbols.get(keyOf([col, row]));
+      if (!view) return Promise.resolve();
+      return wait(i * (turbo ? 20 : 55)).then(() =>
+        tween(turbo ? 100 : 240, (p) => {
+          view.alpha = Math.min(1, p * 4);
+          view.scale.set(Math.max(0, easeOutBack(p)));
+        }, linear)
+      ).then(() => { view.alpha = 1; view.scale.set(1); });
+    });
+    await Promise.all(inAnims);
+
+    // Brief green-border highlight so the player sees what changed.
     this.markPositions(transformed, "transform");
-    await Promise.all(transformed.map((p) => this.symbols.get(keyOf(p))?.winCelebrate(turbo) ?? Promise.resolve()));
-    await wait(turbo ? 40 : 150);
+    await wait(turbo ? 60 : 280);
   }
 
   async megaWild(board: Board, positions: Position[], turbo: boolean): Promise<void> {

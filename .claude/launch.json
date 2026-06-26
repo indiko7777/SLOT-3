@@ -4,8 +4,31 @@
     {
       "name": "heat-chase",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "stake-frontend", "run", "dev:local"],
+      "runtimeArgs": [
+        "--prefix",
+        "stake-frontend",
+        "run",
+        "dev:local"
+      ],
       "port": 5176
+    },
+    {
+      "name": "popup-preview",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "stake-frontend",
+        "exec",
+        "--",
+        "vite",
+        "stake-frontend",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "5181",
+        "--strictPort"
+      ],
+      "port": 5181
     }
   ]
 }

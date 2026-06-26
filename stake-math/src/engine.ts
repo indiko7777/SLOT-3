@@ -12,6 +12,8 @@ import {
 } from "./domain";
 import {
   BASEBIG_THRESHOLD,
+  BASEBIG_TEASE_WEIGHTS,
+  BASEGAME_TEASE_WEIGHTS,
   BONUS_CELLS,
   BONUS_RESPINS,
   CLUSTER_PAY,
@@ -85,10 +87,45 @@ export function simulateRound(
   const forceScatter = forceBonus && isCash && rng.bool(SCATTER_TRIGGER_SHARE);
   const forceDeep = forceBonus && isCash && !forceScatter;
 
+  // Wanted-progress shaping. `climbTo` is the heat a book is forced to reach by
+  // planting a fresh small cluster each tumble (reads on screen as a lucky
+  // refill). forceDeep books climb to the 5★ Getaway trigger; a fraction of
+  // ordinary basegame winning spins climb to a SHALLOW 2/3/4 "Wanted tease"
+  // built from MINIMUM low-symbol clusters, so the payout stays under the
+  // basebig threshold and the book remains a frequent basegame book. That is
+  // what turns the degenerate 3★=4★=5★ wall into a real climbing funnel. Every
+  // mode is still re-solved to exactly 96% RTP, so this reshapes variance only —
+  // no EV change, no feature behaviour change (transform/mega-wild fire as usual,
+  // just reached more often).
+  let climbTo = 0;
+  if (forceDeep) {
+    climbTo = triggerHeat;
+  } else if (criteria === "basegame") {
+    const pick = rng.weightedIndex(BASEGAME_TEASE_WEIGHTS); // 0:Heat1  1:→2  2:→3  3:→4
+    climbTo = pick === 0 ? 0 : pick + 1;
+  } else if (criteria === "basebig") {
+    const pick = rng.weightedIndex(BASEBIG_TEASE_WEIGHTS); // 0:monster  1:→3  2:→4
+    climbTo = pick === 0 ? 0 : pick + 2;
+  }
+  const teaseClimb = climbTo > 0 && climbTo < triggerHeat;
+  // basegame teases must stay cheap (LOW only) to keep the book in the frequent
+  // basegame band; basebig teases use low/mid so they clear the basebig threshold.
+  const teaseLowOnly = teaseClimb && criteria === "basegame";
+
   let board = genBoard(rng, mode);
   if (criteria === "zero") scrubWins(board, rng);
-  if (criteria === "basegame") ensureSeedCluster(board, rng, false);
-  if (criteria === "basebig") ensureSeedCluster(board, rng, true);
+  if (criteria === "basegame") {
+    // A shallow tease starts from a single minimum low cluster so the climb
+    // stays cheap; an ordinary basegame spin keeps its mixed low/mid seed.
+    if (teaseClimb) plantBlob(board, rng, LOW_SYMBOLS[rng.int(LOW_SYMBOLS.length)]!, 5);
+    else ensureSeedCluster(board, rng, false);
+  }
+  if (criteria === "basebig") {
+    // A heat-3/4 tease seeds a moderate cluster and climbs; a classic monster
+    // seeds one big premium cluster. Both clear the basebig threshold.
+    if (teaseClimb) ensureSeedCluster(board, rng, false);
+    else ensureSeedCluster(board, rng, true);
+  }
   if (forceScatter) plantScatters(board, rng, SCATTER_TRIGGER_COUNT);
   else if (forceDeep) ensureSeedCluster(board, rng, true);
   else if (forceBonus) plantScatters(board, rng, SCATTER_TRIGGER_COUNT); // buy: straight to the Getaway
@@ -173,10 +210,15 @@ export function simulateRound(
 
     applyGravity(board, removed, rng, mode);
     // Wanted-path coverage: force the fresh drop to contain a cluster so the
-    // chain keeps climbing to Heat 5 (the 5★ trigger). Looks like a lucky refill
-    // and stops once Heat 5 is reached; representative of a genuine deep chain.
-    if (forceDeep && heat < triggerHeat) {
-      const sym = (["BRASS", "KNIFE", "PISTOL", "AMMO"] as SymbolId[])[rng.int(4)]!;
+    // chain keeps climbing toward `climbTo`. Looks like a lucky refill and stops
+    // once the target heat is reached. Deep (Getaway) books plant any low/mid so
+    // the run pays; shallow teases plant LOW only so the climb stays cheap and the
+    // book remains a frequent, low-paying basegame book.
+    if (heat < climbTo) {
+      const pool = teaseLowOnly
+        ? LOW_SYMBOLS
+        : (["BRASS", "KNIFE", "PISTOL", "AMMO"] as SymbolId[]);
+      const sym = pool[rng.int(pool.length)]!;
       plantBlob(board, rng, sym, 5);
     }
     events.push({ type: "tumble_drop", board: cloneBoard(board) });

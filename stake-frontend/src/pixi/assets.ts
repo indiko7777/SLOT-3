@@ -63,6 +63,7 @@ const EXTRA_ASSETS: Record<string, string> = {
   "char_piece_7": "bodycharachter1/rightarm1.png.webp",
   "char_piece_8": "bodycharachter1/head1.png.webp",
   "char_full": "bodycharachter1/full_image1.png.webp",
+  "real_bill": "real_bill.png",
 
   "char2_silhouette": "bodycharachter2/silhouette.webp",
   "char2_piece_1": "bodycharachter2/right foot.webp",

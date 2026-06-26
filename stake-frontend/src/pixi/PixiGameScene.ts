@@ -11,7 +11,7 @@ import { PaytableView } from "./PaytableView";
 import { SymbolView } from "./SymbolView";
 import { computeLayout } from "./layout";
 import { getExtraTexture } from "./assets";
-import { tween, wait, easeInOutCubic, easeOutBack } from "./tween";
+import { tween, wait, easeInOutCubic, easeOutBack, easeOutCubic } from "./tween";
 import type { LayoutMetrics, SceneRuntime } from "./types";
 import { OutlineFilter } from "pixi-filters";
 import { CardPeekView } from "./CardPeekView";
@@ -249,6 +249,96 @@ export class PixiGameScene {
         return;
       }
 
+      case "cascade_flow": {
+        // Full 3-cascade chain exactly as a real spin plays it, including the
+        // Heat-3 "Bust the Stash" transform. Layout:
+        //   Cascade 1 — CASH cluster rows 2-3 of cols 0-2
+        //   Cascade 2 — CASH cluster rows 0-1 of cols 0-2 (fell in from above)
+        //   Cascade 3 — same cluster forms again → Heat 3 → transform cols 3-4 rows 0-1
+        this.bonus.hide();
+
+        // ── boards ──────────────────────────────────────────────────────────────
+        const b0: Board = [
+          ["BRASS", "KNIFE", "CASH", "CASH"],
+          ["AMMO",  "DUFFEL","CASH", "CASH"],
+          ["PISTOL","BRASS", "CASH", "CASH"],
+          ["KNIFE", "AMMO",  "DUFFEL","BRASS"],
+          ["DUFFEL","PISTOL","BRASS", "KNIFE"],
+        ];
+        const win1: Position[] = [[0,2],[0,3],[1,2],[1,3],[2,2],[2,3]];
+
+        // after clearing win1: survivors fall to rows 2-3; CASH drops into rows 0-1
+        const b1: Board = [
+          ["CASH","CASH","BRASS","KNIFE"],
+          ["CASH","CASH","AMMO", "DUFFEL"],
+          ["CASH","CASH","PISTOL","BRASS"],
+          ["KNIFE","AMMO","DUFFEL","BRASS"],
+          ["DUFFEL","PISTOL","BRASS","KNIFE"],
+        ];
+        const win2: Position[] = [[0,0],[0,1],[1,0],[1,1],[2,0],[2,1]];
+
+        // after clearing win2: survivors stay at rows 2-3; more CASH at rows 0-1
+        const b2: Board = [
+          ["CASH","CASH","BRASS","KNIFE"],
+          ["CASH","CASH","AMMO", "DUFFEL"],
+          ["CASH","CASH","PISTOL","BRASS"],
+          ["KNIFE","AMMO","DUFFEL","BRASS"],
+          ["DUFFEL","PISTOL","BRASS","KNIFE"],
+        ];
+        const win3: Position[] = [[0,0],[0,1],[1,0],[1,1],[2,0],[2,1]];
+
+        // heat_transform board: cols 3-4 rows 0-1 flip to CASH (winning cluster still present)
+        const b2t: Board = [
+          ["CASH","CASH","BRASS","KNIFE"],
+          ["CASH","CASH","AMMO", "DUFFEL"],
+          ["CASH","CASH","PISTOL","BRASS"],
+          ["CASH","CASH","DUFFEL","BRASS"],   // ← transformed
+          ["CASH","CASH","BRASS","KNIFE"],    // ← transformed
+        ];
+        const transformPos: Position[] = [[3,0],[3,1],[4,0],[4,1]];
+
+        // after clearing win3 (cols 0-2 rows 0-1): survivors fall; cols 3-4 keep CASH
+        const b3: Board = [
+          ["AMMO","KNIFE","BRASS","KNIFE"],
+          ["BRASS","DUFFEL","AMMO","DUFFEL"],
+          ["DUFFEL","AMMO","PISTOL","BRASS"],
+          ["CASH","CASH","DUFFEL","BRASS"],   // transformed CASH survives!
+          ["CASH","CASH","BRASS","KNIFE"],
+        ];
+
+        // ── play ────────────────────────────────────────────────────────────────
+        this.board.setInstant(b0);
+        this.hasBoard = true;
+        await wait(turbo ? 120 : 500);
+
+        // Cascade 1
+        void this.effects.clusterLink(win1.map((p) => this.board.centerOf(p)), 0xe056fd, turbo);
+        await this.board.highlight(win1, turbo);
+        await this.board.clearWins(win1, turbo);
+        await this.board.tumbleTo(b1, turbo);
+        await wait(turbo ? 80 : 300);
+
+        // Cascade 2
+        void this.effects.clusterLink(win2.map((p) => this.board.centerOf(p)), 0xe056fd, turbo);
+        await this.board.highlight(win2, turbo);
+        await this.board.clearWins(win2, turbo);
+        await this.board.tumbleTo(b2, turbo);
+        await wait(turbo ? 80 : 300);
+
+        // Cascade 3 — Heat 3 fires: Bust the Stash
+        void this.effects.clusterLink(win3.map((p) => this.board.centerOf(p)), 0xe056fd, turbo);
+        await this.board.highlight(win3, turbo);
+        // Banner announces Bust the Stash before the board changes
+        await this.effects.banner("Bust the Stash", "", this.layout.board, turbo);
+        // heat_transform: non-winning symbols morph to CASH
+        await this.board.transform(b2t, transformPos, turbo);
+        // tumble_remove + tumble_drop
+        await this.board.clearWins(win3, turbo);
+        await this.board.tumbleTo(b3, turbo);
+
+        return;
+      }
+
       case "heat": {
         if (arg === "transform") {
           const b = this.uniformBoard("BRASS");
@@ -398,6 +488,11 @@ export class PixiGameScene {
         }
         await this.board.settle(event.board, turbo, scatterCols.size >= 2 ? scatterCols : undefined);
         this.hasBoard = true;
+
+        // Flash every WILD that just landed — this fires regardless of whether
+        // a gallery piece unlocks. The WILD must NEVER land silently.
+        await this.flashWildLanding(event.board, turbo);
+
         await this.checkAndPlayCollectionAnimation(event.board, turbo);
         return;
       }
@@ -410,7 +505,7 @@ export class PixiGameScene {
         const centers = event.positions.map((p) => this.board.centerOf(p));
         void this.effects.clusterLink(centers, 0xffd95c, turbo);
         await this.board.highlight(event.positions, turbo);
-        await this.effects.banner(snapshot.lastMessage, formatMultiplier(event.payout), this.layout.board, turbo);
+        // No per-cascade pop-up — total win is shown at round_end like normal slots.
         return;
       }
       case "tumble_remove":
@@ -422,15 +517,20 @@ export class PixiGameScene {
         await this.board.tumbleTo(event.board, turbo);
         await this.checkAndPlayCollectionAnimation(event.board, turbo);
         return;
-      case "heat_advance":
-        // No red police siren on a win any more — the cluster links carry the
-        // combination feedback; the heat meter still updates in the HUD.
+      case "heat_advance": {
+        // Rebuild HUD so the new star shows as filled, then animate that star in
+        // concurrently with the upcoming tumble — player sees the heat climb in real time.
         this.hud.draw(this.layout, snapshot);
+        if (!turbo) {
+          const headStart = this.runtime.getHeadStartStars?.() ?? 0;
+          void this.hud.animateStarFill(headStart + event.to - 1);
+        }
         return;
+      }
       case "heat_transform":
-        await this.board.transform(event.board, event.positions, turbo);
-        await this.effects.cashSpray(this.layout.board, event.positions, turbo);
+        // Banner first — player reads "Bust the Stash" before the board changes.
         await this.effects.banner("Bust the Stash", "", this.layout.board, turbo);
+        await this.board.transform(event.board, event.positions, turbo);
         return;
       case "mega_wild_place":
         await this.board.megaWild(event.board, event.occupiedPositions, turbo);
@@ -491,12 +591,12 @@ export class PixiGameScene {
         }
         const tier = winTier(event.payoutMultiplier);
         if (tier.intensity !== "low") {
-          this.effects.cashRain(this.layout.board, turbo);
           this.effects.screenShake(this.root, turbo);
         }
         // GPU bloom + chromatic aberration are applied inside effects.banner (on the
         // mask-free effects layer) based on the win tier.
-        await this.effects.banner(tier.title, formatMultiplier(event.payoutMultiplier), this.layout.board, turbo, tier.intensity);
+        const winAmount = event.payoutMultiplier * snapshot.betAmount;
+        await this.effects.banner(tier.title, formatWin(winAmount, snapshot.betAmount), this.layout.board, turbo, tier.intensity);
         await wait(turbo ? 40 : 120);
         return;
       }
@@ -525,9 +625,58 @@ export class PixiGameScene {
     }
     for (const pos of newWilds) {
       const gain = this.runtime.collectWild();
-      if (!gain) break; // gallery already mastered
+      if (!gain) continue; // no piece unlocked this WILD — keep looping for others
       await this.runCollectionAnimation(pos, gain, turbo);
     }
+  }
+
+  /**
+   * Electric green pulse fired on every WILD cell that just landed.
+   * Runs concurrently with the collection animation so it never adds wait time.
+   */
+  private async flashWildLanding(board: Board, turbo: boolean): Promise<void> {
+    if (turbo) return;
+    const wildPositions: Position[] = [];
+    for (let col = 0; col < GRID_COLUMNS; col++) {
+      for (let row = 0; row < GRID_ROWS; row++) {
+        if (board[col][row] === "WILD") wildPositions.push([col, row]);
+      }
+    }
+    if (wildPositions.length === 0) return;
+
+    // Use the board's winCelebrate highlight so the cell gets the green glow
+    // border + shimmer streak — the same treatment any winning symbol gets.
+    const celebratePromises = wildPositions.map((p) => {
+      const view = this.board.getSymbolView(p);
+      return view ? view.winCelebrate(false) : Promise.resolve();
+    });
+
+    // Overlay: electric green radial burst on each WILD cell
+    const burstCleanup: (() => void)[] = [];
+    for (const pos of wildPositions) {
+      const center = this.board.centerOf(pos);
+      const burst = new Graphics();
+      burst.circle(0, 0, 60).fill({ color: 0x9ae64e, alpha: 0.28 });
+      burst.circle(0, 0, 36).fill({ color: 0x9ae64e, alpha: 0.18 });
+      burst.circle(0, 0, 18).fill({ color: 0xffffff, alpha: 0.22 });
+      burst.position.set(center.x, center.y);
+      burst.alpha = 0;
+      burst.scale.set(0.4);
+      this.effects.addChild(burst);
+      burstCleanup.push(() => burst.destroy());
+      // Fire-and-forget — runs in parallel
+      void tween(520, (p) => {
+        burst.alpha = p < 0.18 ? p / 0.18 : (1 - p) / 0.82;
+        burst.scale.set(0.4 + 1.6 * p);
+      }, easeOutCubic).then(() => burst.destroy());
+    }
+
+    // Short electric flash banner (non-blocking — it's a quick pop)
+    void this.effects.banner("W!LD", "", this.layout.board, false, "low");
+
+    await Promise.all(celebratePromises);
+    // Cleanup any bursts that are still alive (shouldn't be, but safety)
+    for (const cleanup of burstCleanup) cleanup();
   }
 
   private async runCollectionAnimation(pos: Position, gain: PieceGain, turbo: boolean): Promise<void> {
@@ -862,9 +1011,14 @@ function previewBoard(runtime: SceneRuntime): Board {
   return settle.board;
 }
 
-function formatMultiplier(value: number): string {
-  if (!value) return "";
-  return `${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}x`;
+/** Show the actual win amount. Falls back to multiplier if bet is unknown. */
+function formatWin(amount: number, bet: number): string {
+  if (!amount) return "";
+  if (bet > 0) {
+    return amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  // betAmount not set yet (rare edge case) — fall back to multiplier notation
+  return `${amount.toLocaleString("en-US", { maximumFractionDigits: 2 })}x`;
 }
 
 type WinIntensity = "low" | "mid" | "high" | "grand";

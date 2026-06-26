@@ -1,9 +1,10 @@
-import { Container, Graphics, Text, TextStyle } from "pixi.js";
+import { Container, Graphics, Text, TextStyle, Sprite } from "pixi.js";
 import type { Position } from "../domain";
 import type { Rect } from "./types";
 import { makeText } from "./text";
 import { tween, wait, easeOutBack, easeOutCubic, easeInOutCubic, easeOutElastic, linear } from "./tween";
 import { pulseBloom, pulseChromaticAberration } from "../vfx/Shaders";
+import { getExtraTexture } from "./assets";
 
 export class EffectsLayer extends Container {
   private readonly particles = new Container();
@@ -169,17 +170,6 @@ export class EffectsLayer extends Container {
       amtText.scale.set(1);
     }
 
-    // === Phase 2b: effects for mid+ wins ===
-    if (big && !turbo) {
-      this.cashRain(rect, turbo);
-      this.goldCoinBurst(cx, cy, rect, turbo);
-      if (intensity === "grand") {
-        // Extra burst for grand
-        this.goldCoinBurst(cx - 60, cy - 30, rect, turbo);
-        this.goldCoinBurst(cx + 60, cy + 30, rect, turbo);
-      }
-    }
-
     // === Hold ===
     await wait(turbo ? 60 : cfg.holdMs);
 
@@ -201,32 +191,46 @@ export class EffectsLayer extends Container {
   async cashRain(rect: Rect, turbo: boolean): Promise<void> {
     if (turbo) return;
     const billCount = 40;
-    const bills: Graphics[] = [];
+    const bills: Container[] = [];
     const billData: Array<{ vx: number; vy: number; spin: number; delay: number }> = [];
 
-    for (let i = 0; i < billCount; i++) {
-      const bill = new Graphics();
-      // Big fat bills like the cartoon reference
-      const w = 44 + Math.random() * 20;
-      const h = 22 + Math.random() * 10;
-      const shade = [0x1a8f3f, 0x22a849, 0x178a38, 0x1b9e42, 0x0f7a2e][i % 5];
-      const lightShade = [0x2ecc71, 0x34d678, 0x28c066, 0x3ddc84, 0x27ae60][i % 5];
+    const billTex = getExtraTexture("real_bill");
 
-      // Bill body
-      bill.roundRect(-w / 2, -h / 2, w, h, 3).fill(shade);
-      // Inner border
-      bill.roundRect(-w / 2 + 3, -h / 2 + 3, w - 6, h - 6, 2)
-        .stroke({ color: lightShade, width: 1.5, alpha: 0.6 });
-      // Center circle (like real bills)
-      const circR = Math.min(w, h) * 0.28;
-      bill.circle(0, 0, circR).fill({ color: lightShade, alpha: 0.35 });
-      bill.circle(0, 0, circR * 0.6).fill({ color: lightShade, alpha: 0.2 });
-      // Dollar sign
-      bill.roundRect(-2, -h * 0.3, 4, h * 0.6, 1).fill({ color: 0xffffff, alpha: 0.35 });
-      bill.roundRect(-w * 0.12, -2, w * 0.24, 4, 1).fill({ color: 0xffffff, alpha: 0.25 });
-      // Corner marks
-      bill.rect(-w / 2 + 5, -h / 2 + 5, 6, 4).fill({ color: 0xffffff, alpha: 0.2 });
-      bill.rect(w / 2 - 11, h / 2 - 9, 6, 4).fill({ color: 0xffffff, alpha: 0.2 });
+    for (let i = 0; i < billCount; i++) {
+      let bill: Container;
+
+      if (billTex) {
+        const spr = new Sprite(billTex);
+        spr.anchor.set(0.5);
+        const targetWidth = 65 + Math.random() * 25;
+        spr.scale.set(targetWidth / billTex.width);
+        bill = new Container();
+        bill.addChild(spr);
+      } else {
+        const gfx = new Graphics();
+        // Big fat bills like the cartoon reference
+        const w = 44 + Math.random() * 20;
+        const h = 22 + Math.random() * 10;
+        const shade = [0x1a8f3f, 0x22a849, 0x178a38, 0x1b9e42, 0x0f7a2e][i % 5];
+        const lightShade = [0x2ecc71, 0x34d678, 0x28c066, 0x3ddc84, 0x27ae60][i % 5];
+
+        // Bill body
+        gfx.roundRect(-w / 2, -h / 2, w, h, 3).fill(shade);
+        // Inner border
+        gfx.roundRect(-w / 2 + 3, -h / 2 + 3, w - 6, h - 6, 2)
+          .stroke({ color: lightShade, width: 1.5, alpha: 0.6 });
+        // Center circle (like real bills)
+        const circR = Math.min(w, h) * 0.28;
+        gfx.circle(0, 0, circR).fill({ color: lightShade, alpha: 0.35 });
+        gfx.circle(0, 0, circR * 0.6).fill({ color: lightShade, alpha: 0.2 });
+        // Dollar sign
+        gfx.roundRect(-2, -h * 0.3, 4, h * 0.6, 1).fill({ color: 0xffffff, alpha: 0.35 });
+        gfx.roundRect(-w * 0.12, -2, w * 0.24, 4, 1).fill({ color: 0xffffff, alpha: 0.25 });
+        // Corner marks
+        gfx.rect(-w / 2 + 5, -h / 2 + 5, 6, 4).fill({ color: 0xffffff, alpha: 0.2 });
+        gfx.rect(w / 2 - 11, h / 2 - 9, 6, 4).fill({ color: 0xffffff, alpha: 0.2 });
+        bill = gfx;
+      }
 
       bill.position.set(
         rect.x - 30 + Math.random() * (rect.width + 60),
@@ -332,17 +336,30 @@ export class EffectsLayer extends Container {
   async cashSpray(rect: Rect, positions: Position[], turbo: boolean): Promise<void> {
     if (turbo) return;
     const count = Math.min(positions.length * 8, 60);
-    const bills: Graphics[] = [];
+    const bills: Container[] = [];
     const velocities: Array<{ vx: number; vy: number; spin: number }> = [];
+    const billTex = getExtraTexture("real_bill");
 
     for (let i = 0; i < count; i += 1) {
-      const bill = new Graphics();
-      const w = 16 + Math.random() * 12;
-      const h = 7 + Math.random() * 5;
-      const shade = [0x62ffa7, 0x4de89a, 0x2ecc71, 0x27ae60][i % 4];
-      bill.roundRect(-w / 2, -h / 2, w, h, 2).fill(shade)
-        .stroke({ color: 0xffffff, alpha: 0.4, width: 1 });
-      bill.rect(-1, -h / 2, 2, h).fill({ color: 0xffffff, alpha: 0.2 });
+      let bill: Container;
+      if (billTex) {
+        const spr = new Sprite(billTex);
+        spr.anchor.set(0.5);
+        const targetWidth = 35 + Math.random() * 15;
+        spr.scale.set(targetWidth / billTex.width);
+        bill = new Container();
+        bill.addChild(spr);
+      } else {
+        const gfx = new Graphics();
+        const w = 16 + Math.random() * 12;
+        const h = 7 + Math.random() * 5;
+        const shade = [0x62ffa7, 0x4de89a, 0x2ecc71, 0x27ae60][i % 4];
+        gfx.roundRect(-w / 2, -h / 2, w, h, 2).fill(shade)
+          .stroke({ color: 0xffffff, alpha: 0.4, width: 1 });
+        gfx.rect(-1, -h / 2, 2, h).fill({ color: 0xffffff, alpha: 0.2 });
+        bill = gfx;
+      }
+      
       bill.position.set(
         rect.x + rect.width * (0.15 + Math.random() * 0.7),
         rect.y + rect.height * (0.25 + Math.random() * 0.5)
