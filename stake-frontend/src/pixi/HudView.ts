@@ -5,6 +5,7 @@ import { getExtraTexture } from "./assets";
 import { makeText } from "./text";
 import { ambientTicker, tween, wait, easeOutBack, linear } from "./tween";
 import type { LayoutMetrics, Rect, SceneRuntime } from "./types";
+import { formatBalance, formatWin } from "../rgs/client";
 import { OutlineFilter, DropShadowFilter } from "pixi-filters";
 
 const IDLE_MESSAGES = [
@@ -142,7 +143,11 @@ export class HudView extends Container {
 
   /** Money formatter shared by the win counter, credit and bet displays. */
   private fmtMoney(amount: number): string {
-    return amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return formatBalance(amount);
+  }
+  
+  private fmtWinMoney(amount: number): string {
+    return formatWin(amount);
   }
 
   /** Animate the win counter (in real money) from the current value to target. */
@@ -163,23 +168,23 @@ export class HudView extends Container {
       const t = 1 - (1 - raw) * (1 - raw);
       const current = startVal + (this.targetWin - startVal) * t;
       this.displayedWin = current;
-      if (this.winText) {
-        this.winText.text = `WIN ${this.fmtMoney(current)} ${currency}`;
-        this.winText.style.fill = 0xffdf65;
-        // Pulse the text size slightly during counting
-        const pulse = 1 + Math.sin(raw * Math.PI) * 0.15;
-        this.winText.scale.set(pulse);
-      }
-      if (raw < 1) {
-        this.winAnimFrame = requestAnimationFrame(tick);
-      } else {
-        this.winAnimFrame = 0;
-        this.displayedWin = this.targetWin;
         if (this.winText) {
-          this.winText.text = `WIN ${this.fmtMoney(this.targetWin)} ${currency}`;
-          this.winText.scale.set(1);
+          this.winText.text = `WIN ${this.fmtWinMoney(current)} ${currency}`;
+          this.winText.style.fill = 0xffdf65;
+          // Pulse the text size slightly during counting
+          const pulse = 1 + Math.sin(raw * Math.PI) * 0.15;
+          this.winText.scale.set(pulse);
         }
-      }
+        if (raw < 1) {
+          this.winAnimFrame = requestAnimationFrame(tick);
+        } else {
+          this.winAnimFrame = 0;
+          this.displayedWin = this.targetWin;
+          if (this.winText) {
+            this.winText.text = `WIN ${this.fmtWinMoney(this.targetWin)} ${currency}`;
+            this.winText.scale.set(1);
+          }
+        }
     };
     this.winAnimFrame = requestAnimationFrame(tick);
   }
@@ -213,7 +218,7 @@ export class HudView extends Container {
     this.targetWin = amount;
     if (this.winText) {
       const currency = this.runtime.getCurrency();
-      this.winText.text = amount > 0 ? `WIN ${this.fmtMoney(amount)} ${currency}` : "";
+      this.winText.text = amount > 0 ? `WIN ${this.fmtWinMoney(amount)} ${currency}` : "";
       this.winText.style.fill = 0xffdf65;
       this.winText.scale.set(1);
     }
@@ -395,7 +400,12 @@ export class HudView extends Container {
 
     panel.position.set(x, y);
     panel.eventMode = "static";
-    panel.cursor = this.runtime.isPlaying() ? "default" : "pointer";
+    
+    const disabled = this.runtime.isPlaying() || (this.runtime.isReplayActive && this.runtime.isReplayActive());
+    panel.cursor = disabled ? "default" : "pointer";
+    if (disabled) {
+       panel.alpha = 0.5;
+    }
 
     // Breathing glow animation
     this.addAmbient((_dt, elapsed) => {
@@ -458,9 +468,11 @@ export class HudView extends Container {
     const anteMult = this.runtime.isAnteEnabled() ? this.costX("ante") : 1;
     const effectiveBet = betLevel * anteMult;
 
+    const isReplay = this.runtime.isReplayActive && this.runtime.isReplayActive();
+
     // Credit display
     this.creditText = new Text({
-      text: `Credit ${this.fmtMoney(credit)} ${currency}`,
+      text: isReplay ? "" : `Credit ${this.fmtMoney(credit)} ${currency}`,
       style: new TextStyle({
         fill: 0xffffff,
         fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
@@ -517,7 +529,7 @@ export class HudView extends Container {
 
     if (snapshot.state === "idle") {
       if (initWin > 0) {
-        this.statusText.text = `WIN ${this.fmtMoney(initWin)} ${currency}`;
+        this.statusText.text = `WIN ${this.fmtWinMoney(initWin)} ${currency}`;
         this.statusText.style.fill = 0xffdf65; // Gold
       } else {
         this.statusText.text = this.currentIdleMessage;
@@ -525,7 +537,7 @@ export class HudView extends Container {
       }
     } else {
       if (initWin > 0) {
-        this.statusText.text = `WIN ${this.fmtMoney(initWin)} ${currency}`;
+        this.statusText.text = `WIN ${this.fmtWinMoney(initWin)} ${currency}`;
         this.statusText.style.fill = 0xffdf65;
       } else {
         this.statusText.text = this.getStatusMessage(snapshot.state);
@@ -627,38 +639,26 @@ export class HudView extends Container {
     const starCY = rect.y + rect.height / 2 + labelSize * 0.5 + 2;
     const sx = startX + starIndex * (starR * 2 + gap);
 
-    // Expanding ring that radiates outward from the star
-    const ring = new Graphics();
-    ring.circle(sx, starCY, starR).stroke({ color: 0xffd700, width: 5, alpha: 1 });
-    this.underParticlesContainer.addChild(ring);
-
-    // Overlay star — pops in dramatically, then fades to reveal the static star beneath
+    // Overlay star — slight pop in and flash white (GTA style)
     const starGfx = new Graphics();
-    const pts = this.starPoints(sx, starCY, starR, starR * 0.42);
+    const pts = this.starPoints(0, 0, starR, starR * 0.42);
     starGfx.poly(pts).fill(0xffffff);
-    starGfx.poly(pts).stroke({ color: 0xffd700, width: 3, alpha: 1 });
-    starGfx.scale.set(0);
+    starGfx.poly(pts).stroke({ color: 0xffffff, width: 1.5, alpha: 0.75 });
+    starGfx.position.set(sx, starCY);
+    starGfx.alpha = 0;
     this.underParticlesContainer.addChild(starGfx);
 
-    // Phase 1: fast zoom-in to 2.5× then spring back to 1×
-    await tween(300, (p) => {
-      let s: number;
-      if (p < 0.45) {
-        s = (p / 0.45) * 2.5;
-      } else {
-        s = 2.5 - (2.5 - 1.0) * easeOutBack((p - 0.45) / 0.55);
-      }
-      starGfx.scale.set(Math.max(0, s));
-      ring.scale.set(1 + p * 3.5);
-      ring.alpha = (1 - p) * 0.85;
+    // Fast fade in with slight bump, then holds
+    await tween(150, (p) => {
+      starGfx.alpha = p;
+      starGfx.scale.set(1.0 + Math.sin(p * Math.PI) * 0.3);
     }, linear);
 
-    ring.destroy();
     starGfx.scale.set(1);
 
-    // Phase 2: glow hold then fade out
-    await wait(60);
-    await tween(180, (p) => { starGfx.alpha = 1 - p; }, linear);
+    // Hold for a moment, then fade away (revealing the static filled star underneath)
+    await wait(100);
+    await tween(150, (p) => { starGfx.alpha = 1 - p; }, linear);
     starGfx.destroy();
   }
 
@@ -858,10 +858,14 @@ export class HudView extends Container {
     button.addChild(txt);
     button.position.set(x, y);
     button.eventMode = "static";
-    button.cursor = "pointer";
-    button.on("pointerover", () => { button.scale.set(1.12); g.tint = 0xccddff; });
-    button.on("pointerout", () => { button.scale.set(1); g.tint = 0xffffff; });
-    button.on("pointertap", () => void this.runtime.onAction(action));
+    
+    const disabled = this.runtime.isReplayActive && this.runtime.isReplayActive();
+    button.cursor = disabled ? "default" : "pointer";
+    if (disabled) button.alpha = 0.5;
+
+    button.on("pointerover", () => { if(!disabled) { button.scale.set(1.12); g.tint = 0xccddff; }});
+    button.on("pointerout", () => { if(!disabled) { button.scale.set(1); g.tint = 0xffffff; }});
+    button.on("pointertap", () => { if(!disabled) void this.runtime.onAction(action); });
     this.addChild(button);
   }
 
@@ -912,9 +916,14 @@ export class HudView extends Container {
     button.addChild(visual);
     button.position.set(x, y);
     button.eventMode = "static";
-    button.cursor = isPlaying ? "default" : "pointer";
+    
+    const disabled = isPlaying || (this.runtime.isReplayActive && this.runtime.isReplayActive());
+    button.cursor = disabled ? "default" : "pointer";
+    if (this.runtime.isReplayActive && this.runtime.isReplayActive()) {
+        button.alpha = 0.5;
+    }
 
-    if (!isPlaying) {
+    if (!disabled) {
       this.addAmbient((_dt, elapsed) => {
         const pulse = 0.7 + Math.sin(elapsed * 3) * 0.3;
         halo.alpha = pulse * 0.10;

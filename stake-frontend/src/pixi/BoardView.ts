@@ -47,11 +47,13 @@ export class BoardView extends Container {
   private ambientCb: ((dt: number, elapsed: number) => void) | null = null;
   private onReelStop?: (col: number, total: number) => void;
   private onAnticipation?: () => void;
+  private onTransform?: () => void;
 
-  /** Wire audio cues fired during the reel spin (reel stops, anticipation riser). */
-  setAudioHooks(hooks: { onReelStop?: (col: number, total: number) => void; onAnticipation?: () => void }): void {
+  /** Wire audio cues fired during the reel spin (reel stops, anticipation riser, symbol transforms). */
+  setAudioHooks(hooks: { onReelStop?: (col: number, total: number) => void; onAnticipation?: () => void; onTransform?: () => void }): void {
     this.onReelStop = hooks.onReelStop;
     this.onAnticipation = hooks.onAnticipation;
+    this.onTransform = hooks.onTransform;
   }
 
   constructor() {
@@ -376,6 +378,8 @@ export class BoardView extends Container {
     }
     if (transformed.length === 0) return;
 
+    this.onTransform?.();
+
     // Golden flash burst that blankets the affected cells and fades out while the
     // new symbols pop in — this is the "reveal" moment, not a glitch.
     if (!turbo) {
@@ -560,6 +564,7 @@ export class BoardView extends Container {
           this.advanceReel(reel, target - reel.scroll, cellStep, wrapSpan);
         }, linear).then(() => {
           reel.state = "stopped";
+          this.triggerColumnStopEffect(reel.col);
           this.onReelStop?.(reel.col, GRID_COLUMNS);
           
           // Trigger a red flash if this column was an anticipation column and missed the scatter
@@ -813,6 +818,50 @@ export class BoardView extends Container {
     }, linear).then(() => {
       this.anticipationOverlay.clear();
       this.anticipationOverlay.alpha = 1;
+    });
+  }
+
+  private triggerColumnStopEffect(col: number): void {
+    const cx = this.cellX(col);
+    const cw = this.cellWidth;
+    const bottomY = this.rect.height;
+
+    const flare = new Graphics();
+    // Outer golden glow capsule
+    flare.roundRect(cx - 4, bottomY - 16, cw + 8, 16, 8)
+      .fill({ color: 0xffd700, alpha: 0.85 });
+    // Inner bright white core
+    flare.roundRect(cx + 4, bottomY - 12, cw - 8, 8, 4)
+      .fill({ color: 0xffffff, alpha: 0.95 });
+
+    flare.alpha = 1;
+    this.addChild(flare);
+
+    // Upward micro-spark particles
+    const sparkContainer = new Container();
+    for (let i = 0; i < 6; i++) {
+      const sp = new Graphics();
+      const r = 2 + Math.random() * 3;
+      sp.circle(0, 0, r).fill({ color: Math.random() < 0.5 ? 0xffdf65 : 0xffffff, alpha: 0.9 });
+      sp.x = cx + 8 + Math.random() * (cw - 16);
+      sp.y = bottomY - 6;
+      sparkContainer.addChild(sp);
+      const vy = -(1.5 + Math.random() * 3.5);
+      const vx = (Math.random() - 0.5) * 1.5;
+      void tween(250 + Math.random() * 100, (p) => {
+        sp.x += vx;
+        sp.y += vy;
+        sp.alpha = (1 - p) * 0.9;
+      }, linear);
+    }
+    this.addChild(sparkContainer);
+
+    void tween(320, (p) => {
+      flare.alpha = 1 - p;
+      flare.scale.y = 1 + p * 0.5;
+    }, linear).then(() => {
+      flare.destroy();
+      sparkContainer.destroy({ children: true });
     });
   }
 }

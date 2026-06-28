@@ -77,7 +77,11 @@ export class RadioWheel {
   private eq: HTMLDivElement | null = null;
   private currentId: string;
 
-  constructor(private readonly onSelect: (id: string) => void, initialId = "heat") {
+  constructor(
+    private readonly onSelect: (id: string) => void,
+    initialId = "heat",
+    private readonly playClick?: () => void
+  ) {
     this.currentId = initialId;
   }
 
@@ -96,7 +100,12 @@ export class RadioWheel {
 
     const overlay = document.createElement("div");
     overlay.id = "radio-overlay";
-    overlay.addEventListener("pointerdown", (e) => { if (e.target === overlay) this.close(); });
+    overlay.addEventListener("pointerdown", (e) => {
+      if (e.target === overlay) {
+        this.playClick?.();
+        this.close();
+      }
+    });
 
     const wheel = document.createElement("div");
     wheel.className = "radio-wheel";
@@ -126,9 +135,9 @@ export class RadioWheel {
       btn.appendChild(icon);
       btn.appendChild(label);
       
-      btn.addEventListener("pointerenter", () => this.previewHub(st.id));
+      btn.addEventListener("pointerenter", () => { this.playClick?.(); this.previewHub(st.id); });
       btn.addEventListener("pointerleave", () => this.previewHub(this.currentId));
-      btn.addEventListener("pointerup", () => this.pick(st.id));
+      btn.addEventListener("pointerup", () => { this.playClick?.(); this.pick(st.id); });
       
       wheel.appendChild(btn);
     });

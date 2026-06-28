@@ -152,7 +152,10 @@ export class SettingsMenu {
     const close = document.createElement("button");
     close.className = "sm-close";
     close.textContent = "Close";
-    close.addEventListener("click", () => this.close());
+    close.addEventListener("click", () => {
+      this.hooks.playClick?.();
+      this.close();
+    });
     card.appendChild(close);
 
     overlay.appendChild(card);

@@ -51,6 +51,14 @@ export interface GalleryData {
   completed: number[];
   /** Cosmetic unlock ids earned (RTP-neutral). */
   unlocks: string[];
+  /**
+   * Gold WANTED-LEVEL stars armed by completing girls (1st girl → 1 star, 2nd →
+   * 2, 3rd → 3). Each is a persistent, unconditional head-start that pre-lights
+   * the meter and routes the spin to the matching certified `base_tierN` table.
+   * Reset to 0 ONLY when the player triggers the Getaway naturally (live wanted
+   * level reaches 5★ on an organic spin). Capped at 5. See docs/MATH_DESIGN.md.
+   */
+  getawayStars: number;
 }
 
 export interface PieceGain {
@@ -64,7 +72,13 @@ export interface PieceGain {
 }
 
 export function emptyGallery(): GalleryData {
-  return { version: SCHEMA_VERSION, currentGirl: 0, pieces: 0, completed: [], unlocks: [] };
+  return { version: SCHEMA_VERSION, currentGirl: 0, pieces: 0, completed: [], unlocks: [], getawayStars: 0 };
+}
+
+/** Reset the gold WANTED stars — called once when the Getaway triggers naturally. */
+export function consumeGetawayStars(data: GalleryData): GalleryData {
+  if ((data.getawayStars ?? 0) === 0) return data;
+  return { ...data, getawayStars: 0 };
 }
 
 export function isGalleryComplete(data: GalleryData): boolean {
@@ -96,7 +110,8 @@ export function collectWild(data: GalleryData): { data: GalleryData; gain: Piece
     currentGirl: data.currentGirl,
     pieces: data.pieces + 1,
     completed: [...data.completed],
-    unlocks: [...data.unlocks]
+    unlocks: [...data.unlocks],
+    getawayStars: data.getawayStars ?? 0
   };
 
   const pieceIndex = next.pieces; // 1-based
@@ -108,6 +123,9 @@ export function collectWild(data: GalleryData): { data: GalleryData; gain: Piece
     next.completed.push(girl.id);
     if (!next.unlocks.includes(girl.unlockId)) next.unlocks.push(girl.unlockId);
     unlockId = girl.unlockId;
+    // Arm one more gold WANTED star (the head-start). Persistent until a natural
+    // Getaway consumes them; capped at the 5-star meter.
+    next.getawayStars = Math.min(5, next.getawayStars + 1);
     next.currentGirl += 1;
     next.pieces = 0;
     if (next.currentGirl >= GIRLS.length) {
@@ -157,7 +175,8 @@ export function sanitize(data: Partial<GalleryData> | null | undefined): Gallery
     currentGirl: currentGirlIdx,
     pieces: clampInt(data.pieces, 0, maxPieces),
     completed,
-    unlocks
+    unlocks,
+    getawayStars: clampInt(data.getawayStars, 0, 5)
   };
 }
 

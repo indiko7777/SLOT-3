@@ -3,7 +3,7 @@ import { EventAudioBus } from "./audio";
 import type { GameEvent, RoundRecord } from "./domain";
 import { hideLoader, showLoader, updateLoader } from "./loader";
 import { applyEvent, INITIAL_SNAPSHOT, type PlaybackSnapshot } from "./playback";
-import { GIRLS, type PieceGain, collectWild as collectWildPiece, sanitize as sanitizeGallery, emptyGallery, type GalleryData } from "./meta/collection";
+import { GIRLS, type PieceGain, collectWild as collectWildPiece, consumeGetawayStars, sanitize as sanitizeGallery, emptyGallery, type GalleryData } from "./meta/collection";
 import {
   activeTier,
   addPoints,
@@ -65,6 +65,7 @@ let autoplayRemaining = 0;
 let autoplayStop = false;
 let muted = false;
 let isPlaying = false;
+let isReplayActive = false;
 let snapshot: PlaybackSnapshot = INITIAL_SNAPSHOT;
 /**
  * The WANTED LEVEL stars are the LIVE in-spin Heat (cascade depth, 0–5): the
@@ -123,6 +124,21 @@ function onWildCollected(): PieceGain | null {
   return gain; // null only when the entire gallery is already mastered
 }
 
+/** Gold WANTED stars armed by completing girls — persistent, unconditional,
+ *  burned only by a natural Getaway (live wanted level reaching 5★). */
+function galleryStars(): number {
+  return Math.max(0, Math.min(5, gallery.getawayStars ?? 0));
+}
+/** Solid-gold head-start stars in effect for the CURRENT bet: the points-based
+ *  power tier (bet-locked) PLUS the unconditional girl-completion stars. */
+function headStartStars(): number {
+  return Math.min(5, effectiveTier(power, currentBet()) + galleryStars());
+}
+/** All armed stars including the points tier that the current bet currently dims. */
+function activeStars(): number {
+  return Math.min(5, activeTier(power) + galleryStars());
+}
+
 /** Project the 1:1 gallery state onto the HUD/gallery's view. */
 function galleryProgress(): GalleryProgress {
   const { currentGirl: girlIdx, pieces } = gallery;
@@ -165,26 +181,46 @@ async function boot(): Promise<void> {
 
   let resume: RoundRecord | null = null;
   try {
-    const auth = await client.authenticate();
-    currency = auth.balance.currency;
-    balance = toDisplay(auth.balance.amount);
-    betModes = auth.config.betModes ?? {};
-    jurisdiction = auth.config.jurisdiction ?? null;
-    betLevels = (auth.config.betLevels ?? []).map(toDisplay);
-    if (betLevels.length === 0)
-      betLevels = [toDisplay(auth.config.defaultBetLevel || 1_000_000)];
-    const def = toDisplay(
-      auth.config.defaultBetLevel || auth.config.betLevels?.[0] || 0
-    );
-    betIndex = Math.max(0, indexOfClosest(betLevels, def));
-    if (auth.round?.active && auth.round.state?.length) {
-      resume = {
-        id: auth.round.roundID,
-        payoutMultiplier: auth.round.payoutMultiplier,
-        events: auth.round.state
-      };
-      activeModeKey = auth.round.mode || "base";
-      anteEnabled = activeModeKey === "ante";
+    if (session.isReplayMode) {
+      isReplayActive = true;
+      currency = session.currencyHint || "USD";
+      balance = 0; // Balance hidden in replay
+      jurisdiction = null;
+      betLevels = [session.replayAmount > 0 ? session.replayAmount : 0.01];
+      betIndex = 0;
+      
+      const replayData = await client.getReplayData("heat-chase", "1", "base", session.replayEvent);
+      if (replayData && replayData.state) {
+        resume = {
+          id: replayData.roundID || "replay",
+          payoutMultiplier: replayData.payoutMultiplier || 0,
+          events: replayData.state
+        };
+      }
+      activeModeKey = "base";
+      anteEnabled = false;
+    } else {
+      const auth = await client.authenticate();
+      currency = auth.balance.currency;
+      balance = toDisplay(auth.balance.amount);
+      betModes = auth.config.betModes ?? {};
+      jurisdiction = auth.config.jurisdiction ?? null;
+      betLevels = (auth.config.betLevels ?? []).map(toDisplay);
+      if (betLevels.length === 0)
+        betLevels = [toDisplay(auth.config.defaultBetLevel || 1_000_000)];
+      const def = toDisplay(
+        auth.config.defaultBetLevel || auth.config.betLevels?.[0] || 0
+      );
+      betIndex = Math.max(0, indexOfClosest(betLevels, def));
+      if (auth.round?.active && auth.round.state?.length) {
+        resume = {
+          id: auth.round.roundID,
+          payoutMultiplier: auth.round.payoutMultiplier,
+          events: auth.round.state
+        };
+        activeModeKey = auth.round.mode || "base";
+        anteEnabled = activeModeKey === "ante";
+      }
     }
   } catch (e) {
     hideLoader();
@@ -199,6 +235,7 @@ async function boot(): Promise<void> {
     isMuted: () => muted,
     isTurbo: () => isTurbo(),
     isPlaying: () => isPlaying,
+    isReplayActive: () => isReplayActive,
     getBetLevel: () => betLevels[betIndex] ?? 0,
     getCredit: () => balance,
     getCurrency: () => currency,
@@ -209,10 +246,15 @@ async function boot(): Promise<void> {
     getGalleryProgress: galleryProgress,
     // Head-start Power Level: unlocked tier, and the stars in effect for the
     // current bet (0 = dimmed because the bet is above this tier's average lock).
-    getActiveTier: () => activeTier(power),
-    getHeadStartStars: () => effectiveTier(power, currentBet()),
-    isHeadStartActive: () => effectiveTier(power, currentBet()) > 0,
-    onAction: handleAction,
+    getActiveTier: () => activeStars(),
+    getHeadStartStars: () => headStartStars(),
+    isHeadStartActive: () => headStartStars() > 0,
+    onAction: (action) => {
+      if (!muted && action !== "buy" && action !== "super_buy") {
+        audioBus.playUI("ui_click", false);
+      }
+      return handleAction(action);
+    },
     onSafeLand: (index, total) => {
       if (!muted) audioBus.fireSafeLand(index, total);
     },
@@ -221,6 +263,9 @@ async function boot(): Promise<void> {
     },
     onReelStop: (col, total) => audioBus.reelStop(col, total, muted),
     onAnticipation: () => audioBus.anticipation(muted),
+    onTransform: () => {
+      if (!muted) audioBus.fire("poker_machine_win", 1.15);
+    },
     playAudio: (track, volumeScale) => {
       if (!muted) {
         if (track === "win_tick_low") audioBus.playWinTick("normal");
@@ -236,25 +281,29 @@ async function boot(): Promise<void> {
   scene.renderSnapshot(snapshot);
   hideLoader();
 
-  // DEV-only on-screen feature tester (stripped from production builds): fire any
-  // win / combination / bonus animation from a button panel — no spinning needed.
+  // DEV-only test button (stripped from production builds): replays the entire
+  // WILD-collection flow — every body part flying in, each girl completing, the
+  // gold WANTED stars arming, and the crossfade to the next girl — through the
+  // REAL gallery, so it exercises exactly what a run of real spins would.
   if (import.meta.env.DEV) {
     (window as any).scene = scene;
-    (window as any).pixi = pixi;
-    const { mountDebugPanel } = await import("./debugPanel");
-    mountDebugPanel((action) => { void scene?.debugPlay(action); });
+    mountCollectionFlowTest();
   }
 
-  radioWheel = new RadioWheel((stationId) => {
-    if (stationId === "off") {
-      muted = true;
-      audioBus.selectStation("off");
-    } else {
-      muted = false;
-      audioBus.selectStation(stationId);
-    }
-    scene.renderSnapshot(snapshot); // refresh the radio button state
-  }, "heat");
+  radioWheel = new RadioWheel(
+    (stationId) => {
+      if (stationId === "off") {
+        muted = true;
+        audioBus.selectStation("off");
+      } else {
+        muted = false;
+        audioBus.selectStation(stationId);
+      }
+      scene.renderSnapshot(snapshot); // refresh the radio button state
+    },
+    "heat",
+    () => audioBus.playUI("ui_click", muted)
+  );
 
   // ☰ burger-menu popup: spin speed (Turbo / Extra Turbo) + Autoplay. All options
   // respect the RGS jurisdiction flags so a disabled feature is greyed out.
@@ -310,6 +359,7 @@ async function boot(): Promise<void> {
 }
 
 async function handleAction(action: string): Promise<void> {
+  if (isReplayActive) return; // Prevent any interaction during replay
   if (isPlaying && ["spin", "buy", "super_buy"].includes(action)) return;
 
   switch (action) {
@@ -374,6 +424,12 @@ async function handleAction(action: string): Promise<void> {
  *  collection-routed base table (base / base_tierN). */
 function spinModeForUser(): string {
   if (anteEnabled && betModes.ante) return "ante";
+  // Combine the points-based head-start (bet-locked) with the unconditional
+  // girl-completion stars, then route to the highest certified table available.
+  const tier = Math.min(3, effectiveTier(power, currentBet()) + galleryStars());
+  for (let t = tier; t >= 1; t--) {
+    if (betModes[`base_tier${t}`]) return `base_tier${t}`;
+  }
   return routeMode(power, currentBet());
 }
 
@@ -391,6 +447,7 @@ function applyTurboMode(): void {
 
 /** Start an autoplay run of `count` spins (Infinity = endless). */
 async function startAutoplay(count: number): Promise<void> {
+  if (isReplayActive) return;
   if (jurisdiction?.disabledAutoplay) return;
   if (autoplayRemaining > 0) return; // already running
   autoplayStop = false;
@@ -430,6 +487,10 @@ async function playRound(modeKey: string, free = false): Promise<void> {
   spinBet = betAmount;
   const effTier = modeKey.startsWith("base_tier") ? Number(modeKey.slice(-1)) || 0 : 0;
   spinOrganic = modeKey === "base" || modeKey === "ante" || effTier > 0;
+  // The points-based head-start the bet actually unlocked (the table tier may be
+  // HIGHER because girl-completion stars also contribute to routing — those are
+  // consumed separately, so never feed the gallery stars into this).
+  const powerEffTier = effectiveTier(power, betAmount);
 
   isPlaying = true;
   activeModeKey = modeKey;
@@ -467,21 +528,81 @@ async function playRound(modeKey: string, free = false): Promise<void> {
   }
   isPlaying = false;
 
-  // Consume the head-start when the Getaway triggered on an active-tier spin.
-  // The bonus has just settled (/wallet/end-round, inside replayRound); spending
-  // the Tier 3 head-start wipes the entire gallery (the Grand Reset).
-  if (effTier > 0 && record.events.some((e) => e.type === "bonus_trigger")) {
-    const { state, grandReset, consumedTier } = consumeHeadStart(power, effTier);
-    power = state;
-    powerStore.save(power);
-    snapshot = {
-      ...snapshot,
-      lastMessage: grandReset
-        ? "GRAND ESCAPE — gallery reset to zero!"
-        : `Tier ${consumedTier} head-start used`
-    };
+  // Consume head-starts when the Getaway triggers. The bonus has just settled
+  // (/wallet/end-round, inside replayRound).
+  if (record.events.some((e) => e.type === "bonus_trigger")) {
+    // Points-based head-start: spend only the tier the bet actually unlocked.
+    // Spending the Tier 3 head-start wipes the entire gallery (the Grand Reset).
+    if (powerEffTier > 0) {
+      const { state, grandReset, consumedTier } = consumeHeadStart(power, powerEffTier);
+      power = state;
+      powerStore.save(power);
+      snapshot = {
+        ...snapshot,
+        lastMessage: grandReset
+          ? "GRAND ESCAPE — gallery reset to zero!"
+          : `Tier ${consumedTier} head-start used`
+      };
+    }
+    // Girl-completion gold stars: a NATURAL Getaway (an organic spin whose live
+    // wanted level reached 5★) burns ALL of them. A bought bonus never does.
+    if (spinOrganic && (gallery.getawayStars ?? 0) > 0) {
+      gallery = consumeGetawayStars(gallery);
+      saveGallery(gallery);
+    }
   }
 
+  scene.renderSnapshot(snapshot);
+}
+
+/** DEV-only: a single floating button that replays the whole collection flow. */
+function mountCollectionFlowTest(): void {
+  const btn = document.createElement("button");
+  btn.textContent = "▶ TEST COLLECTION FLOW";
+  Object.assign(btn.style, {
+    position: "fixed", left: "12px", top: "12px", zIndex: "99999",
+    padding: "10px 14px", font: "700 13px Impact, system-ui, sans-serif",
+    letterSpacing: "1px", color: "#0a0a0a", background: "#9ae64e",
+    border: "2px solid #2ea847", borderRadius: "8px", cursor: "pointer",
+    boxShadow: "0 2px 10px rgba(0,0,0,0.5)"
+  } as Partial<CSSStyleDeclaration>);
+  let running = false;
+  btn.addEventListener("click", async () => {
+    if (running) return;
+    running = true;
+    btn.disabled = true;
+    btn.style.opacity = "0.5";
+    btn.textContent = "RUNNING…";
+    try {
+      await runCollectionFlowTest();
+    } finally {
+      running = false;
+      btn.disabled = false;
+      btn.style.opacity = "1";
+      btn.textContent = "▶ TEST COLLECTION FLOW";
+    }
+  });
+  document.body.appendChild(btn);
+}
+
+/** Drive every WILD for all three girls through the REAL gallery path — each part
+ *  flying in, every girl completing, the gold WANTED stars arming, and the
+ *  crossfade to the next silhouette. Resets the gallery first so it always starts
+ *  from girl 1 with an empty meter. */
+async function runCollectionFlowTest(): Promise<void> {
+  gallery = emptyGallery();
+  saveGallery(gallery);
+  snapshot = { ...snapshot, collectionCount: 0 };
+  scene.renderSnapshot(snapshot);
+  await delay(450);
+  for (;;) {
+    const { data, gain } = collectWildPiece(gallery);
+    gallery = data;
+    saveGallery(gallery);
+    if (!gain) break; // gallery mastered — nothing left to reveal
+    await scene.playCollectionStep(gain);
+    await delay(350);
+  }
   scene.renderSnapshot(snapshot);
 }
 
@@ -492,13 +613,17 @@ async function replayRound(record: RoundRecord, active: boolean): Promise<void> 
     await scene.playEvent(event, snapshot);
   }
   // Settle the round with the RGS; the final balance is whatever it returns.
-  if (active) {
+  if (active && !isReplayActive) {
     try {
       const end = await client.endRound();
       balance = toDisplay(end.balance.amount);
     } catch {
       /* keep last RGS balance; a future authenticate reconciles it */
     }
+  }
+
+  if (isReplayActive) {
+    scene.showReplayFinished();
   }
 }
 

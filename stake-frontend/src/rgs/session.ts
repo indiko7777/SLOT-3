@@ -18,6 +18,9 @@ export interface GameSession {
   /** Currency hint only; the authoritative currency comes from authenticate. */
   currencyHint: string;
   isLocal: boolean;
+  isReplayMode: boolean;
+  replayEvent: string;
+  replayAmount: number;
 }
 
 export const LOCAL_RGS_PORT = 8787;
@@ -34,9 +37,13 @@ export function parseLaunch(
   const device = q.get("device") === "mobile" ? "mobile" : "desktop";
   const currencyHint = (q.get("currency") ?? "USD").toUpperCase();
 
+  const isReplayMode = q.has("replay") || q.has("event") || q.has("eventId") || q.has("replayId") || q.has("roundId");
+  const replayEvent = q.get("event") ?? q.get("eventId") ?? q.get("replayId") ?? q.get("roundId") ?? "";
+  const replayAmount = parseFloat(q.get("amount") ?? "0");
+
   let isLocal = false;
   if (!sessionID || !rgsUrl) {
-    if (!isDev) {
+    if (!isDev && !isReplayMode) {
       throw new Error(
         "Missing sessionID / rgs_url — the game must be launched by the RGS."
       );
@@ -53,11 +60,11 @@ export function parseLaunch(
   const scheme = isLocal || rgsUrl.startsWith("localhost") ? "http" : "https";
   const rgsBase = `${scheme}://${rgsUrl.replace(/\/+$/, "")}`;
 
-  return { sessionID, rgsUrl, rgsBase, lang, device, currencyHint, isLocal };
+  return { sessionID, rgsUrl, rgsBase, lang, device, currencyHint, isLocal, isReplayMode, replayEvent, replayAmount };
 }
 
 export function readSession(): GameSession {
-  const isDev = Boolean((import.meta as ImportMeta).env?.DEV);
+  const isDev = import.meta.env.DEV;
   return parseLaunch(
     new URLSearchParams(window.location.search),
     window.location.hostname,

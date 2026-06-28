@@ -5,6 +5,7 @@ import { makeText } from "./text";
 import { tween, wait, easeOutBack, easeOutCubic, easeInOutCubic, easeOutElastic, linear, ambientTicker } from "./tween";
 import { pulseBloom, pulseChromaticAberration } from "../vfx/Shaders";
 import { getExtraTexture } from "./assets";
+import { formatWin } from "../rgs/client";
 
 export class EffectsLayer extends Container {
   public readonly particles = new Container();
@@ -958,7 +959,7 @@ export class EffectsLayer extends Container {
         const currentMult = targetMultiplier * p;
         const currentAmount = currentMult * betAmount;
 
-        amtText.text = currentAmount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + currency;
+        amtText.text = formatWin(currentAmount) + " " + currency;
         onUpdate(currentAmount);
 
         // Determine current tier
@@ -1035,7 +1036,7 @@ export class EffectsLayer extends Container {
 
     // Final confirmations
     const finalAmount = targetMultiplier * betAmount;
-    amtText.text = finalAmount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + currency;
+    amtText.text = formatWin(finalAmount) + " " + currency;
     amtText.scale.set(1);
     onUpdate(finalAmount);
 

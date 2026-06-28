@@ -68,6 +68,19 @@ export class RgsClient {
       event: String(eventIndex)
     });
   }
+
+  async getReplayData(game: string, version: string, mode: string, event: string): Promise<any> {
+    const url = `${this.session.rgsBase}/bet/replay/${game}/${version}/${mode}/${event}?lang=${this.session.lang}`;
+    let res: Response;
+    try {
+      res = await fetch(url);
+    } catch (e) {
+      throw new RgsError("ERR_NETWORK", `RGS unreachable for replay: ${String(e)}`);
+    }
+    const json = await res.json().catch(() => null);
+    if (!json) throw new RgsError("ERR_GE", `RGS replay returned no JSON`);
+    return json;
+  }
 }
 
 export class RgsError extends Error {
@@ -82,3 +95,10 @@ export class RgsError extends Error {
 
 export const toDisplay = (apiAmount: number): number =>
   apiAmount / API_AMOUNT_MULTIPLIER;
+
+export const formatBalance = (amount: number): string => amount.toFixed(2);
+export const formatWin = (amount: number): string => {
+  const parts = amount.toString().split(".");
+  if (parts.length === 1) return parts[0]!;
+  return `${parts[0]}.${parts[1]!.substring(0, 4)}`;
+};

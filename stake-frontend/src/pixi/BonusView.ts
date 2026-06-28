@@ -186,89 +186,156 @@ export class BonusView extends Container {
     this.alpha = 0;
     void tween(620, (p) => { this.alpha = p; }, easeOutCubic);
 
-    // 2. Cinematic cold-open: letterbox bars + vignette glide in.
+    // 2. Cinematic cold-open: full blackout → letterbox bars + vignette glide in.
+    const blackout = new Graphics();
+    blackout.rect(0, 0, W, H).fill(0x000000);
+    this.hudLayer.addChild(blackout);
     const lb = this.buildLetterbox();
     const vig = this.buildVignette();
     vig.alpha = 0;
     this.hudLayer.addChildAt(vig, 0);
-    void tween(620, (p) => {
+    await tween(520, (p) => {
       const e = easeOutCubic(p);
       lb.top.y = -lb.barH + lb.barH * e;
       lb.bot.y = H - lb.barH * e;
       vig.alpha = e * 0.85;
+      blackout.alpha = 1 - e * 0.6;
     }, linear);
 
-    // 3. Distant siren wash — slow red→blue sweep across the frame (not a flash).
+    // 3. Radio static + slow blue police-wash crawling across the frame.
     const wash = new Graphics();
     this.hudLayer.addChild(wash);
-    void tween(1700, (p) => {
+    // thin horizontal scan-line crawls down the frame like a camera feed
+    const scanLine = new Graphics();
+    this.hudLayer.addChild(scanLine);
+    void tween(2200, (p) => {
       wash.clear();
-      const r = Math.max(0, Math.sin(p * Math.PI * 2.2));
-      const b = Math.max(0, Math.sin(p * Math.PI * 2.2 - Math.PI));
-      wash.rect(0, 0, W, H).fill({ color: POLICE_RED, alpha: r * 0.10 * (1 - p) });
-      wash.rect(0, 0, W, H).fill({ color: POLICE_BLUE, alpha: b * 0.10 * (1 - p) });
-    }).then(() => wash.destroy());
+      // cold police blue slowly washing across from the left, not a flash
+      const sweep = easeOutCubic(Math.min(1, p * 1.6));
+      wash.rect(0, 0, W * sweep, H).fill({ color: POLICE_BLUE, alpha: 0.04 * (1 - p) });
+      wash.rect(W * (1 - sweep), 0, W * sweep, H).fill({ color: POLICE_RED, alpha: 0.03 * (1 - p) });
+      // scan-line
+      scanLine.clear();
+      const sy = (p * 1.8 % 1) * H;
+      scanLine.rect(0, sy, W, 2).fill({ color: 0xffffff, alpha: 0.03 * (1 - p) });
+    }).then(() => { wash.destroy(); scanLine.destroy(); });
 
-    // 4. The title group. A radio-dispatch kicker, then "THE GETAWAY" with a
-    //    slow camera PUSH (no arcade bounce) and a headlight sweep behind it.
-    const card = new Container();
-    card.position.set(W / 2, H * 0.42);
-    this.hudLayer.addChild(card);
+    // 4. GTA mission-start title: no popup card. Raw text between the bars.
+    //    Dispatch text types in character-by-character like radio chatter,
+    //    then the mission name materialises with filmic weight.
+    const titleGroup = new Container();
+    titleGroup.position.set(W / 2, H * 0.44);
+    this.hudLayer.addChild(titleGroup);
 
-    const theSize = Math.min(30, W / 30);
-    const bigSize = Math.min(92, W / 9.2);
+    const dispatchSize = Math.min(13, W / 62);
+    const theSize = Math.min(22, W / 38);
+    const bigSize = Math.min(86, W / 9.8);
 
-    // soft headlight that slides behind the title once
-    const beam = new Graphics();
-    beam.ellipse(0, bigSize * 0.5, bigSize * 1.4, bigSize * 0.7).fill({ color: 0xfff0cf, alpha: 0.16 });
-    beam.filters = [new BlurFilter({ strength: 26, quality: 2 })];
-    beam.x = -W * 0.5;
-    card.addChild(beam);
+    // cold, dim blue back-glow behind the title area
+    const titleGlow = new Graphics();
+    titleGlow.ellipse(0, 0, W * 0.46, bigSize * 1.6).fill({ color: 0x1a3a6e, alpha: 0.12 });
+    titleGlow.filters = [new BlurFilter({ strength: 40, quality: 2 })];
+    titleGlow.alpha = 0;
+    titleGroup.addChild(titleGlow);
 
-    const kicker = new Text({ text: "DISPATCH · ALL UNITS — SUSPECT FLEEING", style: new TextStyle({ fill: 0x9fb4d0, fontFamily: FONT, fontSize: Math.min(14, W / 60), fontWeight: "400", letterSpacing: 4 }) });
-    kicker.anchor.set(0.5, 1);
-    kicker.position.set(0, -theSize * 1.5);
-    const the = new Text({ text: "THE", style: new TextStyle({ fill: 0xffffff, fontFamily: FONT, fontSize: theSize, fontWeight: "900", letterSpacing: 12, dropShadow: { color: 0x000000, alpha: 0.7, blur: 6, distance: 0, angle: 0 } }) });
+    // Dispatch line — types in letter by letter
+    const dispatchFull = "ALL UNITS — SUSPECTS FLEEING SCENE";
+    const dispatch = new Text({
+      text: "",
+      style: new TextStyle({
+        fill: 0x6a8ab0, fontFamily: FONT, fontSize: dispatchSize,
+        fontWeight: "400", letterSpacing: 3
+      })
+    });
+    dispatch.anchor.set(0.5, 1);
+    dispatch.position.set(0, -theSize * 2.2);
+    titleGroup.addChild(dispatch);
+
+    // thin rule under the dispatch
+    const dispRule = new Graphics();
+    dispRule.rect(-W * 0.16, 0, W * 0.32, 1).fill({ color: 0x6a8ab0, alpha: 0.3 });
+    dispRule.position.set(0, -theSize * 1.9);
+    dispRule.alpha = 0;
+    titleGroup.addChild(dispRule);
+
+    // "THE" — small, spaced, above the main title
+    const the = new Text({
+      text: "THE",
+      style: new TextStyle({
+        fill: 0xc8d4e0, fontFamily: "'Pricedown', " + FONT, fontSize: theSize,
+        fontWeight: "900", letterSpacing: 18,
+        stroke: { color: 0x000000, width: 3 },
+        dropShadow: { color: 0x000000, alpha: 0.8, blur: 8, distance: 0, angle: 0 }
+      })
+    });
     the.anchor.set(0.5, 1);
-    the.position.set(0, -theSize * 0.2);
-    const big = new Text({ text: "GETAWAY", style: new TextStyle({ fill: GOLD_HI, fontFamily: FONT, fontSize: bigSize, fontWeight: "900", letterSpacing: 6, stroke: { color: GOLD_DEEP, width: 6 }, dropShadow: { color: 0x000000, alpha: 0.55, blur: 8, distance: 3, angle: Math.PI / 2 } }) });
+    the.position.set(0, -theSize * 0.3);
+    the.alpha = 0;
+    titleGroup.addChild(the);
+
+    // "GETAWAY" — the hero title, large
+    const big = new Text({
+      text: "GETAWAY",
+      style: new TextStyle({
+        fill: 0xffffff, fontFamily: "'Pricedown', " + FONT, fontSize: bigSize,
+        fontWeight: "900", letterSpacing: 4,
+        stroke: { color: 0x000000, width: 6 },
+        dropShadow: { color: 0x000000, alpha: 0.7, blur: 14, distance: 3, angle: Math.PI / 2 }
+      })
+    });
     big.anchor.set(0.5, 0);
-    big.position.set(0, -theSize * 0.05);
-    // thin gold rule drawn under the title
-    const rule = new Graphics();
-    rule.position.set(0, bigSize * 1.06);
-    card.addChild(kicker, the, big, rule);
+    big.position.set(0, -theSize * 0.1);
+    big.alpha = 0;
+    titleGroup.addChild(big);
 
-    card.alpha = 0;
-    card.scale.set(1.06);
-    await tween(640, (p) => {
-      const e = easeOutCubic(p);
-      card.alpha = Math.min(1, p * 2.2);
-      card.scale.set(1.06 - 0.06 * e);           // slow push IN, no overshoot
-      card.y = H * 0.42 - 10 * (1 - e);
-      beam.x = -W * 0.5 + W * e;                  // headlight sweeps across
-      const rw = bigSize * 4.4 * e;
-      rule.clear();
-      rule.rect(-rw / 2, 0, rw, 2).fill({ color: GOLD, alpha: 0.85 });
+    // --- Phase A: Dispatch types in (800ms) ---
+    titleGroup.alpha = 1;
+    blackout.alpha = 0.4;
+    const typeTime = 800;
+    const typeChars = dispatchFull.length;
+    await tween(typeTime, (p) => {
+      const chars = Math.floor(p * typeChars);
+      dispatch.text = dispatchFull.substring(0, chars) + (p < 0.95 ? "_" : "");
+      titleGlow.alpha = p * 0.6;
+      blackout.alpha = 0.4 - p * 0.15;
     }, linear);
-    card.scale.set(1);
-    card.alpha = 1;
+    dispatch.text = dispatchFull;
+    dispRule.alpha = 1;
+    void tween(300, (p) => { dispRule.alpha = easeOutCubic(p) * 0.6; });
 
-    await wait(900); // hold the title
+    await wait(280);
 
-    // 5. Title drifts up + fades; letterbox & vignette retract to reveal the reel.
-    await tween(560, (p) => {
+    // --- Phase B: "THE" fades in, then "GETAWAY" materialises (600ms) ---
+    await tween(400, (p) => {
+      the.alpha = easeOutCubic(p);
+    });
+
+    // GETAWAY title: slow fade + subtle upward drift = filmic gravitas
+    await tween(700, (p) => {
       const e = easeOutCubic(p);
-      card.y = H * 0.42 - 36 * e;
-      card.alpha = 1 - e;
+      big.alpha = Math.min(1, p * 1.8);
+      big.y = -theSize * 0.1 + 8 * (1 - e);  // drifts up into place
+      blackout.alpha = 0.25 - e * 0.15;
+    }, linear);
+    big.alpha = 1;
+
+    await wait(1100); // hold the title — let it breathe
+
+    // 5. Everything dissolves out; letterbox & vignette retract to reveal the reel.
+    await tween(700, (p) => {
+      const e = easeOutCubic(p);
+      titleGroup.alpha = 1 - e;
+      titleGroup.y = H * 0.44 - 20 * e;
       lb.top.y = -lb.barH * e;
       lb.bot.y = H - lb.barH * (1 - e);
       vig.alpha = (1 - e) * 0.85;
+      blackout.alpha = (1 - e) * 0.1;
     }, linear);
-    card.destroy();
+    titleGroup.destroy();
     lb.top.destroy();
     lb.bot.destroy();
     vig.destroy();
+    blackout.destroy();
     this.alpha = 1;
   }
 
@@ -564,18 +631,18 @@ export class BonusView extends Container {
 
     const lb = this.buildLetterbox();
 
-    card.scale.set(1.08);
+    card.scale.set(1.03);
     card.alpha = 0;
-    // Slow, weighty settle — a camera push, never an arcade bounce.
-    await tween(turbo ? 300 : 760, (p) => {
+    // Slow, weighty settle — a fade-in with minimal scale, not a bouncy popup.
+    await tween(turbo ? 300 : 900, (p) => {
       const e = easeOutCubic(p);
-      dim.alpha = e * (filled ? 0.74 : 0.84);
+      dim.alpha = e * (filled ? 0.78 : 0.92);
       vig.alpha = e * 0.9;
       if (rays) rays.alpha = e * 0.85;
       lb.top.y = -lb.barH + lb.barH * e;
       lb.bot.y = H - lb.barH * e;
-      card.alpha = Math.min(1, p * 2.2);
-      card.scale.set(1.08 - 0.08 * e);
+      card.alpha = Math.min(1, p * 1.8);
+      card.scale.set(1.03 - 0.03 * e);
     }, linear);
     card.scale.set(1);
     card.alpha = 1;
@@ -590,9 +657,9 @@ export class BonusView extends Container {
     const hint = card.getChildByLabel("hint") as Text | null;
     const baseRot = rays ? rays.rotation : 0;
     const idle = (_dt: number, elapsed: number): void => {
-      if (rays) rays.rotation = baseRot + elapsed * 0.12;
-      if (payout) payout.scale.set(1 + Math.sin(elapsed * 2) * 0.022);
-      if (hint) hint.alpha = 0.4 + 0.45 * Math.abs(Math.sin(elapsed * 2.2));
+      if (rays) rays.rotation = baseRot + elapsed * 0.08;
+      if (payout) payout.scale.set(1 + Math.sin(elapsed * 1.6) * 0.012);
+      if (hint) hint.alpha = 0.2 + 0.25 * Math.abs(Math.sin(elapsed * 1.8));
     };
     ambientTicker.add(idle);
 
@@ -751,55 +818,104 @@ export class BonusView extends Container {
     const H = this.rect.height;
     const c = new Container();
     c.position.set(W / 2, H * 0.46);
-    const accent = filled ? GOLD : STEEL;
     const accentDeep = filled ? GOLD_DEEP : STEEL_DEEP;
-    const pw = Math.min(W * 0.82, 700);
-    const ph = Math.min(H * 0.56, 400);
 
-    // Premium dark-glass slab — soft shadow, near-black body, top sheen, a hairline
-    // inner bevel and a thin accent frame. No thick candy outline.
-    const g = new Graphics();
-    g.roundRect(-pw / 2 - 10, -ph / 2 - 4, pw + 20, ph + 24, 26).fill({ color: 0x000000, alpha: 0.55 });
-    g.roundRect(-pw / 2, -ph / 2, pw, ph, 20).fill({ color: INK, alpha: 0.97 });
-    g.roundRect(-pw / 2, -ph / 2, pw, ph * 0.44, 20).fill({ color: 0xffffff, alpha: 0.035 });
-    g.roundRect(-pw / 2 + 4, -ph / 2 + 4, pw - 8, ph - 8, 16).stroke({ color: 0xffffff, width: 1, alpha: 0.08 });
-    g.roundRect(-pw / 2, -ph / 2, pw, ph, 20).stroke({ color: accent, width: 2, alpha: 0.9 });
-    // small header tab rule
-    g.roundRect(-pw * 0.14, -ph / 2 + 14, pw * 0.28, 3, 2).fill({ color: accent, alpha: 0.85 });
-    c.addChild(g);
+    // --- NO popup card. Full-bleed cinematic text layout. ---
 
+    // Soft title glow: warm gold (escape) or cold red (bust) — reads as ambient
+    // light from off-screen, not a UI element.
+    const titleGlow = new Graphics();
+    if (filled) {
+      titleGlow.ellipse(0, -H * 0.06, W * 0.4, H * 0.18).fill({ color: 0x6a4410, alpha: 0.18 });
+    } else {
+      titleGlow.ellipse(0, -H * 0.06, W * 0.4, H * 0.18).fill({ color: 0x5a0a0a, alpha: 0.22 });
+    }
+    titleGlow.filters = [new BlurFilter({ strength: 36, quality: 2 })];
+    c.addChild(titleGlow);
+
+    // TITLE: massive, cinematic — GTA WASTED / BUSTED style
+    const titleSize = filled ? Math.min(68, W / 8) : Math.min(90, W / 6.5);
     const title = new Text({
       text: filled ? "GRAND ESCAPE" : "BUSTED",
-      style: new TextStyle({ fill: filled ? GOLD_HI : STEEL, fontFamily: FONT, fontSize: Math.min(70, pw / 8.5), fontWeight: "900", letterSpacing: filled ? 3 : 9, stroke: { color: accentDeep, width: 5 }, dropShadow: { color: filled ? 0x000000 : 0x3a0a0a, alpha: 0.6, blur: 12, distance: 2, angle: Math.PI / 2 } })
+      style: new TextStyle({
+        fill: filled ? GOLD_HI : 0xeaeaea,
+        fontFamily: "'Pricedown', " + FONT,
+        fontSize: titleSize,
+        fontWeight: "900",
+        letterSpacing: filled ? 4 : 12,
+        stroke: { color: filled ? accentDeep : 0x3a0a0a, width: filled ? 4 : 6 },
+        dropShadow: {
+          color: filled ? 0x000000 : 0x6b0000,
+          alpha: filled ? 0.7 : 0.85,
+          blur: filled ? 16 : 28,
+          distance: filled ? 3 : 0,
+          angle: Math.PI / 2
+        }
+      })
     });
     title.anchor.set(0.5);
-    title.position.set(0, -ph * 0.28);
+    title.position.set(0, -H * 0.12);
     c.addChild(title);
 
-    const sub = new Text({ text: filled ? "CLEAN GETAWAY · TOTAL HAUL" : "TAKEN DOWN · FINAL TAKE", style: new TextStyle({ fill: 0x9fb4d0, fontFamily: FONT, fontSize: Math.min(18, pw / 30), letterSpacing: 4 }) });
+    // Subtitle: understated, spaced caps — like a mission debrief line
+    const subText = filled ? "CLEAN GETAWAY  ·  TOTAL HAUL" : "TAKEN DOWN  ·  FINAL TAKE";
+    const sub = new Text({
+      text: subText,
+      style: new TextStyle({
+        fill: filled ? 0xa89060 : 0x7a8a9e,
+        fontFamily: FONT,
+        fontSize: Math.min(15, W / 36),
+        letterSpacing: 5
+      })
+    });
     sub.anchor.set(0.5);
-    sub.position.set(0, -ph * 0.05);
+    sub.position.set(0, -H * 0.02);
     c.addChild(sub);
 
-    // hairline divider between the label and the haul
+    // Thin horizontal rule — cinematic divider, not a UI element
     const rule = new Graphics();
-    rule.rect(-pw * 0.28, 0, pw * 0.56, 1).fill({ color: accent, alpha: 0.28 });
-    rule.position.set(0, ph * 0.02);
+    const ruleColor = filled ? GOLD : 0x5a6a7e;
+    rule.rect(-W * 0.18, 0, W * 0.36, 1).fill({ color: ruleColor, alpha: 0.35 });
+    rule.position.set(0, H * 0.01);
     c.addChild(rule);
 
+    // Payout: clean, large, central — the hero number
     const payout = new Text({
       text: "0x",
-      style: new TextStyle({ fill: filled ? GOLD_HI : 0xd8c08a, fontFamily: FONT, fontSize: Math.min(104, pw / 5.4), fontWeight: "900", letterSpacing: 1, stroke: { color: accentDeep, width: 7 }, dropShadow: { color: 0x000000, alpha: 0.6, blur: 10, distance: 2, angle: Math.PI / 2 } })
+      style: new TextStyle({
+        fill: filled ? GOLD_HI : 0xd0c89a,
+        fontFamily: "'Pricedown', " + FONT,
+        fontSize: Math.min(110, W / 5),
+        fontWeight: "900",
+        letterSpacing: 2,
+        stroke: { color: accentDeep, width: 5 },
+        dropShadow: {
+          color: 0x000000,
+          alpha: 0.65,
+          blur: 12,
+          distance: 2,
+          angle: Math.PI / 2
+        }
+      })
     });
     payout.anchor.set(0.5);
-    payout.position.set(0, ph * 0.22);
+    payout.position.set(0, H * 0.1);
     payout.label = "payout";
     c.addChild(payout);
 
-    const hint = new Text({ text: "TAP TO CONTINUE", style: new TextStyle({ fill: 0xffffff, fontFamily: FONT, fontSize: Math.min(17, pw / 32), letterSpacing: 3 }) });
+    // Tap hint — barely visible, like a subtitle watermark
+    const hint = new Text({
+      text: "TAP TO CONTINUE",
+      style: new TextStyle({
+        fill: 0x8a8a8a,
+        fontFamily: FONT,
+        fontSize: Math.min(13, W / 40),
+        letterSpacing: 4
+      })
+    });
     hint.anchor.set(0.5);
-    hint.position.set(0, ph * 0.43);
-    hint.alpha = 0.55;
+    hint.position.set(0, H * 0.22);
+    hint.alpha = 0.35;
     hint.label = "hint";
     c.addChild(hint);
     return c;
@@ -871,27 +987,6 @@ export class BonusView extends Container {
 
   private buildDividers(): void {
     this.dividerLayer.removeChildren();
-    const o = this.opening();
-    const w = o.width / GRID_COLUMNS;
-    const g = new Graphics();
-    
-    // Draw 4 vertical column delimiters for a premium slot grid look.
-    // They extend vertically across the full reel window.
-    for (let c = 1; c < GRID_COLUMNS; c++) {
-      const x = o.x + c * w;
-      
-      // Main dark steel core line
-      g.moveTo(x, o.y)
-       .lineTo(x, o.y + o.height)
-       .stroke({ color: 0x1d212b, width: 2, alpha: 0.85 });
-      
-      // Soft light-catching highlight (left edge) to give a fine 3D bevel look
-      g.moveTo(x - 1, o.y)
-       .lineTo(x - 1, o.y + o.height)
-       .stroke({ color: 0xffffff, width: 1, alpha: 0.12 });
-    }
-    
-    this.dividerLayer.addChild(g);
   }
 
   /** Procedural armored-truck frame: steel border with a transparent door window. */
@@ -1383,28 +1478,34 @@ export class BonusView extends Container {
   private async bustedSequence(turbo: boolean): Promise<void> {
     const W = this.rect.width;
     const H = this.rect.height;
-    // a hard camera jolt as the cuffs go on
-    void pulseChromaticAberration(this, { intensity: turbo ? 6 : 13, duration: turbo ? 300 : 700 });
+    // Hard chromatic jolt — the world splits for a moment
+    void pulseChromaticAberration(this, { intensity: turbo ? 8 : 18, duration: turbo ? 300 : 800 });
+
+    // Brief white snap at impact (like a taser/flashbang hit)
+    const snap = new Graphics();
+    snap.rect(0, 0, W, H).fill({ color: 0xffffff, alpha: 0.6 });
+    this.fxLayer.addChild(snap);
+    void tween(turbo ? 120 : 280, (p) => { snap.alpha = (1 - p) * 0.6; }).then(() => snap.destroy());
 
     const lights = new Graphics();
     this.fxLayer.addChild(lights);
-    lights.filters = [new BlurFilter({ strength: 44, quality: 2 })];
+    lights.filters = [new BlurFilter({ strength: 50, quality: 2 })];
 
-    await tween(turbo ? 320 : 1600, (p) => {
+    await tween(turbo ? 320 : 1800, (p) => {
       lights.clear();
-      // red (left) + blue (right) strobes slam in from the sides, then fade back.
-      const conv = easeOutCubic(Math.min(1, p * 2.4));
-      const redX = -W * 0.15 + W * 0.32 * conv;     // slides in from off the left edge
-      const blueX = W * 1.15 - W * 0.32 * conv;     // slides in from off the right edge
-      const strobe = Math.abs(Math.sin(p * Math.PI * (turbo ? 7 : 11)));
-      const fade = p > 0.62 ? 1 - (p - 0.62) / 0.38 : 1;
-      lights.ellipse(redX, H * 0.52, W * 0.38, H * 0.64)
-        .fill({ color: POLICE_RED, alpha: strobe * 0.46 * fade });
-      lights.ellipse(blueX, H * 0.52, W * 0.38, H * 0.64)
-        .fill({ color: POLICE_BLUE, alpha: (1 - strobe) * 0.46 * fade });
-      // deep red vignette heartbeat in the back half — the grim settle
-      const beat = p > 0.5 ? Math.abs(Math.sin((p - 0.5) * Math.PI * 3)) * 0.14 : 0;
-      lights.rect(0, 0, W, H).fill({ color: 0x4a0808, alpha: beat });
+      // red (left) + blue (right) strobes slam in hard and converge
+      const conv = easeOutCubic(Math.min(1, p * 2.8));
+      const redX = -W * 0.2 + W * 0.38 * conv;
+      const blueX = W * 1.2 - W * 0.38 * conv;
+      const strobe = Math.abs(Math.sin(p * Math.PI * (turbo ? 8 : 14)));
+      const fade = p > 0.55 ? 1 - (p - 0.55) / 0.45 : 1;
+      lights.ellipse(redX, H * 0.52, W * 0.42, H * 0.68)
+        .fill({ color: POLICE_RED, alpha: strobe * 0.58 * fade });
+      lights.ellipse(blueX, H * 0.52, W * 0.42, H * 0.68)
+        .fill({ color: POLICE_BLUE, alpha: (1 - strobe) * 0.58 * fade });
+      // grim red heartbeat that lingers — you're caught
+      const beat = p > 0.4 ? Math.abs(Math.sin((p - 0.4) * Math.PI * 3.5)) * 0.22 : 0;
+      lights.rect(0, 0, W, H).fill({ color: 0x3a0505, alpha: beat });
     }, linear);
     lights.destroy();
   }

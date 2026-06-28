@@ -19,6 +19,7 @@ export interface SceneRuntime {
   isMuted(): boolean;
   isTurbo(): boolean;
   isPlaying(): boolean;
+  isReplayActive?(): boolean;
   getBetLevel(): number;
   getCredit(): number;
   getCurrency(): string;
@@ -49,6 +50,8 @@ export interface SceneRuntime {
   onReelStop?: (col: number, total: number) => void;
   /** Fired once when a 2+-scatter anticipation spin begins — drives the tension riser. */
   onAnticipation?: () => void;
+  /** Fired when symbols transform to cash/money on the board. */
+  onTransform?: () => void;
   playAudio?(track: string, volumeScale?: number): void;
   previewRecord: RoundRecord;
 }

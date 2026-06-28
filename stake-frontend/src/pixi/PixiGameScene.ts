@@ -1,5 +1,5 @@
-import { Application, Container, Sprite, Graphics, Text, TextStyle } from "pixi.js";
-import { GRID_COLUMNS, GRID_ROWS, type Board, type BonusCell, type GameEvent, type Position, type SymbolId } from "../domain";
+import { Application, Container, Sprite, Graphics, Text, TextStyle, Texture } from "pixi.js";
+import { GRID_COLUMNS, GRID_ROWS, type Board, type GameEvent, type Position, type SymbolId } from "../domain";
 import type { PlaybackSnapshot } from "../playback";
 import type { PieceGain } from "../meta/collection";
 import { rewardFor } from "../meta/rewards";
@@ -16,6 +16,7 @@ import type { LayoutMetrics, SceneRuntime } from "./types";
 import { OutlineFilter } from "pixi-filters";
 import { CardPeekView } from "./CardPeekView";
 import { GalleryView } from "./GalleryView";
+import { formatWin as formatWinClient } from "../rgs/client";
 
 export class PixiGameScene {
   private readonly root = new Container();
@@ -37,22 +38,15 @@ export class PixiGameScene {
   private bonusActive = false;
   /** WILDs already counted toward the collection this round (dedup across tumbles). */
   private readonly collectedWilds = new Set<SymbolView>();
-  /** DEV-only: drives the debug panel's "Trigger Next Piece" preview animation. */
-  private debugPieceCounter = 0;
-
-  private devGalleryProgress: any = null;
+  private replayIndicator: Container | null = null;
 
   constructor(private readonly app: Application, private readonly runtime: SceneRuntime) {
     this.layout = computeLayout(app.screen.width, app.screen.height);
-    const runtimeProxy = {
-      ...runtime,
-      getGalleryProgress: () => this.devGalleryProgress || runtime.getGalleryProgress()
-    };
 
     // Disable hit-testing on the particle layer to avoid hit-testing overhead
     this.particleLayer.eventMode = "none";
 
-    this.hud = new HudView(runtimeProxy, {
+    this.hud = new HudView(runtime, {
       bg: this.bgLayer,
       underParticles: this.underParticlesLayer
     });
@@ -61,11 +55,12 @@ export class PixiGameScene {
     this.board.setAudioHooks({
       onReelStop: (col, total) => runtime.onReelStop?.(col, total),
       onAnticipation: () => runtime.onAnticipation?.(),
+      onTransform: () => runtime.onTransform?.(),
     });
-    this.cardPeek = new CardPeekView(runtimeProxy, () => {
+    this.cardPeek = new CardPeekView(runtime, () => {
       this.gallery.toggle(this.layout.width, this.layout.height);
     });
-    this.gallery = new GalleryView(runtimeProxy);
+    this.gallery = new GalleryView(runtime);
     
     // Layer order: bgLayer, board, cardPeek, bonus, underParticlesLayer, particleLayer, hud, effects, paytable, gallery.
     this.root.addChild(
@@ -175,370 +170,34 @@ export class PixiGameScene {
     } else {
       this.bonus.hide();
     }
+    
+    if (this.runtime.isReplayActive?.()) {
+      if (!this.replayIndicator) {
+        this.replayIndicator = new Container();
+        const bg = new Graphics();
+        bg.roundRect(0, 0, 140, 36, 6).fill({ color: 0x000000, alpha: 0.7 }).stroke({ color: 0xffffff, width: 2, alpha: 0.5 });
+        const txt = new Text({
+          text: "REPLAY MODE",
+          style: new TextStyle({ fill: 0xffffff, fontFamily: "Impact, sans-serif", fontSize: 18, letterSpacing: 1 })
+        });
+        txt.anchor.set(0.5);
+        txt.position.set(70, 18);
+        this.replayIndicator.addChild(bg, txt);
+        this.root.addChild(this.replayIndicator);
+      }
+      this.replayIndicator.position.set(this.layout.width - 150, 10);
+      this.root.setChildIndex(this.replayIndicator, this.root.children.length - 1);
+    }
   }
 
   togglePaytable(): void {
     this.paytable.toggle(this.layout.width, this.layout.height);
   }
 
-  /* ─────────────────────────────────────────────────────────────────
-   *  DEV FEATURE TESTER (gated to import.meta.env.DEV in main.ts).
-   *  Fires any single animation on demand so every win / combination /
-   *  bonus state can be previewed without spinning. See DebugPanel.
-   * ───────────────────────────────────────────────────────────────── */
-
-  private allPositions(): Position[] {
-    const out: Position[] = [];
-    for (let c = 0; c < GRID_COLUMNS; c++) for (let r = 0; r < GRID_ROWS; r++) out.push([c, r]);
-    return out;
-  }
-
-  private uniformBoard(id: SymbolId): Board {
-    const b: Board = [];
-    for (let c = 0; c < GRID_COLUMNS; c++) {
-      const col: SymbolId[] = [];
-      for (let r = 0; r < GRID_ROWS; r++) col.push(id);
-      b.push(col);
-    }
-    return b;
-  }
-
-  private emptyGrid(): BonusCell[][] {
-    return Array.from({ length: GRID_COLUMNS }, () =>
-      Array.from({ length: GRID_ROWS }, () => ({ symbol: "EMPTY" }) as BonusCell)
-    );
-  }
-
-  private async ensureBonusVisible(): Promise<void> {
-    if (!this.bonus.visible) { this.bonusActive = true; this.hud.visible = false; await this.bonus.intro(true); }
-  }
-
-  /** Restore a clean idle base board (used by the panel's Reset). */
-  private debugReset(): void {
-    this.debugPieceCounter = 0;
-    this.devGalleryProgress = null;
-    this.bonus.hide();
-    this.bonusActive = false;
-    // Always restore HUD on reset
-    this.hud.visible = true;
-    if (this.currentSnapshot) { this.hasBoard = false; this.renderSnapshot(this.currentSnapshot); }
-  }
-
-  /** Light "NICE WIN" flourish (5x–20x band): coin burst + small banner, no takeover. */
-  async debugNiceWin(): Promise<void> {
-    const mult = 8;
-    const bet = 1.0;
-    const currency = this.runtime.getCurrency();
-    const winAmount = mult * bet;
-    const amtStr = winAmount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + currency;
-    const cx = this.layout.board.x + this.layout.board.width / 2;
-    const cy = this.layout.board.y + this.layout.board.height / 2;
-    void this.board.highlight(this.allPositions(), false);
-    this.hud.setWinAmountDirect(winAmount);
-    void this.effects.goldCoinBurst(cx, cy, this.layout.board, false);
-    await this.effects.banner("NICE WIN", amtStr, this.layout.board, false, "low");
-  }
-
-  /** Big-win cinematic for a tier (banner + bloom + chromatic glitch). */
-  async debugBigWin(intensity: "mid" | "high" | "grand"): Promise<void> {
-    const mult = intensity === "grand" ? 5000 : intensity === "high" ? 250 : 25;
-    const bet = 1.0;
-    const currency = this.runtime.getCurrency();
-    void this.board.highlight(this.allPositions(), false);
-
-    // Reset HUD win display to 0 for debugging count up
-    this.hud.setWinAmountDirect(0);
-    await this.effects.cinematicWin(
-      mult,
-      bet,
-      this.layout.board,
-      false,
-      currency,
-      (amt) => this.hud.setWinAmountDirect(amt)
-    );
-  }
-
-  /** Single dispatcher for the dev feature tester. */
-  async debugPlay(action: string): Promise<void> {
-    const turbo = false;
-    const board = this.layout.board;
-    const pos = this.allPositions();
-    const [kind, arg] = action.split(":") as [string, string | undefined];
-
-    switch (kind) {
-      case "reset":
-        this.debugReset();
-        return;
-
-      case "win": {
-        // Show one symbol's win celebration across the whole board.
-        this.bonus.hide();
-        this.board.setInstant(this.uniformBoard(arg as SymbolId));
-        this.hasBoard = true;
-        await this.board.highlight(pos, turbo);
-        return;
-      }
-
-      case "tier":
-        if (arg === "nice") {
-          await this.debugNiceWin();
-        } else {
-          await this.debugBigWin((arg ?? "mid") as "mid" | "high" | "grand");
-        }
-        return;
-
-      case "fx": {
-        const centers = [pos[0], pos[2], pos[6], pos[8], pos[12]].map((p) => this.board.centerOf(p));
-        if (arg === "clusterLink") await this.effects.clusterLink(centers, 0xffd95c, turbo);
-        else if (arg === "cashSpray") await this.effects.cashSpray(board, pos.slice(0, 6), turbo);
-        else if (arg === "coinBurst") await this.effects.goldCoinBurst(board.x + board.width / 2, board.y + board.height / 2, board, turbo);
-        else if (arg === "siren") await this.effects.sirenSweep(this.layout.boardFrame, turbo);
-        else if (arg === "shake") await this.effects.screenShake(this.root, turbo);
-        else if (arg === "keyBeam") await this.effects.keyBeam(this.board.centerOf(pos[6]), [pos[0], pos[4], pos[19]].map((p) => this.board.centerOf(p)), turbo);
-        else if (arg === "scatterTease") { this.board.setInstant(this.uniformBoard("PHONE_SCATTER")); this.hasBoard = true; await this.board.scatterTease(pos.slice(0, 3), turbo); }
-        return;
-      }
-
-      case "cascade": {
-        // Show the tumble clearly: a VARIED board (so the clear + refill is
-        // visible) with a distinct CASH cluster. It links up, lights, clears,
-        // then survivors drop and fresh symbols cascade in from the top.
-        this.bonus.hide();
-        const pool: SymbolId[] = ["BRASS", "KNIFE", "PISTOL", "AMMO", "DUFFEL", "DIAMOND", "BIKE"];
-        const b: Board = [];
-        let k = 0;
-        for (let c = 0; c < GRID_COLUMNS; c++) {
-          const col: SymbolId[] = [];
-          for (let r = 0; r < GRID_ROWS; r++) col.push(pool[k++ % pool.length]!);
-          b.push(col);
-        }
-        const win: Position[] = [[0, 3], [1, 3], [2, 3], [0, 2], [1, 2], [2, 2], [1, 1]];
-        for (const [c, r] of win) b[c]![r] = "CASH";
-        this.board.setInstant(b);
-        this.hasBoard = true;
-        await wait(350);                                  // see the board first
-        void this.playCombinationAnimation("CASH", win, turbo);
-        await this.board.highlight(win, turbo);           // light the combination
-        await wait(300);
-        await this.board.remove(win, turbo);              // clear + gravity refill
-        return;
-      }
-
-      case "cascade_flow": {
-        // Full 3-cascade chain exactly as a real spin plays it, including the
-        // Heat-3 "Bust the Stash" transform. Layout:
-        //   Cascade 1 — CASH cluster rows 2-3 of cols 0-2
-        //   Cascade 2 — CASH cluster rows 0-1 of cols 0-2 (fell in from above)
-        //   Cascade 3 — same cluster forms again → Heat 3 → transform cols 3-4 rows 0-1
-        this.bonus.hide();
-
-        // ── boards ──────────────────────────────────────────────────────────────
-        const b0: Board = [
-          ["BRASS", "KNIFE", "CASH", "CASH"],
-          ["AMMO",  "DUFFEL","CASH", "CASH"],
-          ["PISTOL","BRASS", "CASH", "CASH"],
-          ["KNIFE", "AMMO",  "DUFFEL","BRASS"],
-          ["DUFFEL","PISTOL","BRASS", "KNIFE"],
-        ];
-        const win1: Position[] = [[0,2],[0,3],[1,2],[1,3],[2,2],[2,3]];
-
-        // after clearing win1: survivors fall to rows 2-3; CASH drops into rows 0-1
-        const b1: Board = [
-          ["CASH","CASH","BRASS","KNIFE"],
-          ["CASH","CASH","AMMO", "DUFFEL"],
-          ["CASH","CASH","PISTOL","BRASS"],
-          ["KNIFE","AMMO","DUFFEL","BRASS"],
-          ["DUFFEL","PISTOL","BRASS","KNIFE"],
-        ];
-        const win2: Position[] = [[0,0],[0,1],[1,0],[1,1],[2,0],[2,1]];
-
-        // after clearing win2: survivors stay at rows 2-3; more CASH at rows 0-1
-        const b2: Board = [
-          ["CASH","CASH","BRASS","KNIFE"],
-          ["CASH","CASH","AMMO", "DUFFEL"],
-          ["CASH","CASH","PISTOL","BRASS"],
-          ["KNIFE","AMMO","DUFFEL","BRASS"],
-          ["DUFFEL","PISTOL","BRASS","KNIFE"],
-        ];
-        const win3: Position[] = [[0,0],[0,1],[1,0],[1,1],[2,0],[2,1]];
-
-        // heat_transform board: cols 3-4 rows 0-1 flip to CASH (winning cluster still present)
-        const b2t: Board = [
-          ["CASH","CASH","BRASS","KNIFE"],
-          ["CASH","CASH","AMMO", "DUFFEL"],
-          ["CASH","CASH","PISTOL","BRASS"],
-          ["CASH","CASH","DUFFEL","BRASS"],   // ← transformed
-          ["CASH","CASH","BRASS","KNIFE"],    // ← transformed
-        ];
-        const transformPos: Position[] = [[3,0],[3,1],[4,0],[4,1]];
-
-        // after clearing win3 (cols 0-2 rows 0-1): survivors fall; cols 3-4 keep CASH
-        const b3: Board = [
-          ["AMMO","KNIFE","BRASS","KNIFE"],
-          ["BRASS","DUFFEL","AMMO","DUFFEL"],
-          ["DUFFEL","AMMO","PISTOL","BRASS"],
-          ["CASH","CASH","DUFFEL","BRASS"],   // transformed CASH survives!
-          ["CASH","CASH","BRASS","KNIFE"],
-        ];
-
-        // ── play ────────────────────────────────────────────────────────────────
-        this.board.setInstant(b0);
-        this.hasBoard = true;
-        await wait(turbo ? 120 : 500);
-
-        // Cascade 1
-        void this.playCombinationAnimation("CASH", win1, turbo);
-        await this.board.highlight(win1, turbo);
-        await this.board.clearWins(win1, turbo);
-        await this.board.tumbleTo(b1, turbo);
-        await wait(turbo ? 80 : 300);
-
-        // Cascade 2
-        void this.playCombinationAnimation("CASH", win2, turbo);
-        await this.board.highlight(win2, turbo);
-        await this.board.clearWins(win2, turbo);
-        await this.board.tumbleTo(b2, turbo);
-        await wait(turbo ? 80 : 300);
-
-        // Cascade 3 — Heat 3 fires: Bust the Stash
-        void this.playCombinationAnimation("CASH", win3, turbo);
-        await this.board.highlight(win3, turbo);
-        // Banner announces Bust the Stash before the board changes
-        await this.effects.banner("Bust the Stash", "", this.layout.board, turbo);
-        // heat_transform: non-winning symbols morph to CASH
-        await this.board.transform(b2t, transformPos, turbo);
-        // tumble_remove + tumble_drop
-        await this.board.clearWins(win3, turbo);
-        await this.board.tumbleTo(b3, turbo);
-
-        return;
-      }
-
-      case "heat": {
-        if (arg === "transform") {
-          const b = this.uniformBoard("BRASS");
-          const targets = [pos[0], pos[1], pos[5], pos[6]];
-          for (const [c, r] of targets) b[c]![r] = "CASH";
-          this.board.setInstant(this.uniformBoard("BRASS")); this.hasBoard = true;
-          await this.board.transform(b, targets, turbo);
-        } else if (arg === "megawild") {
-          const b = this.uniformBoard("CASH");
-          const occ: Position[] = [[1, 1], [2, 1], [1, 2], [2, 2]];
-          for (const [c, r] of occ) b[c]![r] = "CAR_WILD";
-          this.board.setInstant(this.uniformBoard("CASH")); this.hasBoard = true;
-          await this.board.megaWild(b, occ, turbo);
-        }
-        return;
-      }
-
-      case "bonus": {
-        if (arg === "intro") { this.bonusActive = true; await this.bonus.intro(turbo); return; }
-        if (arg === "hide") { await this.bonus.fadeOutAndHide(turbo); this.bonusActive = false; return; }
-        await this.ensureBonusVisible();
-        if (arg === "hit") {
-          const grid = this.emptyGrid();
-          grid[0]![3] = { symbol: "SAFE", value: 2 };
-          grid[4]![0] = { symbol: "SAFE", value: 5 };
-          const landed: Position[] = [[1, 1], [2, 2], [3, 1]];
-          grid[1]![1] = { symbol: "SAFE", value: 3 };
-          grid[2]![2] = { symbol: "SAFE", value: 25 };
-          grid[3]![1] = { symbol: "SAFE", value: 1 };
-          await this.bonus.playSpin(grid, landed, 4, 0, turbo, this.runtime.onSafeLand);
-        } else if (arg === "dead") {
-          const grid = this.emptyGrid();
-          grid[0]![3] = { symbol: "SAFE", value: 2 };
-          grid[4]![0] = { symbol: "SAFE", value: 5 };
-          this.runtime.onBonusHeat?.(2);
-          await this.bonus.playSpin(grid, [], 2, 2, turbo);
-        } else if (arg === "crack") {
-          // Land a dynamite with gold neighbours, then detonate it.
-          const grid = this.emptyGrid();
-          grid[1]![1] = { symbol: "SAFE", value: 5 };
-          grid[3]![1] = { symbol: "SAFE", value: 10 };
-          grid[2]![0] = { symbol: "SAFE", value: 3 };
-          grid[2]![2] = { symbol: "SAFE", value: 8 };
-          grid[2]![1] = { symbol: "MASTER_KEY" };
-          await this.bonus.playSpin(grid, [[2, 1]], 4, 0, turbo);
-          await this.bonus.crack([2, 1], [
-            { position: [1, 1], newValue: 10 },
-            { position: [3, 1], newValue: 20 },
-            { position: [2, 0], newValue: 6 },
-            { position: [2, 2], newValue: 16 },
-          ], turbo);
-        } else if (arg === "grand") {
-          await this.bonus.finish(true, 5000, turbo);
-        } else if (arg === "bust") {
-          await this.bonus.finish(false, 42.5, turbo);
-        }
-        return;
-      }
-
-      case "collection": {
-        if (arg === "next") {
-          // DEV preview only — animates the next piece without touching the real
-          // persistent gallery (that is driven by shards in main.ts).
-          this.debugPieceCounter = (this.debugPieceCounter % 8) + 1;
-          const completedGirl = this.debugPieceCounter === 8;
-          const gain: PieceGain = {
-            girlId: 0,
-            pieceIndex: this.debugPieceCounter,
-            totalPieces: 8,
-            artPrefix: "char",
-            completedGirl,
-            galleryComplete: false,
-            unlockId: completedGirl ? "skin_neon" : null
-          };
-          this.devGalleryProgress = {
-            girlId: 0,
-            girlName: "Sapphire",
-            artPrefix: "char",
-            pieces: this.debugPieceCounter,
-            totalPieces: 8,
-            completedGirls: 0,
-            totalGirls: 3,
-            mastered: false
-          };
-          
-          if (completedGirl) this.debugPieceCounter = 0;
-          await this.runCollectionAnimation([2, 2], gain, turbo);
-        } else if (arg === "flow") {
-          const { GIRLS } = await import("../meta/collection");
-          for (let girlId = 0; girlId < 3; girlId++) {
-            const girl = GIRLS[girlId];
-            const maxPieces = girl.pieces;
-            for (let piece = 1; piece <= maxPieces; piece++) {
-              const completedGirl = piece === maxPieces;
-              const galleryComplete = girlId === 2 && completedGirl;
-              const gain: PieceGain = {
-                girlId,
-                pieceIndex: piece,
-                totalPieces: maxPieces,
-                artPrefix: girl.artPrefix,
-                completedGirl,
-                galleryComplete,
-                unlockId: completedGirl ? girl.unlockId : null
-              };
-              this.devGalleryProgress = {
-                girlId,
-                girlName: girl.name,
-                artPrefix: girl.artPrefix,
-                pieces: piece,
-                totalPieces: maxPieces,
-                completedGirls: girlId,
-                totalGirls: 3,
-                mastered: galleryComplete
-              };
-              
-              await this.runCollectionAnimation([2, 2], gain, turbo);
-              await wait(turbo ? 150 : 400);
-            }
-          }
-          // Do not reset devGalleryProgress so the user can see the final state
-          if (this.currentSnapshot) this.hud.draw(this.layout, this.currentSnapshot);
-        }
-        return;
-      }
-    }
+  /** Play one collection reveal for an already-applied gain — used by the DEV
+   *  "Test Collection Flow" button to replay the full flow via the real gallery. */
+  async playCollectionStep(gain: PieceGain): Promise<void> {
+    await this.runCollectionAnimation([2, 2], gain, this.runtime.isTurbo());
   }
 
   playCombinationAnimation(symbolId: SymbolId, positions: Position[], turbo: boolean): Promise<void> {
@@ -621,6 +280,9 @@ export class PixiGameScene {
       case "heat_transform":
         // Banner first — player reads "Bust the Stash" before the board changes.
         await this.effects.banner("Bust the Stash", "", this.layout.board, turbo);
+        if (this.runtime.playAudio) {
+          this.runtime.playAudio("poker_machine_win");
+        }
         await this.board.transform(event.board, event.positions, turbo);
         return;
       case "mega_wild_place":
@@ -706,7 +368,7 @@ export class PixiGameScene {
           // NICE WIN — light, non-blocking celebration with a gold coin burst.
           const currency = this.runtime.getCurrency();
           const winAmount = event.payoutMultiplier * snapshot.betAmount;
-          const amtStr = winAmount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + currency;
+          const amtStr = formatWinClient(winAmount) + " " + currency;
           const cx = this.layout.board.x + this.layout.board.width / 2;
           const cy = this.layout.board.y + this.layout.board.height / 2;
           this.hud.setWinAmountDirect(winAmount);
@@ -754,6 +416,10 @@ export class PixiGameScene {
    * Electric green pulse fired on every WILD cell that just landed.
    * Runs concurrently with the collection animation so it never adds wait time.
    */
+  /**
+   * Electric green pulse fired on every WILD cell that just landed.
+   * Runs concurrently with the collection animation so it never adds wait time.
+   */
   private async flashWildLanding(board: Board, turbo: boolean): Promise<void> {
     if (turbo) return;
     const wildPositions: Position[] = [];
@@ -763,6 +429,10 @@ export class PixiGameScene {
       }
     }
     if (wildPositions.length === 0) return;
+
+    if (this.runtime.playAudio) {
+      this.runtime.playAudio("wild_sound");
+    }
 
     // Use the board's winCelebrate highlight so the cell gets the green glow
     // border + shimmer streak — the same treatment any winning symbol gets.
@@ -799,183 +469,92 @@ export class PixiGameScene {
     for (const cleanup of burstCleanup) cleanup();
   }
 
+  private playGirlMilestoneSound(gain: PieceGain): void {
+    const girlNum = gain.girlId + 1; // 1, 2, 3
+    let milestone = 0;
+
+    if (gain.completedGirl) {
+      milestone = 4;
+    } else if (gain.pieceIndex === 2) {
+      milestone = 1;
+    } else if (gain.pieceIndex === 4) {
+      milestone = 2;
+    } else if (gain.pieceIndex === 6) {
+      milestone = 3;
+    }
+
+    if (milestone > 0) {
+      let trackName = "";
+      if (girlNum === 1) {
+        if (milestone === 2) trackName = "milestone2_girl1";
+        else if (milestone === 3) trackName = "mileston3_girl1";
+        else if (milestone === 4) trackName = "mileston4_girl1";
+      } else if (girlNum === 2) {
+        if (milestone === 1) trackName = "milstone1_girl2";
+        else if (milestone === 2) trackName = "milestone2_girl2";
+        else if (milestone === 3) trackName = "mileston3_girl2";
+        else if (milestone === 4) trackName = "mileston4_girl2";
+      } else if (girlNum === 3) {
+        if (milestone === 1) trackName = "mileston1_girl3";
+        else if (milestone === 2) trackName = "mileston2_girl3";
+        else if (milestone === 3) trackName = "mileston3_girl3";
+        else if (milestone === 4) trackName = "mileston4_girl3";
+      }
+
+      if (trackName && this.runtime.playAudio) {
+        this.runtime.playAudio(trackName);
+      }
+    }
+  }
+
   private async runCollectionAnimation(pos: Position, gain: PieceGain, turbo: boolean): Promise<void> {
     const newCount = gain.pieceIndex;
     const prefix = gain.artPrefix;
     const completed = gain.completedGirl;
 
-    // The piece flies from a board cell if one is showing there; otherwise it
-    // simply animates into the assembly (e.g. girls 2/3 before their art exists).
+    // Trigger milestone voice audio for this collection step
+    this.playGirlMilestoneSound(gain);
+
+    // Punch the board WILD in place — a quick scale pop, never a slide in from
+    // the side. The reveal itself rushes "out of the screen" onto the body.
     const symbolView = this.board.getSymbolView(pos);
     const origScaleX = symbolView?.scale.x ?? 1;
     const origScaleY = symbolView?.scale.y ?? 1;
-
     if (symbolView) {
       if (symbolView.parent) symbolView.parent.addChild(symbolView);
-      await tween(turbo ? 120 : 300, (p) => {
-        const s = 1 + 0.45 * Math.sin(p * Math.PI);
+      await tween(turbo ? 110 : 240, (p) => {
+        const s = 1 + 0.5 * Math.sin(p * Math.PI);
         symbolView.scale.set(origScaleX * s, origScaleY * s);
       }, easeOutBack);
+      symbolView.scale.set(origScaleX, origScaleY);
     }
 
-    const width = this.layout.width;
-    const height = this.layout.height;
-    const boardCenter = this.board.centerOf(pos);
-    const sourceX = boardCenter.x;
-    const sourceY = boardCenter.y;
-
     if (this.layout.portrait) {
-      // --- PORTRAIT MODE: POP-UP OVERLAY ---
-      const overlay = new Container();
-      const overlayBg = new Graphics();
-      overlayBg.rect(0, 0, width, height).fill({ color: 0x000000, alpha: 0.85 });
-      overlay.addChild(overlayBg);
-      overlay.alpha = 0;
-      this.root.addChild(overlay);
-
-      const silTex = getExtraTexture(`${prefix}_silhouette`);
-      if (silTex) {
-        const charContainer = new Container();
-        const silSprite = new Sprite(silTex);
-        silSprite.anchor.set(0.5);
-        silSprite.x = prefix === "char" ? 57.5 : 0; // Shift shadow right to align with the pieces
-        silSprite.y = prefix === "char" ? 27.5 : 0; // Shift shadow down to align with the pieces
-        silSprite.tint = 0x000000;
-        const outline = new OutlineFilter({ thickness: 2, color: 0xffffff, quality: 1.0 });
-        outline.resolution = window.devicePixelRatio || 1;
-        silSprite.filters = [outline];
-        charContainer.addChild(silSprite);
-
-        // Add already-collected pieces
-        for (let i = 1; i < newCount; i++) {
-          const pieceTex = getExtraTexture(`${prefix}_piece_${i}`);
-          if (pieceTex) {
-            const pieceSprite = new Sprite(pieceTex);
-            pieceSprite.anchor.set(0.5);
-            charContainer.addChild(pieceSprite);
-          }
-        }
-
-        const rawSilScale = Math.min((this.layout.width - 40) / silTex.width, (this.layout.height - 300) / silTex.height);
-        const silScale = prefix !== "char" ? rawSilScale * 1.25 : rawSilScale;
-        charContainer.scale.set(silScale);
-        charContainer.position.set(width / 2, height / 2 - 40);
-        overlay.addChild(charContainer);
-
-        // Fade in overlay
-        await tween(200, (p) => {
-          overlay.alpha = p;
-        });
-
-        const pieceTex = getExtraTexture(`${prefix}_piece_${newCount}`);
-        if (pieceTex) {
-          const flySprite = new Sprite(pieceTex);
-          flySprite.anchor.set(0.5);
-          const targetX = charContainer.x;
-          const targetY = charContainer.y;
-          const startScale = silScale * 3.0; // Start huge!
-          flySprite.position.set(sourceX, sourceY);
-          flySprite.scale.set(startScale);
-          flySprite.alpha = 0;
-          overlay.addChild(flySprite);
-
-          await tween(turbo ? 200 : 500, (p) => {
-            flySprite.position.set(sourceX + (targetX - sourceX) * p, sourceY + (targetY - sourceY) * p);
-            flySprite.scale.set(startScale + (silScale - startScale) * p); // Zoom in
-            flySprite.alpha = Math.min(1, p * 2); // Quick fade in
-          }, easeOutBack);
-
-          flySprite.destroy();
-
-          const pieceSprite = new Sprite(pieceTex);
-          pieceSprite.anchor.set(0.5);
-          charContainer.addChild(pieceSprite);
-
-          await this.triggerSnapImpact(targetX, targetY, overlay, newCount);
-
-          if (completed) {
-            await this.triggerCompletionOverlay(charContainer, silScale, targetX, targetY, overlay, prefix);
-          }
-
-          await wait(turbo ? 200 : 500);
-        }
-
-        await tween(300, (p) => {
-          overlay.alpha = 1 - p;
-        });
-        overlay.destroy({ children: true });
-      }
+      await this.runCollectionPortrait(prefix, newCount, completed, turbo);
     } else {
-      // --- LANDSCAPE MODE: PERSISTENT FILL ---
-      const artRect = this.layout.artPanel;
-      if (artRect) {
-        const silTex = getExtraTexture(`${prefix}_silhouette`);
-        if (silTex) {
-          const boxW = artRect.width - 24;
-          const boxH = artRect.height - 84;
-          const rawEndScale = Math.min(boxW / silTex.width, boxH / silTex.height);
-          const endScale = prefix !== "char" ? rawEndScale * 1.25 : rawEndScale;
-          const targetX = artRect.x + artRect.width / 2;
-          const targetY = artRect.y + 60 + (artRect.height - 60) / 2;
-
-          const pieceTex = getExtraTexture(`${prefix}_piece_${newCount}`);
-          if (pieceTex) {
-            const flySprite = new Sprite(pieceTex);
-            flySprite.anchor.set(0.5);
-            const startScale = endScale * 3.0; // Start huge!
-            flySprite.position.set(sourceX, sourceY);
-            flySprite.scale.set(startScale);
-            flySprite.alpha = 0;
-            this.root.addChild(flySprite);
-
-            await tween(turbo ? 200 : 500, (p) => {
-              flySprite.position.set(sourceX + (targetX - sourceX) * p, sourceY + (targetY - sourceY) * p);
-              flySprite.scale.set(startScale + (endScale - startScale) * p); // Zoom in
-              flySprite.alpha = Math.min(1, p * 2); // Quick fade in
-            }, easeOutBack);
-
-            flySprite.destroy();
-
-            await this.triggerSnapImpact(targetX, targetY, this.root, newCount);
-
-            if (completed) {
-              const celebrationContainer = new Container();
-              const fullTex = getExtraTexture(`${prefix}_full`);
-              if (fullTex) {
-                const fullSprite = new Sprite(fullTex);
-                fullSprite.anchor.set(0.5);
-                fullSprite.scale.set(endScale);
-                fullSprite.position.set(targetX, targetY);
-                celebrationContainer.addChild(fullSprite);
-                this.root.addChild(celebrationContainer);
-
-                // Update state beforehand so HUD is drawn fully under the FX
-                if (this.currentSnapshot) {
-                  this.currentSnapshot.collectionCount = newCount;
-                  this.hud.draw(this.layout, this.currentSnapshot);
-                }
-
-                await this.triggerCompletionOverlay(celebrationContainer, endScale, targetX, targetY, this.root, prefix);
-                await wait(800);
-                celebrationContainer.destroy({ children: true });
-              }
-            }
-          }
-        }
-      }
+      await this.runCollectionLandscape(prefix, newCount, completed, turbo);
     }
 
     this.board.updateCollectionCounter(newCount);
-    
-    // Refresh card peek & gallery to reflect newly collected parts
+
+    // Refresh card peek & gallery to reflect newly collected parts.
     this.cardPeek.layout(this.layout);
     if (this.gallery.visible) {
       this.gallery.show(this.layout.width, this.layout.height);
     }
 
+    // Final authoritative redraw. For a completed girl the landscape path has
+    // already swapped the backdrop to the next girl mid-transition, so this is a
+    // no-op repaint that keeps both orientations consistent.
     if (this.currentSnapshot) {
       this.currentSnapshot.collectionCount = newCount;
       this.hud.draw(this.layout, this.currentSnapshot);
+    }
+
+    // Light the freshly-armed gold WANTED star (the girl-completion head-start).
+    if (completed && !turbo) {
+      const starIdx = (this.runtime.getHeadStartStars?.() ?? 0) - 1;
+      if (starIdx >= 0) void this.hud.animateStarFill(starIdx);
     }
 
     // Reward moment (RTP-neutral, cosmetic). Mastering the whole gallery is the
@@ -989,13 +568,161 @@ export class PixiGameScene {
         await this.effects.banner("REWARD UNLOCKED", reward.name, this.layout.board, turbo, "high");
       }
     }
+  }
 
-    if (symbolView) {
-      await tween(100, (p) => {
-        symbolView.scale.set(origScaleX * (1.45 - 0.45 * p), origScaleY * (1.45 - 0.45 * p));
-      });
-      symbolView.scale.set(origScaleX, origScaleY);
+  /** Landscape art-panel transform for a girl, matching HudView.drawCharacter so
+   *  a flown-in piece / the full image lands EXACTLY on the persistent silhouette. */
+  private artCharTransform(prefix: string): { cx: number; cy: number; scale: number } | null {
+    const rect = this.layout.artPanel;
+    if (!rect) return null;
+    const silTex = getExtraTexture(`${prefix}_silhouette`);
+    if (!silTex) return null;
+    const boxW = rect.width - 24;
+    const boxH = rect.height - 84;
+    const raw = Math.min(boxW / silTex.width, boxH / silTex.height);
+    const scale = prefix !== "char" ? raw * 1.25 : raw;
+    return { cx: rect.x + rect.width / 2, cy: rect.y + 60 + (rect.height - 60) / 2, scale };
+  }
+
+  /**
+   * Fast, impactful piece reveal. The body part starts huge — as if pressed up
+   * against the camera — and rushes straight down onto its exact spot on the
+   * silhouette. It converges on the target (no lateral travel from a board cell),
+   * so it reads as coming "out of the screen" and snapping into place.
+   */
+  private async flyPieceFromCamera(
+    pieceTex: Texture,
+    targetX: number,
+    targetY: number,
+    endScale: number,
+    parent: Container,
+    turbo: boolean
+  ): Promise<void> {
+    if (this.runtime.playAudio) {
+      this.runtime.playAudio("wild_sound");
     }
+    const fly = new Sprite(pieceTex);
+    fly.anchor.set(0.5);
+    fly.position.set(targetX, targetY);
+    const startScale = endScale * 4.5; // right up against the lens
+    fly.scale.set(startScale);
+    fly.alpha = 0;
+    const spin = (Math.random() - 0.5) * 0.6;
+    parent.addChild(fly);
+    await tween(turbo ? 150 : 280, (p) => {
+      fly.alpha = Math.min(1, p * 3);
+      fly.scale.set(startScale + (endScale - startScale) * p);
+      fly.rotation = spin * (1 - p);
+    }, easeOutBack);
+    fly.destroy();
+  }
+
+  /** --- LANDSCAPE: persistent fill, with a smooth completion → next-girl handoff. */
+  private async runCollectionLandscape(prefix: string, newCount: number, completed: boolean, turbo: boolean): Promise<void> {
+    const t = this.artCharTransform(prefix);
+    if (!t) return;
+    const pieceTex = getExtraTexture(`${prefix}_piece_${newCount}`);
+    if (!pieceTex) return;
+
+    // 1) The piece rushes out of the screen and snaps onto the body.
+    await this.flyPieceFromCamera(pieceTex, t.cx, t.cy, t.scale, this.root, turbo);
+    await this.triggerSnapImpact(t.cx, t.cy, this.root, newCount);
+
+    // Non-completing piece: the tail hud.draw bakes it into the persistent assembly.
+    if (!completed) return;
+
+    const fullTex = getExtraTexture(`${prefix}_full`);
+    if (!fullTex) return;
+
+    // 2) Reveal the finished girl: fade the seamless full image in over the
+    //    assembled parts. Same transform as the silhouette → perfect registration.
+    const charSpace = new Container();
+    charSpace.position.set(t.cx, t.cy);
+    charSpace.scale.set(t.scale);
+    this.root.addChild(charSpace);
+    const fullSprite = new Sprite(fullTex);
+    fullSprite.anchor.set(0.5);
+    fullSprite.alpha = 0;
+    charSpace.addChild(fullSprite);
+    await tween(turbo ? 200 : 420, (p) => { fullSprite.alpha = p; });
+
+    // 3) Celebrate the completed girl.
+    this.completionFx(t.cx, t.cy, this.root);
+    await wait(turbo ? 500 : 1100);
+
+    // 4) Smooth hand-off. Redraw the HUD so the NEXT girl's all-black silhouette
+    //    is rendered UNDER the overlay (the gallery already advanced), then
+    //    crossfade the completed girl out to reveal it — no hard cut, no overlap.
+    if (this.currentSnapshot) this.hud.draw(this.layout, this.currentSnapshot);
+    await tween(turbo ? 240 : 600, (p) => { charSpace.alpha = 1 - p; }, easeInOutCubic);
+    charSpace.destroy({ children: true });
+  }
+
+  /** --- PORTRAIT: full-screen pop-up reveal (fades fully out when done). */
+  private async runCollectionPortrait(prefix: string, newCount: number, completed: boolean, turbo: boolean): Promise<void> {
+    const width = this.layout.width;
+    const height = this.layout.height;
+    const silTex = getExtraTexture(`${prefix}_silhouette`);
+    if (!silTex) return;
+
+    const overlay = new Container();
+    const overlayBg = new Graphics();
+    overlayBg.rect(0, 0, width, height).fill({ color: 0x000000, alpha: 0.85 });
+    overlay.addChild(overlayBg);
+    overlay.alpha = 0;
+    this.root.addChild(overlay);
+
+    const charContainer = new Container();
+    const silSprite = new Sprite(silTex);
+    silSprite.anchor.set(0.5);
+    silSprite.x = prefix === "char" ? 57.5 : 0; // align shadow with the pieces
+    silSprite.y = prefix === "char" ? 27.5 : 0;
+    silSprite.tint = 0x000000;
+    const outline = new OutlineFilter({ thickness: 2, color: 0xffffff, quality: 1.0 });
+    outline.resolution = window.devicePixelRatio || 1;
+    silSprite.filters = [outline];
+    charContainer.addChild(silSprite);
+
+    // Already-collected pieces.
+    for (let i = 1; i < newCount; i++) {
+      const tex = getExtraTexture(`${prefix}_piece_${i}`);
+      if (tex) { const s = new Sprite(tex); s.anchor.set(0.5); charContainer.addChild(s); }
+    }
+
+    const rawSilScale = Math.min((width - 40) / silTex.width, (height - 300) / silTex.height);
+    const silScale = prefix !== "char" ? rawSilScale * 1.25 : rawSilScale;
+    charContainer.scale.set(silScale);
+    charContainer.position.set(width / 2, height / 2 - 40);
+    overlay.addChild(charContainer);
+
+    await tween(200, (p) => { overlay.alpha = p; });
+
+    const pieceTex = getExtraTexture(`${prefix}_piece_${newCount}`);
+    if (pieceTex) {
+      // Rush the new piece out of the screen onto the body, then bake it in.
+      await this.flyPieceFromCamera(pieceTex, charContainer.x, charContainer.y, silScale, overlay, turbo);
+      const placed = new Sprite(pieceTex);
+      placed.anchor.set(0.5);
+      charContainer.addChild(placed);
+      await this.triggerSnapImpact(charContainer.x, charContainer.y, overlay, newCount);
+
+      if (completed) {
+        const fullTex = getExtraTexture(`${prefix}_full`);
+        if (fullTex) {
+          const fullSprite = new Sprite(fullTex);
+          fullSprite.anchor.set(0.5);
+          fullSprite.alpha = 0;
+          charContainer.addChild(fullSprite);
+          await tween(turbo ? 200 : 420, (p) => { fullSprite.alpha = p; });
+          this.completionFx(charContainer.x, charContainer.y, overlay);
+          await wait(turbo ? 500 : 1100);
+        }
+      }
+      await wait(turbo ? 150 : 350);
+    }
+
+    await tween(300, (p) => { overlay.alpha = 1 - p; });
+    overlay.destroy({ children: true });
   }
 
   private async triggerSnapImpact(x: number, y: number, parentContainer: Container, count: number): Promise<void> {
@@ -1043,26 +770,9 @@ export class PixiGameScene {
     particlesContainer.destroy({ children: true });
   }
 
-  private async triggerCompletionOverlay(
-    charContainer: Container,
-    scale: number,
-    targetX: number,
-    targetY: number,
-    parentContainer: Container,
-    prefix: string
-  ): Promise<void> {
-    const fullTex = getExtraTexture(`${prefix}_full`);
-    if (!fullTex) return;
-
-    const fullSprite = new Sprite(fullTex);
-    fullSprite.anchor.set(0.5);
-    fullSprite.alpha = 0;
-    charContainer.addChild(fullSprite);
-
-    await tween(400, (p) => {
-      fullSprite.alpha = p;
-    });
-
+  /** Gold sparkle burst + "GIRL COMPLETED!" banner — pure FX. The caller owns the
+   *  full-image sprite and the crossfade to the next girl. */
+  private completionFx(targetX: number, targetY: number, parentContainer: Container): void {
     const sweepContainer = new Container();
     parentContainer.addChild(sweepContainer);
 
@@ -1085,7 +795,7 @@ export class PixiGameScene {
     }
 
     const textGlow = new Text({
-      text: "BEACH GIRL COMPLETED!",
+      text: "GIRL COMPLETED!",
       style: new TextStyle({
         fill: 0xffd95c,
         fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
@@ -1106,7 +816,7 @@ export class PixiGameScene {
       textGlow.scale.set(0.2 + 0.8 * p);
     }, easeOutBack);
 
-    await tween(1200, (p) => {
+    void tween(1200, (p) => {
       for (const pt of particles) {
         pt.sprite.x += pt.vx;
         pt.sprite.y += pt.vy * 0.8 + 2.0;
@@ -1114,14 +824,49 @@ export class PixiGameScene {
         pt.sprite.alpha = Math.max(0, 1.2 - p);
       }
       textGlow.style.fill = p % 0.2 < 0.1 ? 0xffffff : 0xffd95c;
+    }).then(() =>
+      tween(300, (p) => { textGlow.alpha = 1 - p; }).then(() => {
+        textGlow.destroy();
+        sweepContainer.destroy({ children: true });
+      })
+    );
+  }
+  showReplayFinished(): void {
+    const modal = new Container();
+    const bg = new Graphics();
+    bg.rect(0, 0, this.layout.width, this.layout.height).fill({ color: 0x000000, alpha: 0.8 });
+    
+    const box = new Graphics();
+    box.roundRect(-150, -80, 300, 160, 16).fill(0x1a1a2e).stroke({ color: 0x4a4e69, width: 4 });
+    box.position.set(this.layout.width / 2, this.layout.height / 2);
+    
+    const txt = new Text({
+      text: "Replay Finished",
+      style: new TextStyle({ fill: 0xffffff, fontFamily: "Arial", fontSize: 24, fontWeight: "bold" })
     });
-
-    void tween(300, (p) => {
-      textGlow.alpha = 1 - p;
-    }).then(() => {
-      textGlow.destroy();
-      sweepContainer.destroy({ children: true });
+    txt.anchor.set(0.5);
+    txt.position.set(0, -20);
+    box.addChild(txt);
+    
+    const btn = new Graphics();
+    btn.roundRect(-60, 20, 120, 40, 8).fill(0x4a4e69);
+    btn.eventMode = "static";
+    btn.cursor = "pointer";
+    btn.on("pointerdown", () => {
+      window.location.href = window.location.pathname;
     });
+    
+    const btnTxt = new Text({
+      text: "Close",
+      style: new TextStyle({ fill: 0xffffff, fontFamily: "Arial", fontSize: 16 })
+    });
+    btnTxt.anchor.set(0.5);
+    btnTxt.position.set(0, 40);
+    
+    box.addChild(btn, btnTxt);
+    modal.addChild(bg, box);
+    
+    this.root.addChild(modal);
   }
 }
 
@@ -1129,15 +874,5 @@ function previewBoard(runtime: SceneRuntime): Board {
   const settle = runtime.previewRecord.events.find((event): event is Extract<GameEvent, { type: "board_settle" }> => event.type === "board_settle");
   if (!settle) throw new Error("Preview record is missing board_settle");
   return settle.board;
-}
-
-/** Show the actual win amount. Falls back to multiplier if bet is unknown. */
-function formatWin(amount: number, bet: number): string {
-  if (!amount) return "";
-  if (bet > 0) {
-    return amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }
-  // betAmount not set yet (rare edge case) — fall back to multiplier notation
-  return `${amount.toLocaleString("en-US", { maximumFractionDigits: 2 })}x`;
 }
 

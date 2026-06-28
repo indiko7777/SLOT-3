@@ -19,28 +19,93 @@ import type { GameEvent } from "./domain";
 type TrackName =
   | "bg_base" | "bg_bonus" | "spin_loop"
   | "win_small" | "win_big" | "mega_win"
-  | "bonus_trigger" | "vault_lock" | "heat_rise" | "siren";
+  | "bonus_trigger" | "vault_lock" | "heat_rise" | "siren"
+  | "count_up_tick" | "dynamite_explode" | "girl_complete"
+  | "mega_wild_place" | "radio_dial" | "reel_stop" | "scatter_land"
+  | "tumble_pop" | "ui_buy" | "ui_click" | "coin_sound"
+  | "police_sound_loop" | "normal_win_sound" | "big_win_sound"
+  | "new_reel_stop" | "wild_sound" | "good_win_combo" | "poker_machine_win"
+  | "milestone2_girl1" | "mileston3_girl1" | "mileston4_girl1"
+  | "milstone1_girl2" | "milestone2_girl2" | "mileston3_girl2" | "mileston4_girl2"
+  | "mileston1_girl3" | "mileston2_girl3" | "mileston3_girl3" | "mileston4_girl3";
 
 const AUDIO_BASE = "assets/audio/";
+
+const TRACK_PATHS: Partial<Record<TrackName, string>> = {
+  new_reel_stop: "assets/new sound/new reel stop sound.mp3",
+  wild_sound: "assets/new sound/wild sound.mp3",
+  good_win_combo: "assets/new sound/good winning combination soun.mp3",
+  poker_machine_win: "assets/new sound/poker_machine_win.mp3",
+  milestone2_girl1: "assets/new sound/milestone2 girl1.mp3",
+  mileston3_girl1: "assets/new sound/mileston3 girl1.mp3",
+  mileston4_girl1: "assets/new sound/mileston4 girl1.mp3",
+  milstone1_girl2: "assets/new sound/milstone1 girl2.mp3",
+  milestone2_girl2: "assets/new sound/milestone2 girl2.mp3",
+  mileston3_girl2: "assets/new sound/mileston3 girl2.mp3",
+  mileston4_girl2: "assets/new sound/mileston4 girl2 (2).mp3",
+  mileston1_girl3: "assets/new sound/mileston1 girl3.mp3",
+  mileston2_girl3: "assets/new sound/mileston2 girl3.mp3",
+  mileston3_girl3: "assets/new sound/mileston3 girl3.mp3",
+  mileston4_girl3: "assets/new sound/mileston4 girl3.mp3",
+};
 
 const ALL_TRACKS: TrackName[] = [
   "bg_base", "bg_bonus", "spin_loop",
   "win_small", "win_big", "mega_win",
-  "bonus_trigger", "vault_lock", "heat_rise", "siren"
+  "bonus_trigger", "vault_lock", "heat_rise", "siren",
+  "count_up_tick", "dynamite_explode", "girl_complete",
+  "mega_wild_place", "radio_dial", "reel_stop", "scatter_land",
+  "tumble_pop", "ui_buy", "ui_click", "coin_sound",
+  "police_sound_loop", "normal_win_sound", "big_win_sound",
+  "new_reel_stop", "wild_sound", "good_win_combo", "poker_machine_win",
+  "milestone2_girl1", "mileston3_girl1", "mileston4_girl1",
+  "milstone1_girl2", "milestone2_girl2", "mileston3_girl2", "mileston4_girl2",
+  "mileston1_girl3", "mileston2_girl3", "mileston3_girl3", "mileston4_girl3"
 ];
 
-/** Base volume per track (0–1) */
+/** Base volume per track (0–1+) */
 const VOLUME: Record<TrackName, number> = {
-  bg_base:       0.30,
-  bg_bonus:      0.25,
-  spin_loop:     0.40,
-  win_small:     0.55,
-  win_big:       0.65,
-  mega_win:      0.80,
-  bonus_trigger: 0.70,
-  vault_lock:    0.70,
-  heat_rise:     0.50,
-  siren:         0.55,
+  bg_base:           0.30,
+  bg_bonus:          0.25,
+  spin_loop:         0.40,
+  win_small:         0.55,
+  win_big:           0.65,
+  mega_win:          0.80,
+  bonus_trigger:     0.70,
+  vault_lock:        0.70,
+  heat_rise:         0.50,
+  siren:             0.55,
+  count_up_tick:     0.45,
+  dynamite_explode:  0.85,
+  girl_complete:     0.80,
+  mega_wild_place:   0.75,
+  radio_dial:        0.50,
+  reel_stop:         0.50,
+  scatter_land:      0.70,
+  tumble_pop:        0.45,
+  ui_buy:            0.65,
+  ui_click:          4.5,
+  coin_sound:        0.55,
+  police_sound_loop: 0.35,
+  normal_win_sound:  0.55,
+  big_win_sound:     0.65,
+  new_reel_stop:     0.65,
+  wild_sound:        0.35,
+  good_win_combo:    0.75,
+  poker_machine_win: 0.85,
+  // All girls voice volume boosted as requested
+  milestone2_girl1:  1.30,
+  mileston3_girl1:   1.30,
+  mileston4_girl1:   1.35,
+  milstone1_girl2:   1.30,
+  milestone2_girl2:  1.30,
+  mileston3_girl2:   1.30,
+  mileston4_girl2:   1.35,
+  // Girl 3 extra boosted voice volume
+  mileston1_girl3:   1.65,
+  mileston2_girl3:   1.65,
+  mileston3_girl3:   1.65,
+  mileston4_girl3:   1.70,
 };
 
 /** Fade duration in seconds */
@@ -86,6 +151,14 @@ export class EventAudioBus {
   private spinLoop: ActiveLoop | null = null;
   private inBonus = false;
 
+  /* voice playback & audio ducking tracking */
+  private activeVoiceSource: AudioBufferSourceNode | null = null;
+  private duckRestoreTimer: number | null = null;
+
+  /* procedural synth reel sound (the repeating thock+tick during spin) */
+  private spinReelTimer: number | null = null;
+  private spinReelMaster: GainNode | null = null;
+
   /* radio: once the player picks a station the game stops auto-switching music */
   private radioOverride = false;
   private radioStation = "heat";
@@ -104,7 +177,8 @@ export class EventAudioBus {
     await Promise.all(
       ALL_TRACKS.map(async (t) => {
         try {
-          const r = await fetch(`${AUDIO_BASE}${t}.mp3`);
+          const path = TRACK_PATHS[t] ?? `${AUDIO_BASE}${t}.mp3`;
+          const r = await fetch(path);
           if (!r.ok) return;
           this.rawData.set(t, await r.arrayBuffer());
         } catch { /* missing file — synth fallback */ }
@@ -170,46 +244,107 @@ export class EventAudioBus {
   }
 
   /** UI click sound (button taps etc.) */
-  playUI(_cue: string, muted: boolean): void {
-    if (muted) return;
-    void this.unlock().then(() => this.synthClick());
-  }
-
-  /** Mechanical reel-stop: a low "thock" + high transient, pitched up per column. */
-  reelStop(col: number, total: number, muted: boolean): void {
+  playUI(cue: string, muted: boolean): void {
     if (muted) return;
     void this.unlock().then(() => {
-      if (!this.ctx) return;
-      const t = this.ctx.currentTime;
-      const prog = total > 1 ? col / (total - 1) : 0;
-
-      // Low body thock (pitch drops fast).
-      const osc = this.ctx.createOscillator();
-      const g = this.ctx.createGain();
-      osc.type = "triangle";
-      const f0 = 150 + prog * 70;
-      osc.frequency.setValueAtTime(f0, t);
-      osc.frequency.exponentialRampToValueAtTime(f0 * 0.5, t + 0.07);
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(0.10, t + 0.005);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.10);
-      osc.connect(g).connect(this.ctx.destination);
-      osc.start(t); osc.stop(t + 0.12);
-
-      // High transient tick (the "snap" of the stop).
-      const frames = Math.floor(this.ctx.sampleRate * 0.012);
-      const buf = this.ctx.createBuffer(1, frames, this.ctx.sampleRate);
-      const data = buf.getChannelData(0);
-      for (let i = 0; i < frames; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / frames);
-      const src = this.ctx.createBufferSource();
-      src.buffer = buf;
-      const hp = this.ctx.createBiquadFilter();
-      hp.type = "highpass"; hp.frequency.value = 2600;
-      const tg = this.ctx.createGain();
-      tg.gain.value = 0.06;
-      src.connect(hp).connect(tg).connect(this.ctx.destination);
-      src.start(t);
+      if ((cue === "buy" || cue === "ui_buy") && this.buffers.has("ui_buy")) {
+        this.fire("ui_buy");
+      } else if (cue === "radio" && this.buffers.has("radio_dial")) {
+        this.fire("radio_dial");
+      } else if (this.buffers.has("ui_click")) {
+        this.fire("ui_click");
+      } else {
+        this.synthClick();
+      }
     });
+  }
+
+  /** Play new reel stop sound per column landing and stop the synth reel on last column. */
+  reelStop(col: number, total: number, _muted: boolean): void {
+    if (!_muted && this.ctx) {
+      const buf = this.buffers.get("new_reel_stop") ?? this.buffers.get("reel_stop");
+      if (buf) {
+        const source = this.ctx.createBufferSource();
+        source.buffer = buf;
+        // Ascending pitch scaling across columns (0.96 -> 1.08) for a punchy, satisfying finish sequence
+        source.playbackRate.value = 0.96 + (col / Math.max(1, total - 1)) * 0.12;
+        const gain = this.ctx.createGain();
+        gain.gain.value = VOLUME.new_reel_stop ?? 0.65;
+        source.connect(gain).connect(this.ctx.destination);
+        source.start();
+      } else {
+        this.synthClick();
+      }
+    }
+    if (col === total - 1) {
+      this.stopSynthReel();
+    }
+  }
+
+  /** Procedural reel spin: rapid repeating triangle-wave thock + noise tick.
+   *  Same sonic character as the original per-column stop sound, but looped
+   *  continuously so it plays for the entire spin duration. */
+  private startSynthReel(): void {
+    if (!this.ctx || this.spinReelTimer !== null) return;
+    const master = this.ctx.createGain();
+    master.gain.setValueAtTime(0.0001, this.ctx.currentTime);
+    master.gain.exponentialRampToValueAtTime(1.2, this.ctx.currentTime + 0.05);
+    master.connect(this.ctx.destination);
+    this.spinReelMaster = master;
+
+    let next = this.ctx.currentTime + 0.02;
+    const tick = (): void => {
+      if (!this.ctx || !this.spinReelMaster) return;
+      while (next < this.ctx.currentTime + 0.25) {
+        // Triangle-wave thock (pitch drops fast — the low body)
+        const osc = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+        osc.type = "triangle";
+        const f0 = 150 + Math.random() * 40;
+        osc.frequency.setValueAtTime(f0, next);
+        osc.frequency.exponentialRampToValueAtTime(f0 * 0.5, next + 0.07);
+        g.gain.setValueAtTime(0.0001, next);
+        g.gain.exponentialRampToValueAtTime(0.40, next + 0.005);
+        g.gain.exponentialRampToValueAtTime(0.0001, next + 0.10);
+        osc.connect(g).connect(master);
+        osc.start(next);
+        osc.stop(next + 0.12);
+
+        // High-pass noise tick (the snap)
+        const frames = Math.floor(this.ctx.sampleRate * 0.012);
+        const synthBuf = this.ctx.createBuffer(1, frames, this.ctx.sampleRate);
+        const data = synthBuf.getChannelData(0);
+        for (let i = 0; i < frames; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / frames);
+        const src = this.ctx.createBufferSource();
+        src.buffer = synthBuf;
+        const hp = this.ctx.createBiquadFilter();
+        hp.type = "highpass"; hp.frequency.value = 2600;
+        const tg = this.ctx.createGain();
+        tg.gain.value = 0.25;
+        src.connect(hp).connect(tg).connect(master);
+        src.start(next);
+
+        next += 0.085; // ~12 pulses/sec → sounds like a rapid spinning reel
+      }
+      this.spinReelTimer = window.setTimeout(tick, 60);
+    };
+    tick();
+  }
+
+  private stopSynthReel(): void {
+    if (this.spinReelTimer !== null) { window.clearTimeout(this.spinReelTimer); this.spinReelTimer = null; }
+    if (this.spinReelMaster && this.ctx) {
+      const g = this.spinReelMaster;
+      const now = this.ctx.currentTime;
+      try {
+        g.gain.cancelScheduledValues(now);
+        g.gain.setValueAtTime(Math.max(g.gain.value, 0.0001), now);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + 0.1);
+      } catch { /* ignore */ }
+      const ref = g;
+      window.setTimeout(() => { try { ref.disconnect(); } catch { /* ignore */ } }, 200);
+      this.spinReelMaster = null;
+    }
   }
 
   /** Rising tension riser when 2+ scatters are in play (anticipation spin). */
@@ -444,11 +579,15 @@ export class EventAudioBus {
 
       /* ── spin lifecycle ──────────────────────── */
       case "round_start":
-        this.startLoop("spin_loop", "spin");
+        // Start the procedural synth reel sound the instant the player
+        // fires a spin. reelStop(lastCol) stops it when the final column
+        // lands, keeping it perfectly in sync with the visual animation.
+        this.startSynthReel();
         break;
 
       case "board_settle":
-        this.fadeOut("spin");
+        // The synth reel keeps playing through the reel animation that
+        // runs during this event — no action needed here.
         break;
 
       /* ── wins ────────────────────────────────── */
@@ -464,7 +603,7 @@ export class EventAudioBus {
         break;
 
       case "heat_transform":
-        this.fire("siren", vol);
+        this.fire("poker_machine_win", vol * 1.1);
         break;
 
       case "mega_wild_place":
@@ -475,9 +614,14 @@ export class EventAudioBus {
         this.fire("siren", vol * 0.8);
         break;
 
+      case "tumble_remove":
+        if (this.buffers.has("tumble_pop")) this.fire("tumble_pop", vol);
+        break;
+
       /* ── scatter / bonus ─────────────────────── */
       case "scatter_tease":
-        this.fire("heat_rise", vol * 0.7);
+        if (this.buffers.has("scatter_land")) this.fire("scatter_land", vol);
+        else this.fire("heat_rise", vol * 0.7);
         break;
 
       case "bonus_trigger":
@@ -498,7 +642,8 @@ export class EventAudioBus {
         break;
 
       case "master_key_crack":
-        this.fire("siren", vol * 0.45);
+        if (this.buffers.has("dynamite_explode")) this.fire("dynamite_explode", vol);
+        else this.fire("siren", vol * 0.45);
         break;
 
       case "bonus_end":
@@ -514,6 +659,9 @@ export class EventAudioBus {
 
       /* ── round end (just cleanup) ──────────── */
       case "round_end":
+        // Safety: ensure the synth reel is gone (should already be stopped
+        // by reelStop(lastCol), but guard against edge cases).
+        this.stopSynthReel();
         this.fadeOut("spin");
         break;
     }
@@ -526,8 +674,42 @@ export class EventAudioBus {
   /** Fire a one-shot sound (layers on top of everything) */
   fire(track: TrackName, volumeScale = 1): void {
     if (!this.ctx) return;
-    const buf = this.buffers.get(track);
+    if (this.ctx.state === "suspended") {
+      void this.ctx.resume();
+    }
+    let buf = this.buffers.get(track);
+    if (!buf) {
+      if (track === "win_big" && this.buffers.has("big_win_sound")) buf = this.buffers.get("big_win_sound");
+      else if (track === "win_small" && this.buffers.has("normal_win_sound")) buf = this.buffers.get("normal_win_sound");
+      else if (track === "siren" && this.buffers.has("police_sound_loop")) buf = this.buffers.get("police_sound_loop");
+      else if (track === "bg_bonus" && this.buffers.has("police_sound_loop")) buf = this.buffers.get("police_sound_loop");
+      else if (track === "bg_base" && this.buffers.has("police_sound_loop")) buf = this.buffers.get("police_sound_loop");
+    }
     if (!buf) { this.synthTone(track); return; }
+
+    const isVoice = track.startsWith("mileston") || track.startsWith("milestone");
+    if (isVoice) {
+      // Prevent overlapping voice clips by stopping active voice
+      if (this.activeVoiceSource) {
+        try { this.activeVoiceSource.stop(); } catch { /* ignore */ }
+        this.activeVoiceSource = null;
+      }
+      if (this.duckRestoreTimer !== null) {
+        window.clearTimeout(this.duckRestoreTimer);
+        this.duckRestoreTimer = null;
+      }
+      // Duck background music during voice playback
+      if (this.bgLoop && this.bgLoop.gain) {
+        const now = this.ctx.currentTime;
+        const currentTrack = this.bgLoop.track;
+        const baseVol = VOLUME[currentTrack] ?? 0.3;
+        try {
+          this.bgLoop.gain.gain.cancelScheduledValues(now);
+          this.bgLoop.gain.gain.setValueAtTime(Math.max(0.0001, this.bgLoop.gain.gain.value), now);
+          this.bgLoop.gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, baseVol * 0.15), now + 0.15);
+        } catch { /* ignore */ }
+      }
+    }
 
     const source = this.ctx.createBufferSource();
     source.buffer = buf;
@@ -535,11 +717,38 @@ export class EventAudioBus {
     gain.gain.value = (VOLUME[track] ?? 0.5) * volumeScale;
     source.connect(gain).connect(this.ctx.destination);
     source.start();
-    // source auto-disconnects when finished
+
+    if (isVoice) {
+      this.activeVoiceSource = source;
+      const durMs = Math.ceil(buf.duration * 1000) + 100;
+      this.duckRestoreTimer = window.setTimeout(() => {
+        this.activeVoiceSource = null;
+        if (this.bgLoop && this.bgLoop.gain && this.ctx) {
+          const now = this.ctx.currentTime;
+          const baseVol = VOLUME[this.bgLoop.track] ?? 0.3;
+          try {
+            this.bgLoop.gain.gain.cancelScheduledValues(now);
+            this.bgLoop.gain.gain.setValueAtTime(Math.max(0.0001, this.bgLoop.gain.gain.value), now);
+            this.bgLoop.gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, baseVol), now + 0.35);
+          } catch { /* ignore */ }
+        }
+      }, durMs);
+    }
   }
 
   playWinTick(pitchLevel: "normal" | "medium" | "high"): void {
     if (!this.ctx) return;
+    const buf = this.buffers.get("count_up_tick");
+    if (buf) {
+      const source = this.ctx.createBufferSource();
+      source.buffer = buf;
+      source.playbackRate.value = pitchLevel === "high" ? 1.2 : pitchLevel === "medium" ? 1.1 : 1.0;
+      const gain = this.ctx.createGain();
+      gain.gain.value = (VOLUME.count_up_tick ?? 0.45);
+      source.connect(gain).connect(this.ctx.destination);
+      source.start();
+      return;
+    }
     const t = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
     const g = this.ctx.createGain();
@@ -575,8 +784,9 @@ export class EventAudioBus {
 
     const gain = this.ctx.createGain();
     const now = this.ctx.currentTime;
+    const fade = slot === "spin" ? 0.05 : FADE;
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(VOLUME[track], now + FADE);
+    gain.gain.exponentialRampToValueAtTime(VOLUME[track], now + fade);
 
     source.connect(gain).connect(this.ctx.destination);
     source.start();
@@ -613,22 +823,24 @@ export class EventAudioBus {
   private fadeAndStop(loop: ActiveLoop): void {
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
+    const fade = (loop.track === "spin_loop" || loop.track === "reel_stop") ? 0.1 : FADE;
     try {
       loop.gain.gain.cancelScheduledValues(now);
       loop.gain.gain.setValueAtTime(
         Math.max(loop.gain.gain.value, 0.0001), now
       );
-      loop.gain.gain.exponentialRampToValueAtTime(0.0001, now + FADE);
-      loop.source.stop(now + FADE + 0.05);
+      loop.gain.gain.exponentialRampToValueAtTime(0.0001, now + fade);
+      loop.source.stop(now + fade + 0.05);
     } catch {
       /* already stopped — ignore */
     }
   }
 
   /** Kill all loops immediately (for mute) */
-  private killAll(): void {
-    this.fadeOut("bg");
-    this.fadeOut("spin");
+  killAll(): void {
+    if (this.bgLoop) this.fadeAndStop(this.bgLoop);
+    if (this.spinLoop) this.fadeAndStop(this.spinLoop);
+    this.stopSynthReel();
     this.stopSynthRadio();
   }
 
