@@ -392,6 +392,10 @@ export class EffectsLayer extends Container {
 
     this.addChild(group);
 
+    // Every banner lands like a punch: fire the cinematic "bang" the instant it
+    // bursts in, scaled to the tier so a grand reveal hits harder than a low one.
+    this.emit("banner_impact", intensity);
+
     // GPU bloom + chromatic-aberration glitch on the win moment. Applied to THIS
     // (the mask-free effects layer) — filtering the masked board/root blanks the
     // canvas in Pixi v8, so the banner + rays + coins carry the surge instead.
@@ -894,8 +898,6 @@ export class EffectsLayer extends Container {
     // Pacing calculations (max 6 seconds in normal mode)
     const duration = turbo ? 800 : Math.min(6000, 1500 + targetMultiplier * 10);
     let lastTier: "none" | "big" | "mega" | "grand" = "none";
-    let lastTickTime = 0;
-    const tickInterval = 75; // ms between ticks
     let billSpawnTimer = 0;
     let coinSpawnTimer = 0;
     let elapsedMs = 0;
@@ -938,6 +940,10 @@ export class EffectsLayer extends Container {
 
     ambientTicker.add(spawner);
 
+    // Spin up the continuous money-counter roller — its pitch/roll-rate is driven
+    // live by the count-up below so it stays locked to the rising total.
+    if (!turbo) this.emit("win_counter_start");
+
     const startTime = performance.now();
 
     await new Promise<void>((resolve) => {
@@ -963,14 +969,16 @@ export class EffectsLayer extends Container {
         onUpdate(currentAmount);
 
         // Determine current tier
-        let activeTier: "none" | "big" | "mega" | "grand" = "none";
-        if (currentMult >= 500) activeTier = "grand";
+        let activeTier: "none" | "big" | "mega" | "grand" | "max" = "none";
+        if (currentMult >= 5000) activeTier = "max";
+        else if (currentMult >= 500) activeTier = "grand";
         else if (currentMult >= 100) activeTier = "mega";
         else if (currentMult >= 20) activeTier = "big";
 
         if (activeTier !== lastTier) {
           lastTier = activeTier;
           this.emit("win_tier_changed", activeTier);
+
 
           // Transition pop and effects
           if (activeTier === "big") {
@@ -1006,6 +1014,18 @@ export class EffectsLayer extends Container {
               void pulseBloom(this, { scale: 1.7, duration: 900 });
               void pulseChromaticAberration(this, { intensity: 10, duration: 600 });
             }
+          } else if (activeTier === "max") {
+            msgText.text = "MAX WIN";
+            msgText.style.fill = 0x00f0ff; // Cyan/Neon Blue
+            lineTop.clear().rect(stripX, cy - stripH / 2, stripW, 5).fill({ color: 0x00f0ff });
+            lineBot.clear().rect(stripX, cy + stripH / 2 - 5, stripW, 5).fill({ color: 0x00f0ff });
+
+            if (!turbo) {
+              void this.screenShake(this.parent as Container, turbo);
+              void this.goldCoinBurst(cx, cy, rect, turbo);
+              void pulseBloom(this, { scale: 2.0, duration: 1200 });
+              void pulseChromaticAberration(this, { intensity: 15, duration: 800 });
+            }
           }
 
           // Pop title text
@@ -1015,11 +1035,9 @@ export class EffectsLayer extends Container {
           });
         }
 
-        // Ticking audio triggers (throttle using elapsed time)
-        if (!slammed && (elapsed - lastTickTime >= tickInterval)) {
-          lastTickTime = elapsed;
-          this.emit("win_tick", activeTier);
-        }
+        // Drive the continuous roller every frame so its pitch tracks the rising
+        // total exactly — no more dead per-tick blips.
+        this.emit("win_counter_progress", p, activeTier);
 
         // Text bounce during updates
         amtText.scale.set(1.0 + Math.sin(p * Math.PI * 8) * 0.05);
@@ -1039,6 +1057,13 @@ export class EffectsLayer extends Container {
     amtText.text = formatWin(finalAmount) + " " + currency;
     amtText.scale.set(1);
     onUpdate(finalAmount);
+
+    // Resolve the roller (quick upward flourish + fade) and punctuate the landing
+    // with a final impact so the count-up settles with weight. (lastTier is
+    // reassigned inside the rAF closure; widen to string so TS doesn't narrow it
+    // back to its "none" initializer here.)
+    const finalTier = lastTier as string;
+    this.emit("win_counter_end");
 
     // Climax jingle triggers
     this.emit("win_climax", lastTier);

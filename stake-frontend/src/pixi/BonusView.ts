@@ -161,7 +161,7 @@ export class BonusView extends Container {
   }
 
   // ── lifecycle ────────────────────────────────────────────────────────
-  async intro(turbo: boolean): Promise<void> {
+  async intro(turbo: boolean, onTypewriterStart?: () => void, onTypewriterStop?: () => void): Promise<void> {
     this.visible = true;
     this.busted = false;
     this.heat = 0;
@@ -289,6 +289,8 @@ export class BonusView extends Container {
     titleGroup.addChild(big);
 
     // --- Phase A: Dispatch types in (800ms) ---
+    // Start typewriter sound exactly when typing begins
+    onTypewriterStart?.();
     titleGroup.alpha = 1;
     blackout.alpha = 0.4;
     const typeTime = 800;
@@ -300,6 +302,8 @@ export class BonusView extends Container {
       blackout.alpha = 0.4 - p * 0.15;
     }, linear);
     dispatch.text = dispatchFull;
+    // Stop typewriter sound exactly when typing finishes
+    onTypewriterStop?.();
     dispRule.alpha = 1;
     void tween(300, (p) => { dispRule.alpha = easeOutCubic(p) * 0.6; });
 
@@ -1405,11 +1409,20 @@ export class BonusView extends Container {
     }, linear).then(() => {
       strip.destroy({ children: true });
       mask.destroy();
+      let landDelay = 0;
       for (const r of rows) {
         const cell = grid[col][r];
         const landed = cell.symbol === "SAFE" || cell.symbol === "MASTER_KEY";
-        if (cell.symbol === "SAFE") { this.placeCell([col, r], this.buildGoldBar(cell.value ?? 0, col, r)); onLandOne(); }
-        else if (cell.symbol === "MASTER_KEY") { this.placeCell([col, r], this.buildDynamite(col, r)); onLandOne(); }
+        if (cell.symbol === "SAFE") { 
+          this.placeCell([col, r], this.buildGoldBar(cell.value ?? 0, col, r)); 
+          setTimeout(onLandOne, landDelay);
+          landDelay += 80;
+        }
+        else if (cell.symbol === "MASTER_KEY") { 
+          this.placeCell([col, r], this.buildDynamite(col, r)); 
+          setTimeout(onLandOne, landDelay);
+          landDelay += 80;
+        }
         // EMPTY: leave a resting Heat Chase watermark so the logos never just
         // vanish when the reel stops (every cell stays consistent, spin or rest).
         else this.placeCell([col, r], this.buildEmptyFace(col, r, logoTex));

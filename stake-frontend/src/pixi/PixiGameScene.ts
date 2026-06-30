@@ -81,22 +81,31 @@ export class PixiGameScene {
     this.effects.on("win_count_update", (amount: number) => {
       this.hud.setWinAmountDirect(amount);
     });
-    this.effects.on("win_tick", (tier: string) => {
+
+    // Every win banner (like NICE WIN) fires a banner_impact.
+    this.effects.on("banner_impact", (intensity: "low" | "mid" | "high" | "grand") => {
       if (this.runtime.playAudio) {
-        const soundKey = tier === "grand" ? "win_tick_high" : tier === "mega" ? "win_tick_mid" : "win_tick_low";
-        this.runtime.playAudio(soundKey);
+        if (intensity === "low") this.runtime.playAudio("win_big_lowest");
       }
     });
-    this.effects.on("win_tier_changed", (tier: string) => {
-      if (this.runtime.playAudio) {
-        const soundKey = tier === "grand" ? "win_tick_high" : tier === "mega" ? "win_tick_mid" : "win_tick_low";
-        this.runtime.playAudio(soundKey);
-      }
+
+    // Continuous money-counter roller, locked to the rising total.
+    this.effects.on("win_counter_start", () => {
+      this.runtime.winCounterStart?.();
     });
-    this.effects.on("win_climax", (tier: string) => {
+    this.effects.on("win_counter_progress", (p: number, tier: "none" | "big" | "mega" | "grand") => {
+      this.runtime.winCounterUpdate?.(p, tier);
+    });
+    this.effects.on("win_counter_end", () => {
+      this.runtime.winCounterEnd?.();
+    });
+    this.effects.on("win_tier_changed", (tier: "none" | "big" | "mega" | "grand" | "max") => {
       if (this.runtime.playAudio) {
-        const soundKey = tier === "grand" ? "mega_win" : tier === "mega" ? "win_big" : "win_big";
-        this.runtime.playAudio(soundKey, 1.0);
+        let soundKey = "";
+        if (tier === "big") soundKey = "win_big_lowest";
+        else if (tier === "mega" || tier === "grand") soundKey = "win_mega_grand";
+        else if (tier === "max") soundKey = "win_max";
+        if (soundKey) this.runtime.playAudio(soundKey);
       }
     });
   }
@@ -299,7 +308,7 @@ export class PixiGameScene {
         // Hide the entire HUD (character, wanted stars, left buttons, bet panel)
         // so the bonus board has the full screen to itself.
         this.hud.visible = false;
-        await this.bonus.intro(turbo);
+        await this.bonus.intro(turbo, this.runtime.onTypewriterStart, this.runtime.onTypewriterStop);
         return;
       case "bonus_spin": {
         const landed = event.landedSymbols.map((s) => s.position);

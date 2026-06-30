@@ -274,6 +274,12 @@ async function boot(): Promise<void> {
         else audioBus.fire(track as any, volumeScale);
       }
     },
+    onTypewriterStart: () => { if (!muted) audioBus.startTypewriter(); },
+    onTypewriterStop: () => { audioBus.stopTypewriter(); },
+    bannerImpact: (intensity) => { if (!muted) audioBus.bannerImpact(intensity); },
+    winCounterStart: () => { if (!muted) audioBus.startWinCounter(); },
+    winCounterUpdate: (p, tier) => { if (!muted) audioBus.updateWinCounter(p, tier); },
+    winCounterEnd: () => audioBus.stopWinCounter(),
     previewRecord: PREVIEW_RECORD
   });
 
@@ -288,6 +294,7 @@ async function boot(): Promise<void> {
   if (import.meta.env.DEV) {
     (window as any).scene = scene;
     mountCollectionFlowTest();
+    mountWinTests();
   }
 
   radioWheel = new RadioWheel(
@@ -583,6 +590,54 @@ function mountCollectionFlowTest(): void {
     }
   });
   document.body.appendChild(btn);
+}
+
+function mountWinTests(): void {
+  const container = document.createElement("div");
+  Object.assign(container.style, {
+    position: "fixed", left: "12px", top: "60px", zIndex: "99999",
+    display: "flex", flexDirection: "column", gap: "8px"
+  } as Partial<CSSStyleDeclaration>);
+
+  const testWins = [
+    { name: "NICE WIN", mult: 10 },
+    { name: "BIG WIN", mult: 50 },
+    { name: "MEGA WIN", mult: 200 },
+    { name: "GRAND WIN", mult: 1000 },
+    { name: "MAX WIN", mult: 5000 }
+  ];
+
+  let running = false;
+  for (const w of testWins) {
+    const btn = document.createElement("button");
+    btn.textContent = `▶ TEST ${w.name}`;
+    Object.assign(btn.style, {
+      padding: "10px 14px", font: "700 13px Impact, system-ui, sans-serif",
+      letterSpacing: "1px", color: "#0a0a0a", background: "#f1c40f",
+      border: "2px solid #f39c12", borderRadius: "8px", cursor: "pointer",
+      boxShadow: "0 2px 10px rgba(0,0,0,0.5)"
+    } as Partial<CSSStyleDeclaration>);
+    btn.addEventListener("click", async () => {
+      if (running || isPlaying) return;
+      running = true;
+      btn.disabled = true;
+      btn.style.opacity = "0.5";
+      try {
+        const betAmount = currentBet() || 1;
+        const testSnapshot = { ...snapshot, betAmount };
+        await scene.playEvent({
+          type: "round_end",
+          payoutMultiplier: w.mult
+        }, testSnapshot);
+      } finally {
+        running = false;
+        btn.disabled = false;
+        btn.style.opacity = "1";
+      }
+    });
+    container.appendChild(btn);
+  }
+  document.body.appendChild(container);
 }
 
 /** Drive every WILD for all three girls through the REAL gallery path — each part

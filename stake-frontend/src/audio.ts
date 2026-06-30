@@ -27,7 +27,10 @@ type TrackName =
   | "new_reel_stop" | "wild_sound" | "good_win_combo" | "poker_machine_win"
   | "milestone2_girl1" | "mileston3_girl1" | "mileston4_girl1"
   | "milstone1_girl2" | "milestone2_girl2" | "mileston3_girl2" | "mileston4_girl2"
-  | "mileston1_girl3" | "mileston2_girl3" | "mileston3_girl3" | "mileston4_girl3";
+  | "mileston1_girl3" | "mileston2_girl3" | "mileston3_girl3" | "mileston4_girl3"
+  | "getaway_end" | "money_counter_end" | "money_counter_loop" | "reel_loop"
+  | "win_mega_grand" | "win_max" | "getaway_explosive" | "getaway_intro"
+  | "win_big_lowest" | "sticky_gold_bar" | "typewriter";
 
 const AUDIO_BASE = "assets/audio/";
 
@@ -47,6 +50,19 @@ const TRACK_PATHS: Partial<Record<TrackName, string>> = {
   mileston2_girl3: "assets/new sound/mileston2 girl3.mp3",
   mileston3_girl3: "assets/new sound/mileston3 girl3.mp3",
   mileston4_girl3: "assets/new sound/mileston4 girl3.mp3",
+  getaway_end: "assets/new new sound/end of getaway sound.mp3",
+  money_counter_end: "assets/new new sound/end of money counter sound.mp3",
+  money_counter_loop: "assets/new new sound/money_counter_sound it is a loop so feel free to make it the exact length of the actual counting animation.mp3",
+  reel_loop: "assets/new new sound/slot reel sound is a loop too so feel free to adapt it for turbo spins etc.mp3",
+  win_mega_grand: "assets/new new sound/sound for 2 and 3 biggest winning banner.mp3",
+  win_max: "assets/new new sound/sound for biggest winning banner.mp3",
+  getaway_explosive: "assets/new new sound/sound for explosive multiples in the getaway play once per explosive.mp3",
+  getaway_intro: "assets/new new sound/sound for getaway intro play in same time as the banner appear that give the cinematic look.mp3",
+  win_big_lowest: "assets/new new sound/sound for lowest paying winning banner animation.mp3",
+  sticky_gold_bar: "assets/new new sound/sound for sticky gold bar in getaway mode.mp3",
+  bg_bonus: "assets/new new sound/continuous looping getaway background sound play after the intro sound.mp3",
+  police_sound_loop: "assets/sound/police sound loop.mp3",
+  typewriter: "assets/new new sound/type writer sound.mp3",
 };
 
 const ALL_TRACKS: TrackName[] = [
@@ -60,13 +76,16 @@ const ALL_TRACKS: TrackName[] = [
   "new_reel_stop", "wild_sound", "good_win_combo", "poker_machine_win",
   "milestone2_girl1", "mileston3_girl1", "mileston4_girl1",
   "milstone1_girl2", "milestone2_girl2", "mileston3_girl2", "mileston4_girl2",
-  "mileston1_girl3", "mileston2_girl3", "mileston3_girl3", "mileston4_girl3"
+  "mileston1_girl3", "mileston2_girl3", "mileston3_girl3", "mileston4_girl3",
+  "getaway_end", "money_counter_end", "money_counter_loop", "reel_loop",
+  "win_mega_grand", "win_max", "getaway_explosive", "getaway_intro",
+  "win_big_lowest", "sticky_gold_bar", "typewriter"
 ];
 
 /** Base volume per track (0–1+) */
 const VOLUME: Record<TrackName, number> = {
   bg_base:           0.30,
-  bg_bonus:          0.25,
+  bg_bonus:          0.55,
   spin_loop:         0.40,
   win_small:         0.55,
   win_big:           0.65,
@@ -89,7 +108,7 @@ const VOLUME: Record<TrackName, number> = {
   police_sound_loop: 0.35,
   normal_win_sound:  0.55,
   big_win_sound:     0.65,
-  new_reel_stop:     0.65,
+  new_reel_stop:     1.0,
   wild_sound:        0.35,
   good_win_combo:    0.75,
   poker_machine_win: 0.85,
@@ -106,6 +125,18 @@ const VOLUME: Record<TrackName, number> = {
   mileston2_girl3:   1.65,
   mileston3_girl3:   1.65,
   mileston4_girl3:   1.70,
+  // New new sound volumes
+  getaway_end:       0.75,
+  money_counter_end: 0.85,
+  money_counter_loop:0.65,
+  reel_loop:         0.50,
+  win_mega_grand:    0.85,
+  win_max:           1.0,
+  getaway_explosive: 0.80,
+  getaway_intro:     1.65, // boosted heavily for cinematic impact
+  win_big_lowest:    0.75,
+  sticky_gold_bar:   0.70,
+  typewriter:        0.80,
 };
 
 /** Fade duration in seconds */
@@ -146,9 +177,10 @@ export class EventAudioBus {
   private fetched = false;
   private decoded = false;
 
-  /* active loop slots — bg and spin can each have one */
+  /* active loop slots — bg, spin, counter can each have one */
   private bgLoop: ActiveLoop | null = null;
   private spinLoop: ActiveLoop | null = null;
+  private counterLoop: ActiveLoop | null = null;
   private inBonus = false;
 
   /* voice playback & audio ducking tracking */
@@ -164,6 +196,16 @@ export class EventAudioBus {
   private radioStation = "heat";
   private synthTimer: number | null = null;
   private synthMaster: GainNode | null = null;
+
+  /* continuous money-counter "roller": a single looped voice whose pitch and
+     roll-rate rise with the count-up progress, so it stays locked to the win
+     counter for its entire (variable) duration instead of firing dead ticks. */
+  private counterMaster: GainNode | null = null;
+  private counterTrem: GainNode | null = null;
+  private counterLfo: OscillatorNode | null = null;
+  private counterOsc: OscillatorNode | null = null;
+  private counterOsc2: OscillatorNode | null = null;
+  private counterLp: BiquadFilterNode | null = null;
 
   /* ── lifecycle ─────────────────────────────────── */
 
@@ -230,7 +272,7 @@ export class EventAudioBus {
   /** Fire vault sound for each safe landing during grand reveal — synced with visual */
   fireSafeLand(index: number, total: number): void {
     if (!this.ctx) return;
-    const buf = this.buffers.get("vault_lock");
+    const buf = this.buffers.get("sticky_gold_bar");
     if (!buf) { this.synthTone("vault_lock"); return; }
 
     const progress = total > 1 ? index / (total - 1) : 1;
@@ -238,9 +280,53 @@ export class EventAudioBus {
     source.buffer = buf;
     source.playbackRate.value = 0.85 + progress * 0.4;     // pitch: 0.85→1.25
     const gain = this.ctx.createGain();
-    gain.gain.value = VOLUME.vault_lock * (0.5 + progress * 0.6);  // vol: 50%→110%
+    gain.gain.value = (VOLUME.sticky_gold_bar ?? 0.70) * (0.5 + progress * 0.6);  // vol: 50%→110%
     source.connect(gain).connect(this.ctx.destination);
     source.start();
+  }
+
+  /* ── Typewriter sound (synced with getaway intro text) ─── */
+  private typewriterSource: AudioBufferSourceNode | null = null;
+  private typewriterGain: GainNode | null = null;
+
+  /** Start looping the typewriter sound. Returns immediately. Call stopTypewriter() to stop. */
+  startTypewriter(): void {
+    if (!this.ctx) return;
+    this.stopTypewriter(); // kill any previous instance
+    const buf = this.buffers.get("typewriter");
+    if (!buf) return;
+    const source = this.ctx.createBufferSource();
+    source.buffer = buf;
+    source.loop = false; // single play — the file is long enough for the typing duration
+    const gain = this.ctx.createGain();
+    gain.gain.value = VOLUME.typewriter ?? 0.80;
+    source.connect(gain).connect(this.ctx.destination);
+    source.start();
+    this.typewriterSource = source;
+    this.typewriterGain = gain;
+    // Auto-cleanup when the sound ends naturally
+    source.onended = () => {
+      this.typewriterSource = null;
+      this.typewriterGain = null;
+    };
+  }
+
+  /** Immediately stop (fade out) the typewriter sound. */
+  stopTypewriter(): void {
+    if (this.typewriterGain && this.ctx) {
+      const now = this.ctx.currentTime;
+      try {
+        this.typewriterGain.gain.cancelScheduledValues(now);
+        this.typewriterGain.gain.setValueAtTime(Math.max(this.typewriterGain.gain.value, 0.0001), now);
+        this.typewriterGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.05); // very quick fade
+      } catch { /* ignore */ }
+    }
+    if (this.typewriterSource) {
+      const ref = this.typewriterSource;
+      setTimeout(() => { try { ref.stop(); } catch { /* ignore */ } }, 80);
+      this.typewriterSource = null;
+    }
+    this.typewriterGain = null;
   }
 
   /** UI click sound (button taps etc.) */
@@ -259,92 +345,20 @@ export class EventAudioBus {
     });
   }
 
-  /** Play new reel stop sound per column landing and stop the synth reel on last column. */
+  /** Reel stop: sound removed per user request. Only stops the synth reel on last column. */
   reelStop(col: number, total: number, _muted: boolean): void {
-    if (!_muted && this.ctx) {
-      const buf = this.buffers.get("new_reel_stop") ?? this.buffers.get("reel_stop");
-      if (buf) {
-        const source = this.ctx.createBufferSource();
-        source.buffer = buf;
-        // Ascending pitch scaling across columns (0.96 -> 1.08) for a punchy, satisfying finish sequence
-        source.playbackRate.value = 0.96 + (col / Math.max(1, total - 1)) * 0.12;
-        const gain = this.ctx.createGain();
-        gain.gain.value = VOLUME.new_reel_stop ?? 0.65;
-        source.connect(gain).connect(this.ctx.destination);
-        source.start();
-      } else {
-        this.synthClick();
-      }
-    }
     if (col === total - 1) {
       this.stopSynthReel();
     }
   }
 
-  /** Procedural reel spin: rapid repeating triangle-wave thock + noise tick.
-   *  Same sonic character as the original per-column stop sound, but looped
-   *  continuously so it plays for the entire spin duration. */
+  /** Procedural reel spin: replaced with native loop track. */
   private startSynthReel(): void {
-    if (!this.ctx || this.spinReelTimer !== null) return;
-    const master = this.ctx.createGain();
-    master.gain.setValueAtTime(0.0001, this.ctx.currentTime);
-    master.gain.exponentialRampToValueAtTime(1.2, this.ctx.currentTime + 0.05);
-    master.connect(this.ctx.destination);
-    this.spinReelMaster = master;
-
-    let next = this.ctx.currentTime + 0.02;
-    const tick = (): void => {
-      if (!this.ctx || !this.spinReelMaster) return;
-      while (next < this.ctx.currentTime + 0.25) {
-        // Triangle-wave thock (pitch drops fast — the low body)
-        const osc = this.ctx.createOscillator();
-        const g = this.ctx.createGain();
-        osc.type = "triangle";
-        const f0 = 150 + Math.random() * 40;
-        osc.frequency.setValueAtTime(f0, next);
-        osc.frequency.exponentialRampToValueAtTime(f0 * 0.5, next + 0.07);
-        g.gain.setValueAtTime(0.0001, next);
-        g.gain.exponentialRampToValueAtTime(0.40, next + 0.005);
-        g.gain.exponentialRampToValueAtTime(0.0001, next + 0.10);
-        osc.connect(g).connect(master);
-        osc.start(next);
-        osc.stop(next + 0.12);
-
-        // High-pass noise tick (the snap)
-        const frames = Math.floor(this.ctx.sampleRate * 0.012);
-        const synthBuf = this.ctx.createBuffer(1, frames, this.ctx.sampleRate);
-        const data = synthBuf.getChannelData(0);
-        for (let i = 0; i < frames; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / frames);
-        const src = this.ctx.createBufferSource();
-        src.buffer = synthBuf;
-        const hp = this.ctx.createBiquadFilter();
-        hp.type = "highpass"; hp.frequency.value = 2600;
-        const tg = this.ctx.createGain();
-        tg.gain.value = 0.25;
-        src.connect(hp).connect(tg).connect(master);
-        src.start(next);
-
-        next += 0.085; // ~12 pulses/sec → sounds like a rapid spinning reel
-      }
-      this.spinReelTimer = window.setTimeout(tick, 60);
-    };
-    tick();
+    this.startLoop("reel_loop", "spin");
   }
 
   private stopSynthReel(): void {
-    if (this.spinReelTimer !== null) { window.clearTimeout(this.spinReelTimer); this.spinReelTimer = null; }
-    if (this.spinReelMaster && this.ctx) {
-      const g = this.spinReelMaster;
-      const now = this.ctx.currentTime;
-      try {
-        g.gain.cancelScheduledValues(now);
-        g.gain.setValueAtTime(Math.max(g.gain.value, 0.0001), now);
-        g.gain.exponentialRampToValueAtTime(0.0001, now + 0.1);
-      } catch { /* ignore */ }
-      const ref = g;
-      window.setTimeout(() => { try { ref.disconnect(); } catch { /* ignore */ } }, 200);
-      this.spinReelMaster = null;
-    }
+    this.fadeOut("spin");
   }
 
   /** Rising tension riser when 2+ scatters are in play (anticipation spin). */
@@ -592,8 +606,8 @@ export class EventAudioBus {
 
       /* ── wins ────────────────────────────────── */
       case "cluster_win":
-        if (ev.payout >= 20)     this.fire("win_big", vol);
-        else                     this.fire("win_small", vol);
+        // Combination sound = reel stop sound (per user request)
+        this.fire("new_reel_stop", vol);
         break;
 
       /* ── heat system ─────────────────────────── */
@@ -619,41 +633,38 @@ export class EventAudioBus {
         break;
 
       /* ── scatter / bonus ─────────────────────── */
-      case "scatter_tease":
-        if (this.buffers.has("scatter_land")) this.fire("scatter_land", vol);
-        else this.fire("heat_rise", vol * 0.7);
+      case "scatter_tease": {
+        // Play the old combination sound once per scatter, staggered 150ms apart
+        const scatterCount = ev.count ?? ev.positions?.length ?? 1;
+        const scatterTrack: TrackName = "good_win_combo";
+        for (let i = 0; i < scatterCount; i++) {
+          setTimeout(() => this.fire(scatterTrack, vol), i * 150);
+        }
         break;
+      }
 
       case "bonus_trigger":
-        this.fire("bonus_trigger", vol);
+        this.fire("getaway_intro", vol, 1.25); // 25% faster so it ends sooner
         this.inBonus = true;
         this.crossfadeBg("bg_bonus");
         break;
 
       case "bonus_spin":
-        // Grand reveal audio is handled by fireSafeLand() callback
-        // Normal bonus spins with few symbols still get a vault sound
-        if (ev.landedSymbols.length > 0 && ev.landedSymbols.length < 20)
-          this.fire("vault_lock", vol);
+        // Gold bar audio is handled by fireSafeLand() callback when they physically land on screen.
         break;
 
       case "safe_lock":
-        this.fire("vault_lock", vol);
+        // Value is shown on the gold bar and added to COLLECTED — no audio here because fireSafeLand handles it sync'd with visual.
         break;
 
       case "master_key_crack":
-        if (this.buffers.has("dynamite_explode")) this.fire("dynamite_explode", vol);
+        if (this.buffers.has("getaway_explosive")) this.fire("getaway_explosive", vol);
         else this.fire("siren", vol * 0.45);
         break;
 
       case "bonus_end":
         this.inBonus = false;
-        if (ev.filledScreen || ev.totalPayout >= 100)
-          this.fire("mega_win", vol);
-        else if (ev.totalPayout >= 10)
-          this.fire("win_big", vol);
-        else
-          this.fire("win_small", vol);
+        this.fire("getaway_end", vol);
         this.crossfadeBg("bg_base");
         break;
 
@@ -672,7 +683,7 @@ export class EventAudioBus {
      ═══════════════════════════════════════════════ */
 
   /** Fire a one-shot sound (layers on top of everything) */
-  fire(track: TrackName, volumeScale = 1): void {
+  fire(track: TrackName, volumeScale = 1, playbackRate = 1): void {
     if (!this.ctx) return;
     if (this.ctx.state === "suspended") {
       void this.ctx.resume();
@@ -713,6 +724,7 @@ export class EventAudioBus {
 
     const source = this.ctx.createBufferSource();
     source.buffer = buf;
+    source.playbackRate.value = playbackRate;
     const gain = this.ctx.createGain();
     gain.gain.value = (VOLUME[track] ?? 0.5) * volumeScale;
     source.connect(gain).connect(this.ctx.destination);
@@ -766,10 +778,125 @@ export class EventAudioBus {
     osc.stop(t + 0.09);
   }
 
+  /* ═══════════════════════════════════════════════
+     Win-banner IMPACT — the cinematic "bang"
+     ═══════════════════════════════════════════════
+     A layered one-shot built for weight: a sub-bass body-drop, a tight
+     transient crack, and (for bigger tiers) a detuned brass "braaam" stab —
+     the getaway/heist hit that makes every banner land like a punch.
+     Every banner that pops calls this; each tier crossing inside the big
+     cinematic counter calls it again, so stacked banners each bang. */
+  bannerImpact(intensity: "low" | "mid" | "high" | "grand" = "mid"): void {
+    void this.unlock().then(() => {
+      if (!this.ctx) return;
+      const t = this.ctx.currentTime;
+      const scale =
+        intensity === "grand" ? 1.0 :
+        intensity === "high"  ? 0.82 :
+        intensity === "mid"   ? 0.66 : 0.5;
+
+      const out = this.ctx.createGain();
+      out.gain.value = 0.95 * scale;
+      out.connect(this.ctx.destination);
+
+      // 1) Sub-bass body drop — the chest thump (sine pitch-sweep down).
+      const subEnd = 0.42 + scale * 0.22;
+      const sub = this.ctx.createOscillator();
+      const subG = this.ctx.createGain();
+      sub.type = "sine";
+      sub.frequency.setValueAtTime(155, t);
+      sub.frequency.exponentialRampToValueAtTime(40, t + subEnd);
+      subG.gain.setValueAtTime(0.0001, t);
+      subG.gain.exponentialRampToValueAtTime(1.0, t + 0.012);
+      subG.gain.exponentialRampToValueAtTime(0.0001, t + subEnd + 0.05);
+      sub.connect(subG).connect(out);
+      sub.start(t); sub.stop(t + subEnd + 0.1);
+
+      // 2) Mid body punch — triangle for weight/warmth.
+      const body = this.ctx.createOscillator();
+      const bodyG = this.ctx.createGain();
+      body.type = "triangle";
+      body.frequency.setValueAtTime(110, t);
+      body.frequency.exponentialRampToValueAtTime(58, t + 0.16);
+      bodyG.gain.setValueAtTime(0.0001, t);
+      bodyG.gain.exponentialRampToValueAtTime(0.55, t + 0.008);
+      bodyG.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+      body.connect(bodyG).connect(out);
+      body.start(t); body.stop(t + 0.24);
+
+      // 3) Transient crack — short high-passed noise burst = the snap/attack.
+      const frames = Math.floor(this.ctx.sampleRate * 0.06);
+      const nbuf = this.ctx.createBuffer(1, frames, this.ctx.sampleRate);
+      const ndata = nbuf.getChannelData(0);
+      for (let i = 0; i < frames; i++) ndata[i] = (Math.random() * 2 - 1) * (1 - i / frames);
+      const nsrc = this.ctx.createBufferSource();
+      nsrc.buffer = nbuf;
+      const nhp = this.ctx.createBiquadFilter();
+      nhp.type = "highpass"; nhp.frequency.value = 2200;
+      const nG = this.ctx.createGain();
+      nG.gain.setValueAtTime(0.0001, t);
+      nG.gain.exponentialRampToValueAtTime(0.6 * scale, t + 0.004);
+      nG.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+      nsrc.connect(nhp).connect(nG).connect(out);
+      nsrc.start(t);
+
+      // 4) Heist brass "braaam" — detuned saw power chord (root + fifth) through
+      //    a lowpass that snaps open. Only from mid up, so small wins stay clean.
+      if (intensity !== "low") {
+        const brassG = this.ctx.createGain();
+        const brassLp = this.ctx.createBiquadFilter();
+        brassLp.type = "lowpass";
+        brassLp.frequency.setValueAtTime(300, t);
+        brassLp.frequency.exponentialRampToValueAtTime(intensity === "grand" ? 4200 : 2600, t + 0.08);
+        brassLp.frequency.exponentialRampToValueAtTime(700, t + 0.5);
+        brassLp.Q.value = 3;
+        const stabDur = intensity === "grand" ? 0.7 : intensity === "high" ? 0.55 : 0.42;
+        brassG.gain.setValueAtTime(0.0001, t);
+        brassG.gain.exponentialRampToValueAtTime(0.5 * scale, t + 0.02);
+        brassG.gain.exponentialRampToValueAtTime(0.18 * scale, t + stabDur * 0.5);
+        brassG.gain.exponentialRampToValueAtTime(0.0001, t + stabDur);
+        brassLp.connect(brassG).connect(out);
+        const root = intensity === "grand" ? 82.4 : 98.0; // E2 / G2
+        const voices = [root, root * 1.5, root * 2, root * 2 * 1.5];
+        for (const f of voices) {
+          for (const det of [-6, 7]) {
+            const o = this.ctx.createOscillator();
+            o.type = "sawtooth";
+            o.frequency.value = f;
+            o.detune.value = det;
+            o.connect(brassLp);
+            o.start(t); o.stop(t + stabDur + 0.05);
+          }
+        }
+      }
+    });
+  }
+
+  /* ═══════════════════════════════════════════════
+     Continuous money-counter roller (synced to count-up)
+     ═══════════════════════════════════════════════ */
+
+  /** Spin up the looping counter voice. */
+  startWinCounter(): void {
+    this.startLoop("money_counter_loop", "counter");
+  }
+
+  /** Drive the roller from the count-up. */
+  updateWinCounter(p: number, tier: "none" | "big" | "mega" | "grand" | "max"): void {
+    // With a static track we don't dynamically adjust pitch like the synth, 
+    // but the API signature remains the same so EffectsLayer doesn't need changes here.
+  }
+
+  /** Resolve the roller: a quick upward flourish, then a clean fade-and-stop. */
+  stopWinCounter(): void {
+    this.fadeOut("counter");
+    this.fire("money_counter_end");
+  }
+
   /** Start a looping track in a named slot */
-  private startLoop(track: TrackName, slot: "bg" | "spin"): void {
+  private startLoop(track: TrackName, slot: "bg" | "spin" | "counter"): void {
     if (!this.ctx) return;
-    const existing = slot === "bg" ? this.bgLoop : this.spinLoop;
+    const existing = slot === "bg" ? this.bgLoop : slot === "spin" ? this.spinLoop : this.counterLoop;
     if (existing?.track === track) return;          // already playing this track
 
     const buf = this.buffers.get(track);
@@ -793,16 +920,18 @@ export class EventAudioBus {
 
     const loop: ActiveLoop = { source, gain, track };
     if (slot === "bg") this.bgLoop = loop;
-    else               this.spinLoop = loop;
+    else if (slot === "spin") this.spinLoop = loop;
+    else this.counterLoop = loop;
   }
 
   /** Fade out and stop a loop slot */
-  private fadeOut(slot: "bg" | "spin"): void {
-    const loop = slot === "bg" ? this.bgLoop : this.spinLoop;
+  private fadeOut(slot: "bg" | "spin" | "counter"): void {
+    const loop = slot === "bg" ? this.bgLoop : slot === "spin" ? this.spinLoop : this.counterLoop;
     if (!loop) return;
     this.fadeAndStop(loop);
     if (slot === "bg") this.bgLoop = null;
-    else               this.spinLoop = null;
+    else if (slot === "spin") this.spinLoop = null;
+    else this.counterLoop = null;
   }
 
   /** Crossfade background music to a new track */
@@ -842,6 +971,7 @@ export class EventAudioBus {
     if (this.spinLoop) this.fadeAndStop(this.spinLoop);
     this.stopSynthReel();
     this.stopSynthRadio();
+    this.stopWinCounter();
   }
 
   /* ═══════════════════════════════════════════════

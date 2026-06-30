@@ -53,6 +53,18 @@ export interface SceneRuntime {
   /** Fired when symbols transform to cash/money on the board. */
   onTransform?: () => void;
   playAudio?(track: string, volumeScale?: number): void;
+  /** Start the typewriter sound (synced with getaway intro text animation). */
+  onTypewriterStart?(): void;
+  /** Stop the typewriter sound immediately. */
+  onTypewriterStop?(): void;
+  /** Cinematic "bang" fired when a win banner pops (and on each tier crossing
+   *  inside the big count-up), scaled by tier. */
+  bannerImpact?(intensity: "low" | "mid" | "high" | "grand"): void;
+  /** Spin up the continuous money-counter roller (call once when the count-up
+   *  starts), drive it each frame, then resolve it. */
+  winCounterStart?(): void;
+  winCounterUpdate?(progress: number, tier: "none" | "big" | "mega" | "grand" | "max"): void;
+  winCounterEnd?(): void;
   previewRecord: RoundRecord;
 }
 
