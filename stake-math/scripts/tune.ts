@@ -5,8 +5,8 @@
 import { simulateRound } from "../src/engine";
 
 const N = 8000;
-for (const mode of ["buy", "super_buy"] as const) {
-  const cost = mode === "buy" ? 100 : 500;
+for (const mode of ["getaway", "super_getaway"] as const) {
+  const cost = mode === "getaway" ? 100 : 500;
   const xs: number[] = [];
   for (let i = 1; i <= N; i++) {
     const { record } = simulateRound(mode, "freegame", (i * 2654435761) >>> 0, i);

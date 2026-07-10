@@ -1,9 +1,10 @@
 /**
  * GTA loading-screen styled confirmation popup for the Getaway / Super Getaway
- * feature buys. Renders a cinematic "heist briefing" card that matches the
+ * feature plays. Renders a cinematic "heist briefing" card that matches the
  * in-game Vice-neon aesthetic (Heat Chase logo, wanted stars, magenta/cyan +
  * max-heat orange palette, Impact typography) rather than a generic modal.
  */
+import { trackModalClosed, trackModalOpen } from "./modals";
 
 // Inject CSS styles once
 let stylesInjected = false;
@@ -380,17 +381,24 @@ function starSvg(lit: boolean): string {
 }
 
 export function showConfirmPopup(
-  action: "buy" | "super_buy",
+  action: "getaway" | "super_getaway",
   betAmount: number,
+  /** DISPLAY currency code (already GC/SC-mapped for social casinos). */
   currency: string,
   playAudio: () => void,
   /** Cost multiplier sourced from the RGS bet-mode config (never hardcoded). */
-  costMultiplier?: number
+  costMultiplier?: number,
+  /** Stake.US social casino — strips every restricted word (buy/bet). */
+  social = false
 ): Promise<boolean> {
   injectStyles();
 
+  // Single instance: a second confirmation can never stack on an open one.
+  const existing = document.querySelector(".hc-buy-overlay");
+  if (existing) return Promise.resolve(false);
+
   return new Promise<boolean>((resolve) => {
-    const multiplier = costMultiplier ?? (action === "super_buy" ? 500 : 100);
+    const multiplier = costMultiplier ?? (action === "super_getaway" ? 500 : 100);
     const totalCost = betAmount * multiplier;
 
     const formattedCost = totalCost.toLocaleString("en-US", {
@@ -398,11 +406,15 @@ export function showConfirmPopup(
       maximumFractionDigits: 2
     });
 
-    const isSuper = action === "super_buy";
+    const isSuper = action === "super_getaway";
     const cardClass = isSuper ? "hc-buy-card super" : "hc-buy-card";
-    const kicker = isSuper ? "MAXIMUM HEAT · ALL-IN" : "HEIST BRIEFING · BUY FEATURE";
-    const titleLead = isSuper ? "SUPER" : "BUY";
+    const kicker = isSuper
+      ? "MAXIMUM HEAT · ALL-IN"
+      : social ? "HEIST BRIEFING · FEATURE PLAY" : "HEIST BRIEFING · BUY FEATURE";
+    const titleLead = isSuper ? "SUPER" : social ? "THE" : "BUY";
     const titleMain = "GETAWAY";
+    const unitWord = social ? "PLAY" : "BET";
+    const confirmLabel = social ? "Confirm" : "Confirm Buy";
 
     const description = isSuper
       ? "Skip the chase and force the highest-heat Getaway — the richest escape routes and top multipliers are locked in from the first spin."
@@ -430,19 +442,20 @@ export function showConfirmPopup(
           <h2 class="hc-buy-title"><span class="lead">${titleLead}</span>${titleMain}</h2>
           <div class="hc-buy-stars">${starsHtml}</div>
           <div class="hc-buy-cost">
-            <span class="hc-buy-cost-mult">${multiplier.toLocaleString("en-US")}× BET</span>
-            <span class="hc-buy-cost-val">$${formattedCost} ${currency}</span>
+            <span class="hc-buy-cost-mult">${multiplier.toLocaleString("en-US")}× ${unitWord}</span>
+            <span class="hc-buy-cost-val">${formattedCost} ${currency}</span>
           </div>
           <p class="hc-buy-desc">${description}</p>
         </div>
         <div class="hc-buy-actions">
           <button class="hc-buy-btn cancel" id="hc-btn-cancel">Cancel</button>
-          <button class="hc-buy-btn confirm" id="hc-btn-confirm">${isSuper ? "Go All-In" : "Confirm Buy"}</button>
+          <button class="hc-buy-btn confirm" id="hc-btn-confirm">${isSuper ? "Go All-In" : confirmLabel}</button>
         </div>
       </div>
     `;
 
     document.body.appendChild(overlay);
+    trackModalOpen(); // spacebar must not spin behind the confirmation card
 
     // Trigger reflow to start transition
     void overlay.offsetHeight;
@@ -451,7 +464,11 @@ export function showConfirmPopup(
     // Play initial prompt audio
     playAudio();
 
+    let closed = false;
     const cleanup = (value: boolean): void => {
+      if (closed) return;
+      closed = true;
+      trackModalClosed();
       overlay.classList.remove("show");
       setTimeout(() => {
         overlay.remove();

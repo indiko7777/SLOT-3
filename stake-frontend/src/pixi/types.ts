@@ -1,4 +1,5 @@
-import type { RoundRecord } from "../domain";
+import type { RoundRecord, UiStrings } from "../domain";
+import type { BetModeObject } from "../rgs/types";
 import type { PieceGain } from "../meta/collection";
 
 /** Persistent Beach Girl gallery snapshot for HUD rendering (cosmetic). */
@@ -22,10 +23,21 @@ export interface SceneRuntime {
   isReplayActive?(): boolean;
   getBetLevel(): number;
   getCredit(): number;
+  /** DISPLAY currency code (XGC→GC, XSC→SC already applied). */
   getCurrency(): string;
   /** Cost multiplier for a bet mode, sourced from the RGS betModes config
-   *  (e.g. buy = 100, super_buy = 500, ante = 1.5). Falls back to 1 if unknown. */
+   *  (e.g. getaway = 100, super_getaway = 500, ante = 1.5). Defaults to 1. */
   getCostMultiplier?(mode: string): number;
+  /** Stake.US social casino flag from the RGS jurisdiction config. */
+  isSocial(): boolean;
+  /** Social-aware UI strings (bet→play, buy→feature, …). */
+  getUiStrings(): UiStrings;
+  /** The bet modes the RGS actually offered this session (drives game info). */
+  getBetModes(): Record<string, BetModeObject>;
+  /** True while an autoplay run is in progress. */
+  isAutoplayActive?(): boolean;
+  /** Spins left in the current autoplay run (Infinity = endless, 0 = none). */
+  getAutoplayRemaining?(): number;
   /** Live in-spin Wanted level = cascade Heat, 0–5. At 5★ the Getaway triggers. */
   getWantedLevel(): number;
   /** Pieces shown for the current girl (0..her piece count). */

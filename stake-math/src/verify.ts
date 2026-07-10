@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { MAX_WIN_X, RTP_TOLERANCE, TARGET_RTP } from "./model";
 import { zstdDecompress } from "./zstd";
 
@@ -35,20 +36,30 @@ export async function verify(write = true): Promise<ModeStats[]> {
 
   for (const m of index.modes) {
     // Parse books first: id -> { payout (hundredths), bonus presence }.
+    // Decode line-by-line from the Buffer: a 100k-book bonus mode decompresses
+    // past V8's max string length, so one giant .toString() is not possible.
     const raw = await readFile(path.join(root, m.events));
-    const jsonl = (await zstdDecompress(raw)).toString("utf8");
+    const jsonlBuf = await zstdDecompress(raw);
     const book = new Map<number, { payout: number; bonus: boolean }>();
-    for (const l of jsonl.split("\n")) {
-      if (!l.trim()) continue;
-      const b = JSON.parse(l) as {
-        id: number;
-        payoutMultiplier: number;
-        events: Array<{ type: string }>;
-      };
-      book.set(b.id, {
-        payout: b.payoutMultiplier,
-        bonus: b.events.some((e) => e.type === "bonus_trigger")
-      });
+    let start = 0;
+    while (start < jsonlBuf.length) {
+      let end = jsonlBuf.indexOf(0x0a, start); // "\n"
+      if (end === -1) end = jsonlBuf.length;
+      if (end > start) {
+        const l = jsonlBuf.toString("utf8", start, end);
+        if (l.trim()) {
+          const b = JSON.parse(l) as {
+            id: number;
+            payoutMultiplier: number;
+            events: Array<{ type: string }>;
+          };
+          book.set(b.id, {
+            payout: b.payoutMultiplier,
+            bonus: b.events.some((e) => e.type === "bonus_trigger")
+          });
+        }
+      }
+      start = end + 1;
     }
 
     const csv = await readFile(path.join(root, m.weights), "utf8");
@@ -179,7 +190,10 @@ export async function verify(write = true): Promise<ModeStats[]> {
   return stats;
 }
 
-if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, "/")}`) {
+// pathToFileURL handles the Windows drive-letter form (file:///C:/...) that a
+// hand-built `file://${argv[1]}` string gets wrong (it never matched on win32,
+// silently skipping verification when run via `npm run verify`).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   verify().catch((e) => {
     console.error(e);
     process.exit(1);

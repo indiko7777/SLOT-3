@@ -45,7 +45,9 @@ export async function publishMode(
 
   let weightSum = 0n;
   const csv: string[] = [];
-  const books: string[] = [];
+  // Per-line Buffers, concatenated once. A single books.join("\n") string
+  // overflows V8's max string length at 100k+ bonus books; Buffers do not.
+  const bookBufs: Buffer[] = [];
   for (const r of rows) {
     if (!Number.isInteger(r.weight) || r.weight < 0)
       throw new Error(`[${mode}] bad weight ${r.weight} (sim ${r.id})`);
@@ -57,12 +59,15 @@ export async function publishMode(
       throw new Error(`[${mode}] non-zero payout < 10 (sim ${r.id})`);
     weightSum += BigInt(r.weight);
     csv.push(`${r.id},${r.weight},${r.payoutCents}`);
-    books.push(
-      JSON.stringify({
-        id: r.id,
-        events: byId.get(r.id)!.record.events,
-        payoutMultiplier: r.payoutCents
-      })
+    bookBufs.push(
+      Buffer.from(
+        JSON.stringify({
+          id: r.id,
+          events: byId.get(r.id)!.record.events,
+          payoutMultiplier: r.payoutCents
+        }) + "\n",
+        "utf8"
+      )
     );
   }
   if (weightSum >= 1n << 64n)
@@ -71,10 +76,7 @@ export async function publishMode(
   const booksFile = `books_${mode}.jsonl.zst`;
   const weightsFile = `lookUpTable_${mode}_0.csv`;
   const csvText = csv.join("\n") + "\n";
-  const compressed = await zstdCompress(
-    Buffer.from(books.join("\n") + "\n", "utf8"),
-    10
-  );
+  const compressed = await zstdCompress(Buffer.concat(bookBufs), 10);
 
   await writeFile(path.join(root, weightsFile), csvText, "utf8");
   await writeFile(path.join(root, booksFile), compressed);

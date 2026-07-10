@@ -13,7 +13,11 @@ import { fileURLToPath } from "node:url";
 import { decompress, init } from "@bokuweb/zstd-wasm";
 
 const PORT = Number(process.env.MOCK_RGS_PORT ?? 8787);
-const START_BALANCE = 1_000_000; // display units
+const START_BALANCE = Number(process.env.MOCK_BALANCE ?? 1_000_000); // display units
+/** MOCK_SOCIAL=1 simulates Stake.US: socialCasino flag + XGC currency, to
+ *  verify the restricted-word swaps and GC/SC display locally. */
+const SOCIAL = process.env.MOCK_SOCIAL === "1";
+const CURRENCY = SOCIAL ? "XGC" : (process.env.MOCK_CURRENCY ?? "USD");
 const API = 1_000_000; // 6dp integer money
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PUBLISH = path.resolve(here, "../../stake-math/publish_files");
@@ -27,10 +31,12 @@ interface ModeData {
   cost: number;
   rows: Row[];
   totalWeight: number;
-  /** Raw JSONL line per book id; parsed on demand. Storing strings (not parsed
-   *  object graphs) keeps all modes — including the 3 tier tables, ~236k books
-   *  total — comfortably within the Node heap. */
-  events: Map<number, string>;
+  /** Decompressed JSONL kept as ONE Buffer (outside the V8 heap) plus per-book
+   *  byte offsets. At 100k books/mode the raw JSONL runs to several hundred MB
+   *  per mode — far past V8's max string length and too much heap for per-line
+   *  strings — so lines are decoded on demand from the Buffer. */
+  jsonl: Buffer;
+  offsets: Map<number, [start: number, end: number]>;
 }
 
 const modes = new Map<string, ModeData>();
@@ -78,15 +84,21 @@ function loadBundle(): void {
       payoutById.set(id, p);
     }
     const raw = readFileSync(path.join(PUBLISH, m.events));
-    const jsonl = Buffer.from(decompress(new Uint8Array(raw))).toString("utf8");
-    const events = new Map<number, string>();
-    for (const l of jsonl.split("\n")) {
-      const line = l.trim();
-      if (!line) continue;
-      const id = Number(line.slice(line.indexOf(":") + 1, line.indexOf(",")));
-      events.set(id, line);
+    const jsonl = Buffer.from(decompress(new Uint8Array(raw)));
+    const offsets = new Map<number, [number, number]>();
+    let start = 0;
+    while (start < jsonl.length) {
+      let end = jsonl.indexOf(0x0a, start); // "\n"
+      if (end === -1) end = jsonl.length;
+      if (end > start) {
+        // Book id sits at the line head: {"id":123,... — decode only that bit.
+        const head = jsonl.toString("utf8", start, Math.min(start + 32, end));
+        const id = Number(head.slice(head.indexOf(":") + 1, head.indexOf(",")));
+        if (Number.isFinite(id)) offsets.set(id, [start, end]);
+      }
+      start = end + 1;
     }
-    modes.set(m.name, { cost: m.cost, rows, totalWeight: cum, events });
+    modes.set(m.name, { cost: m.cost, rows, totalWeight: cum, jsonl, offsets });
     console.log(
       `[mock-rgs] ${m.name}: ${rows.length} books, cost ${m.cost}, ` +
         `weight ${cum.toExponential(3)}`
@@ -119,7 +131,7 @@ const OK = { statusCode: "SUCCESS", statusMessage: "" };
 
 const server = createServer((req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "content-type");
   if (req.method === "OPTIONS") {
     res.writeHead(204).end();
@@ -145,7 +157,7 @@ const server = createServer((req, res) => {
       if (req.url === "/wallet/authenticate") {
         json({
           status: OK,
-          balance: { amount: s.balanceApi, currency: "USD" },
+          balance: { amount: s.balanceApi, currency: CURRENCY },
           config: {
             minBet: BET_LEVELS[0],
             maxBet: BET_LEVELS[BET_LEVELS.length - 1],
@@ -155,10 +167,10 @@ const server = createServer((req, res) => {
             betModes: {
               base: { mode: "base", costMultiplier: cost("base"), feature: false },
               ante: { mode: "ante", costMultiplier: cost("ante"), feature: true },
-              buy: { mode: "buy", costMultiplier: cost("buy"), feature: false },
-              super_buy: {
-                mode: "super_buy",
-                costMultiplier: cost("super_buy"),
+              getaway: { mode: "getaway", costMultiplier: cost("getaway"), feature: false },
+              super_getaway: {
+                mode: "super_getaway",
+                costMultiplier: cost("super_getaway"),
                 feature: false
               },
               // Collection Power-Level head-start tables (client-routed; 1x cost).
@@ -183,12 +195,12 @@ const server = createServer((req, res) => {
           return;
         }
         const amount = Number(payload.amount) || 0; // 6dp, base bet
-        // A free feature (e.g. the Wanted-meter Getaway) is played at zero cost.
-        const debit = payload.free ? 0 : Math.round(amount * mode.cost);
+        // Every play is debited — no zero-cost path exists (matches production).
+        const debit = Math.round(amount * mode.cost);
         if (debit > s.balanceApi) {
           json({
             status: { statusCode: "ERR_IPB", statusMessage: "insufficient balance" },
-            balance: { amount: s.balanceApi, currency: "USD" },
+            balance: { amount: s.balanceApi, currency: CURRENCY },
             error: "insufficient balance"
           });
           return;
@@ -198,7 +210,7 @@ const server = createServer((req, res) => {
         const winApi = Math.round((amount * row.payoutCents) / 100);
         s.balanceApi -= debit;
         s.pendingWin = winApi;
-        const line = mode.events.get(row.id);
+        const line = getBookLine(mode, row.id);
         const state = line ? (JSON.parse(line) as { events: unknown[] }).events : [];
         const round = {
           roundID: roundSeq++,
@@ -212,7 +224,7 @@ const server = createServer((req, res) => {
         if (winApi === 0) s.pendingWin = 0; // RGS auto-ends 0-win rounds
         json({
           status: OK,
-          balance: { amount: s.balanceApi, currency: "USD" },
+          balance: { amount: s.balanceApi, currency: CURRENCY },
           round: { ...round, active: winApi > 0, event: null },
           error: null
         });
@@ -225,7 +237,7 @@ const server = createServer((req, res) => {
         s.active = null;
         json({
           status: OK,
-          balance: { amount: s.balanceApi, currency: "USD" },
+          balance: { amount: s.balanceApi, currency: CURRENCY },
           error: null
         });
         return;
@@ -233,6 +245,36 @@ const server = createServer((req, res) => {
 
       if (req.url === "/bet/event") {
         json({ status: OK, event: String(payload.event ?? ""), error: null });
+        return;
+      }
+
+      // GET /bet/replay/{game}/{version}/{mode}/{eventId} — serve the exact
+      // book so replay URLs work against the local bundle too.
+      const replayMatch = (req.url ?? "").match(
+        /^\/bet\/replay\/[^/]+\/[^/]+\/([^/]+)\/(\d+)(?:\?.*)?$/
+      );
+      if (replayMatch) {
+        const [, modeName, eventIdS] = replayMatch;
+        const mode = modes.get(String(modeName));
+        const eventId = Number(eventIdS);
+        const line = mode ? getBookLine(mode, eventId) : null;
+        if (!mode || !line) {
+          json({
+            status: { statusCode: "ERR_VAL", statusMessage: "unknown replay event" },
+            error: "unknown replay event"
+          });
+          return;
+        }
+        const book = JSON.parse(line) as { events: unknown[]; payoutMultiplier: number };
+        json({
+          status: OK,
+          roundID: eventId,
+          mode: modeName,
+          costMultiplier: mode.cost,
+          payoutMultiplier: book.payoutMultiplier / 100,
+          state: book.events,
+          error: null
+        });
         return;
       }
 
@@ -249,9 +291,16 @@ const server = createServer((req, res) => {
 function cost(name: string): number {
   return modes.get(name)?.cost ?? 1;
 }
+
+/** Decode one book's JSONL line from the mode's Buffer on demand. */
+function getBookLine(mode: ModeData, id: number): string | null {
+  const span = mode.offsets.get(id);
+  if (!span) return null;
+  return mode.jsonl.toString("utf8", span[0], span[1]);
+}
 function jurisdiction(): Record<string, unknown> {
   return {
-    socialCasino: false,
+    socialCasino: SOCIAL,
     disabledFullscreen: false,
     disabledTurbo: false,
     disabledSuperTurbo: false,

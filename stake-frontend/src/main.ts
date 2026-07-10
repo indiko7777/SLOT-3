@@ -1,6 +1,8 @@
 import { Application } from "pixi.js";
 import { EventAudioBus } from "./audio";
-import type { GameEvent, RoundRecord } from "./domain";
+import { displayCurrency, uiStrings, type GameEvent, type RoundRecord } from "./domain";
+import { isModalOpen, showChoiceModal, showToast } from "./modals";
+import { formatWin } from "./rgs/client";
 import { hideLoader, showLoader, updateLoader } from "./loader";
 import { applyEvent, INITIAL_SNAPSHOT, type PlaybackSnapshot } from "./playback";
 import { GIRLS, type PieceGain, collectWild as collectWildPiece, consumeGetawayStars, sanitize as sanitizeGallery, emptyGallery, type GalleryData } from "./meta/collection";
@@ -105,6 +107,45 @@ let spinOrganic = false; // base/ante/tier spin (points accrue) vs a bought bonu
 
 const currentBet = (): number => betLevels[betIndex] ?? 0;
 
+/** Stake.US social casino — flips every restricted word in the UI. Replay
+ *  launches carry no authenticate/jurisdiction, so the social currencies
+ *  (XGC/XSC) imply it there — the replay window must stay restricted-word
+ *  free too. */
+const isSocial = (): boolean =>
+  Boolean(jurisdiction?.socialCasino) ||
+  (isReplayActive && (currency === "XGC" || currency === "XSC"));
+/** Currency code for DISPLAY (XGC→GC, XSC→SC); wire calls keep the raw code. */
+const displayCur = (): string => displayCurrency(currency);
+const ui = () => uiStrings(isSocial());
+
+/** Total debit of a spin in `mode` at the current bet (bet × cost multiplier). */
+function modeCost(modeKey: string): number {
+  return currentBet() * (betModes[modeKey]?.costMultiplier ?? 1);
+}
+
+/** Guard shared by spin/feature actions: block and toast when the balance
+ *  cannot cover the play — the RGS must never even receive the request. */
+function hasFundsFor(modeKey: string): boolean {
+  const cost = modeCost(modeKey);
+  if (cost <= 0) return false;
+  if (cost > balance + 1e-9) {
+    showToast("INSUFFICIENT BALANCE");
+    return false;
+  }
+  return true;
+}
+
+/** True while any window sits over the board — the spacebar must do nothing. */
+function anyOverlayOpen(): boolean {
+  return (
+    isModalOpen() ||
+    (settingsMenu?.isOpen() ?? false) ||
+    (radioWheel?.isOpen() ?? false) ||
+    (scene?.isPaytableOpen() ?? false) ||
+    (scene?.isGalleryOpen() ?? false)
+  );
+}
+
 /** Called once per WILD that lands. Uses the 1:1 collection.ts system:
  *  every single WILD reveals exactly one body part — always, immediately.
  *  Also adds power-level points for the head-start routing (separate system). */
@@ -188,17 +229,29 @@ async function boot(): Promise<void> {
       jurisdiction = null;
       betLevels = [session.replayAmount > 0 ? session.replayAmount : 0.01];
       betIndex = 0;
-      
-      const replayData = await client.getReplayData("heat-chase", "1", "base", session.replayEvent);
+
+      activeModeKey = session.replayMode || "base";
+      anteEnabled = activeModeKey === "ante";
+      const replayData = await client.getReplayData(
+        "heat-chase", "1", activeModeKey, session.replayEvent
+      );
       if (replayData && replayData.state) {
         resume = {
-          id: replayData.roundID || "replay",
+          id: replayData.roundID || 0,
           payoutMultiplier: replayData.payoutMultiplier || 0,
           events: replayData.state
         };
+        if (typeof replayData.mode === "string" && replayData.mode) {
+          activeModeKey = replayData.mode;
+        }
+        if (replayData.costMultiplier) {
+          betModes[activeModeKey] = {
+            mode: activeModeKey,
+            costMultiplier: Number(replayData.costMultiplier) || 1,
+            feature: false
+          };
+        }
       }
-      activeModeKey = "base";
-      anteEnabled = false;
     } else {
       const auth = await client.authenticate();
       currency = auth.balance.currency;
@@ -208,6 +261,8 @@ async function boot(): Promise<void> {
       betLevels = (auth.config.betLevels ?? []).map(toDisplay);
       if (betLevels.length === 0)
         betLevels = [toDisplay(auth.config.defaultBetLevel || 1_000_000)];
+      // Fresh sessions ALWAYS start on the currency's RGS default bet level —
+      // nothing is ever restored from local state.
       const def = toDisplay(
         auth.config.defaultBetLevel || auth.config.betLevels?.[0] || 0
       );
@@ -220,6 +275,14 @@ async function boot(): Promise<void> {
         };
         activeModeKey = auth.round.mode || "base";
         anteEnabled = activeModeKey === "ante";
+        // The interrupted round dictates the bet: round.amount is the total
+        // debit, so divide the mode's cost multiplier back out to recover the
+        // selected bet level (e.g. a 100x feature at 2.00 → amount 200.00).
+        const costMult = betModes[activeModeKey]?.costMultiplier || 1;
+        const activeBet = toDisplay(auth.round.amount) / costMult;
+        if (activeBet > 0) {
+          betIndex = Math.max(0, indexOfClosest(betLevels, activeBet));
+        }
       }
     }
   } catch (e) {
@@ -238,8 +301,13 @@ async function boot(): Promise<void> {
     isReplayActive: () => isReplayActive,
     getBetLevel: () => betLevels[betIndex] ?? 0,
     getCredit: () => balance,
-    getCurrency: () => currency,
+    getCurrency: () => displayCur(),
     getCostMultiplier: (mode) => betModes[mode]?.costMultiplier ?? 1,
+    isSocial: () => isSocial(),
+    getUiStrings: () => ui(),
+    getBetModes: () => betModes,
+    isAutoplayActive: () => autoplayRemaining > 0,
+    getAutoplayRemaining: () => autoplayRemaining,
     getWantedLevel: () => snapshot.heatLevel, // stars = live in-spin cascade Heat (0–5)
     getCollectionCount: () => galleryProgress().pieces,
     collectWild: onWildCollected,
@@ -250,7 +318,7 @@ async function boot(): Promise<void> {
     getHeadStartStars: () => headStartStars(),
     isHeadStartActive: () => headStartStars() > 0,
     onAction: (action) => {
-      if (!muted && action !== "buy" && action !== "super_buy") {
+      if (!muted && action !== "getaway" && action !== "super_getaway") {
         audioBus.playUI("ui_click", false);
       }
       return handleAction(action);
@@ -348,26 +416,167 @@ async function boot(): Promise<void> {
     });
   });
   resizeObserver.observe(pixi.canvas);
+  // Spacebar: bound to SPIN whenever the main board is idle and in focus.
+  // While a spin is already running, holding it acts as momentary turbo.
+  // It must do nothing when any overlay/menu is open, in replay mode, or when
+  // the jurisdiction disables the spacebar entirely.
   window.addEventListener("keydown", (event) => {
-    if (event.code === "Space" && !turboDisabled()) {
-      event.preventDefault();
+    if (event.code !== "Space") return;
+    if (jurisdiction?.disabledSpacebar) return;
+    event.preventDefault();
+    if (event.repeat) return;
+    if (anyOverlayOpen() || isReplayActive) return;
+    if (!isPlaying && autoplayRemaining === 0) {
+      void handleAction("spin");
+      return;
+    }
+    if (!turboDisabled()) {
       turboHeld = true;
       scene.renderSnapshot(snapshot);
     }
   });
   window.addEventListener("keyup", (event) => {
-    if (event.code === "Space") {
+    if (event.code === "Space" && turboHeld) {
       turboHeld = false;
       scene.renderSnapshot(snapshot);
     }
   });
 
-  if (resume) await replayRound(resume, true);
+  if (resume) {
+    if (isReplayActive) {
+      await runReplayFlow(resume);
+    } else {
+      await resumeInterruptedRound(resume);
+    }
+  }
+}
+
+/**
+ * Interrupted-round recovery: authenticate returned an active round. Offer the
+ * player the choice of watching it play out or jumping straight to the result;
+ * either way the round is settled with the RGS afterwards, never before.
+ */
+async function resumeInterruptedRound(record: RoundRecord): Promise<void> {
+  const s = ui();
+  const cur = displayCur();
+  const betAmount = currentBet();
+  const choice = await showChoiceModal(
+    {
+      title: "Unfinished Round",
+      lines: [
+        { label: s.baseBetLabel, value: `${formatWin(betAmount)} ${cur}` },
+        { label: s.finalMultLabel, value: `${formatWin(record.payoutMultiplier)}x` }
+      ],
+      text: "Your last round was interrupted. Watch it play out, or skip straight to the result — the outcome is already decided and will be credited either way.",
+      buttons: [
+        { key: "watch", label: "Watch Round", primary: true },
+        { key: "skip", label: "Skip to Result" }
+      ]
+    },
+    () => { if (!muted) audioBus.playUI("click", false); }
+  );
+
+  isPlaying = true;
+  snapshot = { ...snapshot, betAmount };
+  try {
+    if (choice === "watch") {
+      await replayRound(record, true);
+    } else {
+      // Apply every event silently to reach the final state, settle, then
+      // present the result in one popup.
+      for (const event of record.events as GameEvent[]) {
+        snapshot = applyEvent(snapshot, event, record);
+      }
+      snapshot = { ...snapshot, state: "idle" };
+      try {
+        const end = await client.endRound();
+        balance = toDisplay(end.balance.amount);
+      } catch { /* a later authenticate reconciles */ }
+      scene.renderSnapshot(snapshot);
+      const total = record.payoutMultiplier * betAmount;
+      await showChoiceModal(
+        {
+          title: "Round Result",
+          lines: [
+            { label: "Total Win", value: `${formatWin(total)} ${cur}` },
+            { label: s.finalMultLabel, value: `${formatWin(record.payoutMultiplier)}x` }
+          ],
+          buttons: [{ key: "ok", label: "Continue", primary: true }]
+        },
+        () => { if (!muted) audioBus.playUI("click", false); }
+      );
+    }
+  } finally {
+    isPlaying = false;
+    scene.renderSnapshot(snapshot);
+  }
+}
+
+/**
+ * Replay mode: intro popup states the play cost (base amount, the feature's
+ * cost multiplier and the resulting total) before anything runs; the end
+ * popup shows the final result and offers to replay the same event again.
+ */
+async function runReplayFlow(record: RoundRecord): Promise<void> {
+  const s = ui();
+  const cur = displayCur();
+  const betAmount = currentBet();
+  const costMult = betModes[activeModeKey]?.costMultiplier ?? 1;
+  const totalCost = betAmount * costMult;
+  const modeLabel = activeModeKey.replaceAll("_", " ").toUpperCase();
+
+  for (;;) {
+    await showChoiceModal(
+      {
+        title: "Replay",
+        lines: [
+          { label: "Mode", value: modeLabel },
+          { label: s.baseBetLabel, value: `${formatWin(betAmount)} ${cur}` },
+          { label: s.costMultLabel, value: `${formatWin(costMult)}x` },
+          { label: s.totalCostLabel, value: `${formatWin(totalCost)} ${cur}` }
+        ],
+        buttons: [{ key: "start", label: "Start Replay", primary: true }]
+      },
+      () => { if (!muted) audioBus.playUI("click", false); }
+    );
+
+    snapshot = { ...INITIAL_SNAPSHOT, betAmount };
+    scene.resetRound(snapshot);
+    await replayRound(record, false);
+
+    const total = record.payoutMultiplier * betAmount;
+    const again = await showChoiceModal(
+      {
+        title: "Replay Finished",
+        lines: [
+          { label: "Total Win", value: `${formatWin(total)} ${cur}` },
+          { label: s.finalMultLabel, value: `${formatWin(record.payoutMultiplier)}x` }
+        ],
+        buttons: [
+          { key: "again", label: "Replay Event", primary: true },
+          { key: "done", label: "Close" }
+        ]
+      },
+      () => { if (!muted) audioBus.playUI("click", false); }
+    );
+    if (again !== "again") break;
+  }
 }
 
 async function handleAction(action: string): Promise<void> {
   if (isReplayActive) return; // Prevent any interaction during replay
-  if (isPlaying && ["spin", "buy", "super_buy"].includes(action)) return;
+  // Stopping autoplay must work at ANY moment — including mid-round — so it
+  // is handled before every playing/lock gate below.
+  if (action === "spin" && autoplayRemaining > 0) {
+    stopAutoplay();
+    return;
+  }
+  if (isPlaying && ["spin", "getaway", "super_getaway"].includes(action)) return;
+  // Bet sizing, ante and feature plays are locked while a round is running
+  // and for the entire autoplay session — only the menu/info/sound buttons
+  // (and stopping autoplay via SPIN) stay live.
+  const lockedDuringPlay = ["plus", "minus", "ante", "getaway", "super_getaway"];
+  if ((isPlaying || autoplayRemaining > 0) && lockedDuringPlay.includes(action)) return;
 
   switch (action) {
     case "info":
@@ -399,29 +608,28 @@ async function handleAction(action: string): Promise<void> {
         scene.renderSnapshot(snapshot);
       }
       return;
-    case "buy":
-    case "super_buy":
+    case "getaway":
+    case "super_getaway": {
       if (jurisdiction?.disabledBuyFeature) return;
       if (!betModes[action]) return;
+      // Feature plays cost far more than 2x — a confirmation step is mandatory
+      // and the popup must show the full price before anything is charged.
       const confirmed = await showConfirmPopup(
         action,
         betLevels[betIndex],
-        currency,
+        displayCur(),
         () => {
           if (!muted) audioBus.playUI("click", false);
         },
-        betModes[action]?.costMultiplier ?? (action === "super_buy" ? 500 : 100)
+        betModes[action]?.costMultiplier ?? (action === "super_getaway" ? 500 : 100),
+        isSocial()
       );
       if (confirmed) {
         await playRound(action);
       }
       return;
+    }
     case "spin":
-      // A manual spin while autoplay is running stops the autoplay sequence.
-      if (autoplayRemaining > 0) {
-        stopAutoplay();
-        return;
-      }
       await playRound(spinModeForUser());
       return;
   }
@@ -457,14 +665,19 @@ async function startAutoplay(count: number): Promise<void> {
   if (isReplayActive) return;
   if (jurisdiction?.disabledAutoplay) return;
   if (autoplayRemaining > 0) return; // already running
+  if (isPlaying) return; // a round is mid-flight — must not stack on top
   autoplayStop = false;
   autoplayRemaining = count;
   while (autoplayRemaining > 0 && !autoplayStop) {
     if (isPlaying) break; // safety — should never happen (we await each round)
     const mode = spinModeForUser();
-    const bet = currentBet();
-    const cost = bet * (betModes[mode]?.costMultiplier ?? 1);
-    if (cost <= 0 || cost > balance) break; // out of funds for the next spin
+    const cost = modeCost(mode);
+    if (cost <= 0 || cost > balance + 1e-9) {
+      // The player must be told WHY autoplay stopped, not left staring at a
+      // stalled sequence.
+      showToast("AUTOPLAY STOPPED — INSUFFICIENT BALANCE", 4200);
+      break;
+    }
     await playRound(mode);
     if (autoplayStop) break;
     if (autoplayRemaining !== Infinity) autoplayRemaining -= 1;
@@ -485,9 +698,11 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-async function playRound(modeKey: string, free = false): Promise<void> {
+async function playRound(modeKey: string): Promise<void> {
   const betAmount = betLevels[betIndex];
   if (betAmount == null) return;
+  // Never send a play request the wallet cannot cover.
+  if (!hasFundsFor(modeKey)) return;
 
   // Spin context for the collection: which Power-Level table we're playing, and
   // whether points accrue (organic base/ante/tier play, not a bought bonus).
@@ -510,11 +725,11 @@ async function playRound(modeKey: string, free = false): Promise<void> {
 
   let record: RoundRecord;
   try {
-    const res = await client.play(betAmount, currency, modeKey, free);
+    const res = await client.play(betAmount, currency, modeKey);
     // Debit reflected by the RGS — never computed locally.
     balance = toDisplay(res.balance.amount);
     // Count this paid spin toward the current tier's average bet (organic play).
-    if (spinOrganic && !free) {
+    if (spinOrganic) {
       power = recordSpin(power, betAmount);
       powerStore.save(power);
     }
@@ -528,8 +743,21 @@ async function playRound(modeKey: string, free = false): Promise<void> {
     // from the scene, adding value-weighted points and revealing a card on cross.
   } catch (e) {
     isPlaying = false;
-    const msg = e instanceof RgsError ? `${e.code}: ${e.message}` : String(e);
-    snapshot = { ...snapshot, state: "idle", lastMessage: msg };
+    // Surface the failure — a silent stall reads as a frozen game. Connection
+    // errors additionally tell the player to reload so the round can recover.
+    if (e instanceof RgsError) {
+      showToast(
+        e.code === "ERR_NETWORK"
+          ? "CONNECTION LOST — PLEASE RELOAD THE GAME"
+          : e.code === "ERR_IPB"
+            ? "INSUFFICIENT BALANCE"
+            : `SERVER ERROR (${e.code}) — PLEASE TRY AGAIN`,
+        4200
+      );
+    } else {
+      showToast("SOMETHING WENT WRONG — PLEASE TRY AGAIN", 4200);
+    }
+    snapshot = { ...snapshot, state: "idle" };
     scene.renderSnapshot(snapshot);
     return;
   }
@@ -627,7 +855,8 @@ function mountWinTests(): void {
         const testSnapshot = { ...snapshot, betAmount };
         await scene.playEvent({
           type: "round_end",
-          payoutMultiplier: w.mult
+          payoutMultiplier: w.mult,
+          capApplied: false
         }, testSnapshot);
       } finally {
         running = false;
@@ -668,6 +897,8 @@ async function replayRound(record: RoundRecord, active: boolean): Promise<void> 
     await scene.playEvent(event, snapshot);
   }
   // Settle the round with the RGS; the final balance is whatever it returns.
+  // Zero-win rounds arrive with active=false (the RGS settles them itself), so
+  // no end-round request is ever sent for them.
   if (active && !isReplayActive) {
     try {
       const end = await client.endRound();
@@ -675,10 +906,6 @@ async function replayRound(record: RoundRecord, active: boolean): Promise<void> 
     } catch {
       /* keep last RGS balance; a future authenticate reconciles it */
     }
-  }
-
-  if (isReplayActive) {
-    scene.showReplayFinished();
   }
 }
 

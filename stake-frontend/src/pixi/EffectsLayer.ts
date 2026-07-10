@@ -812,7 +812,9 @@ export class EffectsLayer extends Container {
     rect: Rect,
     turbo: boolean,
     currency: string,
-    onUpdate: (amount: number) => void
+    onUpdate: (amount: number) => void,
+    /** Autoplay/replay: the max-win hold must dismiss itself — no tap is coming. */
+    autoDismiss = false
   ): Promise<void> {
     const group = new Container();
     const cx = rect.x + rect.width / 2;
@@ -897,7 +899,7 @@ export class EffectsLayer extends Container {
 
     // Pacing calculations (max 6 seconds in normal mode)
     const duration = turbo ? 800 : Math.min(6000, 1500 + targetMultiplier * 10);
-    let lastTier: "none" | "big" | "mega" | "grand" = "none";
+    let lastTier: "none" | "big" | "mega" | "grand" | "max" = "none";
     let billSpawnTimer = 0;
     let coinSpawnTimer = 0;
     let elapsedMs = 0;
@@ -1095,9 +1097,14 @@ export class EffectsLayer extends Container {
       };
       window.addEventListener("keydown", onDismissKeyDown);
 
-      // Keep running until dismissed
+      // Keep running until dismissed. Unattended runs (autoplay/replay) get a
+      // generous read-time then continue on their own — the sequence must
+      // never freeze waiting for a tap that will not come.
+      const holdStart = performance.now();
+      const autoDismissMs = turbo ? 2000 : 4000;
       while (!dismissed) {
         await wait(50);
+        if (autoDismiss && performance.now() - holdStart > autoDismissMs) break;
       }
 
       // Cleanup the dismiss listeners

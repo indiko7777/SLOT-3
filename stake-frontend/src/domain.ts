@@ -3,11 +3,14 @@ export const GRID_COLUMNS = 5;
 export const GRID_ROWS = 4;
 export const MAX_WIN_MULTIPLIER = 5000;
 
+// Mode names must never contain restricted words (buy/bet/pay): Stake's social
+// jurisdictions forbid them in mode naming across the game, replay window AND
+// math files. Names align with the on-screen feature names.
 export type BetMode =
   | "base"
   | "ante"
-  | "buy"
-  | "super_buy"
+  | "getaway"
+  | "super_getaway"
   // Collection Power-Level head-start tables (RTP-neutral; client-routed).
   | "base_tier1"
   | "base_tier2"
@@ -47,16 +50,16 @@ export const SYMBOLS: Record<SymbolId, SymbolDefinition> = {
     label: "Brass Knuckles",
     shortLabel: "BK",
     tier: "low",
-    role: "Low cluster pay; transforms at Heat 3",
-    baseClusterPay: 0.08
+    role: "Low cluster pay; transforms at Heat 2",
+    baseClusterPay: 0.12
   },
   KNIFE: {
     id: "KNIFE",
     label: "Knife",
     shortLabel: "KN",
     tier: "low",
-    role: "Low cluster pay; transforms at Heat 3",
-    baseClusterPay: 0.1
+    role: "Low cluster pay; transforms at Heat 2",
+    baseClusterPay: 0.15
   },
   PISTOL: {
     id: "PISTOL",
@@ -64,7 +67,7 @@ export const SYMBOLS: Record<SymbolId, SymbolDefinition> = {
     shortLabel: "PI",
     tier: "mid",
     role: "Medium cluster pay",
-    baseClusterPay: 0.15
+    baseClusterPay: 0.22
   },
   AMMO: {
     id: "AMMO",
@@ -72,7 +75,7 @@ export const SYMBOLS: Record<SymbolId, SymbolDefinition> = {
     shortLabel: "AM",
     tier: "mid",
     role: "Medium cluster pay",
-    baseClusterPay: 0.18
+    baseClusterPay: 0.28
   },
   DUFFEL: {
     id: "DUFFEL",
@@ -80,7 +83,7 @@ export const SYMBOLS: Record<SymbolId, SymbolDefinition> = {
     shortLabel: "DB",
     tier: "mid",
     role: "Medium cluster pay",
-    baseClusterPay: 0.22
+    baseClusterPay: 0.36
   },
   CASH: {
     id: "CASH",
@@ -88,7 +91,7 @@ export const SYMBOLS: Record<SymbolId, SymbolDefinition> = {
     shortLabel: "$$",
     tier: "premium",
     role: "Highest transformation target",
-    baseClusterPay: 0.5
+    baseClusterPay: 0.8
   },
   WILD: {
     id: "WILD",
@@ -103,7 +106,7 @@ export const SYMBOLS: Record<SymbolId, SymbolDefinition> = {
     shortLabel: "DI",
     tier: "premium",
     role: "Premium cluster pay",
-    baseClusterPay: 0.85
+    baseClusterPay: 1.5
   },
   BIKE: {
     id: "BIKE",
@@ -111,7 +114,7 @@ export const SYMBOLS: Record<SymbolId, SymbolDefinition> = {
     shortLabel: "SB",
     tier: "premium",
     role: "Premium cluster pay",
-    baseClusterPay: 1.1
+    baseClusterPay: 2.1
   },
   CAR_WILD: {
     id: "CAR_WILD",
@@ -154,8 +157,8 @@ export const TEXT = {
   title: "Heat Chase",
   subtitle: "Grand Escape",
   maxWin: "Win up to 5,000x your bet",
-  buy: "Buy Getaway",
-  superBuy: "Buy Super Getaway",
+  buy: "The Getaway",
+  superBuy: "Super Getaway",
   ante: "Ante",
   anteHelp: "Scatter chance increased",
   spin: "Spin",
@@ -216,14 +219,113 @@ export interface RoundRecord {
 }
 
 export const BET_MODES: Record<BetMode, { label: string; priceMultiplier: number; rtpTarget: number }> = {
-  base: { label: "Base Game", priceMultiplier: 1, rtpTarget: 0.965 },
-  ante: { label: "Ante", priceMultiplier: 1.5, rtpTarget: 0.965 },
-  buy: { label: "Getaway Buy", priceMultiplier: 100, rtpTarget: 0.965 },
-  super_buy: { label: "Super Getaway Buy", priceMultiplier: 500, rtpTarget: 0.965 },
-  base_tier1: { label: "Sapphire Head-Start", priceMultiplier: 1, rtpTarget: 0.965 },
-  base_tier2: { label: "Roxy Head-Start", priceMultiplier: 1, rtpTarget: 0.965 },
-  base_tier3: { label: "Vega Head-Start", priceMultiplier: 1, rtpTarget: 0.965 }
+  base: { label: "Base Game", priceMultiplier: 1, rtpTarget: 0.96 },
+  ante: { label: "Ante", priceMultiplier: 1.5, rtpTarget: 0.96 },
+  getaway: { label: "The Getaway", priceMultiplier: 100, rtpTarget: 0.96 },
+  super_getaway: { label: "Super Getaway", priceMultiplier: 500, rtpTarget: 0.96 },
+  base_tier1: { label: "Head-Start I", priceMultiplier: 1, rtpTarget: 0.96 },
+  base_tier2: { label: "Head-Start II", priceMultiplier: 1, rtpTarget: 0.96 },
+  base_tier3: { label: "Head-Start III", priceMultiplier: 1, rtpTarget: 0.96 }
 };
+
+/**
+ * ── Math mirror ──────────────────────────────────────────────────────────────
+ * The values below are DISPLAY copies of the authoritative math model in
+ * stake-math/src/model.ts (CLUSTER_PAY / clusterSizeFactor / CASCADE_LADDER).
+ * They exist so the in-game paytable shows EXACTLY what the engine pays.
+ * tests/mathMirror.test.ts asserts they stay identical — never edit one side
+ * without the other.
+ */
+export const CLUSTER_PAY_X: Partial<Record<SymbolId, number>> = {
+  BRASS: 0.12,
+  KNIFE: 0.15,
+  PISTOL: 0.22,
+  AMMO: 0.28,
+  DUFFEL: 0.36,
+  CASH: 0.8,
+  DIAMOND: 1.5,
+  BIKE: 2.1
+};
+
+/** Size factor per cluster size (index 0 = size 5 … index 15 = size 20). */
+export const CLUSTER_SIZE_FACTORS = [
+  0.4, 0.7, 1.0, 1.4, 1.9, 2.5, 3.2, 4.0, 5.0, 6.2, 7.6, 9.2, 11, 13, 15.5, 18
+] as const;
+
+export function clusterSizeFactor(size: number): number {
+  if (size < 5) return 0;
+  return CLUSTER_SIZE_FACTORS[Math.min(size, 20) - 5] ?? 0.4;
+}
+
+/** Tumble-multiplier ladder: rung = cascade number within one spin. */
+export const CASCADE_LADDER = [1, 2, 4, 7, 12, 20, 32, 50, 80] as const;
+
+/** Getaway Hold & Spin constants (mirror of stake-math/src/model.ts). */
+export const BONUS_START_RESPINS = 4;
+export const BONUS_RESPINS_ON_LOCK = 1;
+export const BONUS_CELLS = 20;
+
+/**
+ * Social-casino (Stake.US) terminology. Every player-facing string that may
+ * contain a restricted word (bet / buy / pay / cost …) must come from here so
+ * the whole game flips with `jurisdiction.socialCasino`.
+ */
+export interface UiStrings {
+  betLabel: string;         // "Bet"  → "Play"
+  idlePrompt: string;       // "PLACE YOUR BET" → social-safe prompt
+  featureKicker: string;    // "BUY" panel kicker → "FEATURE"
+  costWord: string;         // "COST" → "CAN BE PLAYED FOR"
+  betWord: string;          // "BET" → "PLAY" (unit suffix, e.g. "100x BET")
+  confirmTitleLead: string; // "BUY" → "THE"
+  confirmKicker: string;
+  confirmButton: string;    // "Confirm Buy" → "Confirm"
+  baseBetLabel: string;     // replay: "Base Bet" → "Base Play"
+  costMultLabel: string;    // replay: "Cost Multiplier" → "Feature Multiplier"
+  finalMultLabel: string;   // replay: "Payout Multiplier" → "Final Multiplier"
+  totalCostLabel: string;   // replay: "Total Cost" → "Play Amount"
+  maxWinLine: string;
+}
+
+export function uiStrings(social: boolean): UiStrings {
+  return social
+    ? {
+        betLabel: "Play",
+        idlePrompt: "PRESS SPIN TO PLAY",
+        featureKicker: "FEATURE",
+        costWord: "CAN BE PLAYED FOR",
+        betWord: "PLAY",
+        confirmTitleLead: "THE",
+        confirmKicker: "HEIST BRIEFING · FEATURE PLAY",
+        confirmButton: "Confirm",
+        baseBetLabel: "Base Play",
+        costMultLabel: "Feature Multiplier",
+        finalMultLabel: "Final Multiplier",
+        totalCostLabel: "Play Amount",
+        maxWinLine: "Win up to 5,000x your play"
+      }
+    : {
+        betLabel: "Bet",
+        idlePrompt: "PLACE YOUR BET",
+        featureKicker: "BUY",
+        costWord: "COST",
+        betWord: "BET",
+        confirmTitleLead: "BUY",
+        confirmKicker: "HEIST BRIEFING · BUY FEATURE",
+        confirmButton: "Confirm Buy",
+        baseBetLabel: "Base Bet",
+        costMultLabel: "Cost Multiplier",
+        finalMultLabel: "Payout Multiplier",
+        totalCostLabel: "Total Cost",
+        maxWinLine: "Win up to 5,000x your bet"
+      };
+}
+
+/** Social currencies arrive as XGC / XSC and must display as GC / SC. */
+export function displayCurrency(code: string): string {
+  if (code === "XGC") return "GC";
+  if (code === "XSC") return "SC";
+  return code;
+}
 
 export function assertBoard(board: Board): void {
   if (board.length !== GRID_COLUMNS) {

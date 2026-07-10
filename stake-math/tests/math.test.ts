@@ -107,7 +107,7 @@ describe("optimizer", () => {
     let id = 1;
     for (let i = 0; i < 1200; i++) sims.push(synthSim(id++, 5 + (i % 80) * 1, "freegame"));
     for (let i = 0; i < 200; i++) sims.push(synthSim(id++, 5000, "wincap"));
-    const opt = optimizeMode("buy", sims);
+    const opt = optimizeMode("getaway", sims);
     expect(Math.abs(opt.rtp - TARGET_RTP)).toBeLessThan(0.005);
   });
 });

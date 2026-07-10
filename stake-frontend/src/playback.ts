@@ -82,7 +82,9 @@ export function applyEvent(snapshot: PlaybackSnapshot, event: GameEvent, record:
         state: event.heatLevel >= 5 ? "big_win" : "win_highlight",
         highlighted: event.positions,
         lastWin: event.payout,
-        roundWin: Number((snapshot.roundWin + event.payout).toFixed(2)),
+        // 6dp: never round accumulated wins — small-bet payouts (e.g. 0.009)
+        // must survive to the 4-decimal display untouched.
+        roundWin: Number((snapshot.roundWin + event.payout).toFixed(6)),
         lastMessage: event.appliedGlobalMultiplier > 1 ? `${event.appliedGlobalMultiplier}x Max Heat win` : "Cluster win"
       };
     case "tumble_remove":
@@ -165,7 +167,7 @@ export function applyEvent(snapshot: PlaybackSnapshot, event: GameEvent, record:
       return {
         ...next,
         state: event.filledScreen ? "big_win" : "bonus_collect",
-        roundWin: Number((snapshot.roundWin + event.totalPayout).toFixed(2)),
+        roundWin: Number((snapshot.roundWin + event.totalPayout).toFixed(6)),
         lastWin: event.totalPayout,
         lastMessage: event.filledScreen ? "Grand Escape" : "Getaway collected"
       };

@@ -25,11 +25,15 @@ Upload bundle (exact Stake names) — `stake-math/publish_files/`:
 
 ```txt
 index.json
-books_base.jsonl.zst         lookUpTable_base_0.csv
-books_ante.jsonl.zst         lookUpTable_ante_0.csv
-books_buy.jsonl.zst          lookUpTable_buy_0.csv
-books_super_buy.jsonl.zst    lookUpTable_super_buy_0.csv
+books_base.jsonl.zst             lookUpTable_base_0.csv
+books_ante.jsonl.zst             lookUpTable_ante_0.csv
+books_getaway.jsonl.zst          lookUpTable_getaway_0.csv
+books_super_getaway.jsonl.zst    lookUpTable_super_getaway_0.csv
+books_base_tier1..3.jsonl.zst    lookUpTable_base_tier1..3_0.csv
 ```
+
+Mode names deliberately contain no restricted words (buy/bet/pay) — Stake's
+social jurisdictions forbid them in math-file mode naming.
 
 ## stake-frontend
 

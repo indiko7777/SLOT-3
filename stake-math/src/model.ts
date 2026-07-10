@@ -36,7 +36,7 @@ export const BASEBIG_THRESHOLD = 5;
  * big win — not a single fat cluster. Index = cascade number (0 = first board
  * evaluation, ×1). Front-loaded because the 5x4 grid only sustains short chains.
  */
-export const CASCADE_LADDER = [1, 2, 4, 7, 12, 20, 30, 45, 65];
+export const CASCADE_LADDER = [1, 2, 4, 7, 12, 20, 32, 50, 80];
 
 export function cascadeMultiplier(cascadeIndex: number): number {
   return CASCADE_LADDER[Math.min(cascadeIndex, CASCADE_LADDER.length - 1)]!;
@@ -58,7 +58,7 @@ export function cascadeMultiplier(cascadeIndex: number): number {
  * at 0 so they don't just manufacture cheap bonus triggers. The optimizer holds
  * every mode at exactly 96% RTP, so this reshapes VARIANCE only — never EV.
  */
-export const BASEGAME_TEASE_WEIGHTS = [68, 32, 0, 0];
+export const BASEGAME_TEASE_WEIGHTS = [62, 38, 0, 0];
 
 /**
  * basebig "Wanted-tease" depth mix: weights over [classic monster cluster,
@@ -122,7 +122,7 @@ function baseTier(headStart: number, rtpSplit: RtpSplit): ModeConfig {
     cost: 1,
     isFeature: false,
     isBuyBonus: false,
-    sims: 40_000,
+    sims: 100_000,
     criteria: { zero: 0.22, basegame: 0.46, basebig: 0.1, freegame: 0.2, wincap: 0.02 },
     rtpSplit,
     reelWeights: baseReels(),
@@ -136,7 +136,7 @@ export const MODES: Record<BetMode, ModeConfig> = {
     cost: 1,
     isFeature: false,
     isBuyBonus: false,
-    sims: 40_000,
+    sims: 100_000,
     // Coverage quotas (NOT final frequency). basebig gets generous COVERAGE so
     // the rare big-cascade tail is well sampled; its real probability is tiny.
     criteria: { zero: 0.20, basegame: 0.46, basebig: 0.12, freegame: 0.20, wincap: 0.02 },
@@ -151,26 +151,26 @@ export const MODES: Record<BetMode, ModeConfig> = {
     cost: 1.5,
     isFeature: true,
     isBuyBonus: false,
-    sims: 40_000,
+    sims: 100_000,
     criteria: { zero: 0.18, basegame: 0.46, basebig: 0.12, freegame: 0.22, wincap: 0.02 },
     rtpSplit: { basegame: 0.22, basebig: 0.11, freegame: 0.61, wincap: 0.06 },
     reelWeights: anteReels(),
     safeValues: safeTable(1)
   },
-  buy: {
+  getaway: {
     cost: 100,
     isFeature: false,
     isBuyBonus: true,
-    sims: 18_000,
+    sims: 100_000,
     criteria: { zero: 0, basegame: 0, basebig: 0, freegame: 0.88, wincap: 0.12 },
     reelWeights: baseReels(),
     safeValues: safeTable(1.15)
   },
-  super_buy: {
+  super_getaway: {
     cost: 500,
     isFeature: false,
     isBuyBonus: true,
-    sims: 18_000,
+    sims: 100_000,
     criteria: { zero: 0, basegame: 0, basebig: 0, freegame: 0.80, wincap: 0.20 },
     reelWeights: baseReels(),
     safeValues: safeTable(1.45)
@@ -240,9 +240,12 @@ export const SCATTER_TRIGGER_COUNT = 3;
  * the served Getaways are mostly Heat-5 / Wanted-triggered, not random scatters.
  */
 export const SCATTER_TRIGGER_SHARE = 0.15;
-/** Hold & Spin starts with this many spins; resets on any land. Bust after this
- *  many consecutive dead spins (4 = baseline + 3 escalating heat levels). */
-export const BONUS_RESPINS = 4;
+/** Hold & Spin STARTING respin budget (4 = baseline + 3 escalating heat levels).
+ *  A lock does NOT refill the meter to this value. */
+export const BONUS_START_RESPINS = 4;
+/** Respins granted when a spin locks >=1 symbol: a rolling single last-chance
+ *  spin (+1 per lock), so the bonus busts on the first dead spin after a lock. */
+export const BONUS_RESPINS_ON_LOCK = 1;
 export const BONUS_CELLS = 20;
 /** Hard guards to keep event streams (and memory) bounded. */
 export const MAX_TUMBLES = 16;
@@ -286,7 +289,7 @@ function safeTable(scale: number): { value: number; weight: number }[] {
     { value: 10 * scale, weight: 34 },
     { value: 25 * scale, weight: 14 },
     { value: 75 * scale, weight: 5 },
-    { value: 250 * scale, weight: 1.6 },
-    { value: 750 * scale, weight: 0.5 }
+    { value: 250 * scale, weight: 2.2 },
+    { value: 750 * scale, weight: 0.7 }
   ];
 }

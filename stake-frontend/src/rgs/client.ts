@@ -44,15 +44,14 @@ export class RgsClient {
     });
   }
 
-  /** `amount` is in DISPLAY units; converted to 6dp integer here.
-   *  `free` plays a feature at zero cost (the Wanted-meter Getaway). */
-  play(amount: number, currency: string, mode: string, free = false): Promise<PlayResponse> {
+  /** `amount` is in DISPLAY units; converted to 6dp integer here. Every play
+   *  is debited by the RGS — there is deliberately NO zero-cost play path. */
+  play(amount: number, currency: string, mode: string): Promise<PlayResponse> {
     return this.post<PlayResponse>("/wallet/play", {
       sessionID: this.session.sessionID,
       amount: Math.round(amount * API_AMOUNT_MULTIPLIER),
       currency,
-      mode,
-      free
+      mode
     });
   }
 

@@ -1,9 +1,38 @@
-import { Container, Graphics, Sprite, Text, TextStyle } from "pixi.js";
+import { Container, Graphics, Sprite, Text, TextStyle, BlurFilter, Texture } from "pixi.js";
 import { GRID_COLUMNS, GRID_ROWS, type Board, type Position, type SymbolId } from "../domain";
 import { getSymbolTexture } from "./assets";
 import { SymbolView } from "./SymbolView";
 import { tween, wait, easeOutQuad, easeOutBounce, easeOutBack, easeInOutCubic, linear, ambientTicker } from "./tween";
 import type { Rect } from "./types";
+
+function slamBounce(r: number): number {
+  if (r <= 0) return 0;
+  if (r >= 1) return 1;
+  if (r < 0.3) {
+    const i = r / 0.3;
+    return 1 - Math.pow(1 - i, 3);
+  }
+  const t = (r - 0.3) / 0.7;
+  const decay = Math.pow(1 - t, 2);
+  return 1 + 0.14 * Math.sin(t * Math.PI * 2.5) * decay;
+}
+
+let softGlowTexture: Texture | null = null;
+function getSoftGlowTexture(): Texture {
+  if (softGlowTexture) return softGlowTexture;
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext("2d")!;
+  const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0, "rgba(255,255,255,1)");
+  grad.addColorStop(0.3, "rgba(255,255,255,0.7)");
+  grad.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 128, 128);
+  softGlowTexture = Texture.from(canvas);
+  return softGlowTexture;
+}
 
 /** Symbols that may appear as spinning filler. All have loaded textures, so a
  *  reel cell is never blank. Special symbols (wild/scatter/safe/key) only ever
@@ -24,6 +53,8 @@ interface ReelCell {
 /** Per-column reel state for the treadmill spin. */
 interface Reel {
   col: number;
+  container: Container;
+  filter: BlurFilter;
   cells: ReelCell[];
   scroll: number;       // cumulative downward travel (px)
   wrapCount: number;    // number of cells recycled to the top so far
@@ -46,12 +77,14 @@ export class BoardView extends Container {
   private currentBoard: Board | null = null;
   private ambientCb: ((dt: number, elapsed: number) => void) | null = null;
   private onReelStop?: (col: number, total: number) => void;
+  private onReelImpact?: (col: number, total: number) => void;
   private onAnticipation?: () => void;
   private onTransform?: () => void;
 
   /** Wire audio cues fired during the reel spin (reel stops, anticipation riser, symbol transforms). */
-  setAudioHooks(hooks: { onReelStop?: (col: number, total: number) => void; onAnticipation?: () => void; onTransform?: () => void }): void {
+  setAudioHooks(hooks: { onReelStop?: (col: number, total: number) => void; onReelImpact?: (col: number, total: number) => void; onAnticipation?: () => void; onTransform?: () => void }): void {
     this.onReelStop = hooks.onReelStop;
+    this.onReelImpact = hooks.onReelImpact;
     this.onAnticipation = hooks.onAnticipation;
     this.onTransform = hooks.onTransform;
   }
@@ -532,6 +565,13 @@ export class BoardView extends Container {
     const reels: Reel[] = [];
     for (let col = 0; col < GRID_COLUMNS; col++) {
       const cells: ReelCell[] = [];
+      const reelContainer = new Container();
+      const filter = new BlurFilter();
+      filter.blurX = 0;
+      filter.blurY = 10;
+      filter.quality = 3;
+      reelContainer.filters = [filter];
+      this.reelContainer.addChild(reelContainer);
       for (let k = 0; k < N; k++) {
         const container = new Container();
         container.x = this.cellX(col);
@@ -540,31 +580,64 @@ export class BoardView extends Container {
         const initId = row >= 0 && row < VISIBLE && oldIds[col]![row] ? oldIds[col]![row]! : randomSymbol();
         this.paintCell(cell, initId);
         container.y = cell.y;
-        this.reelContainer.addChild(container);
+        reelContainer.addChild(container);
         cells.push(cell);
       }
-      reels.push({ col, cells, scroll: 0, wrapCount: 0, feed: new Map(), state: "spin" });
+      reels.push({ col, container: reelContainer, filter, cells, scroll: 0, wrapCount: 0, feed: new Map(), state: "spin" });
     }
 
     // ── 4. Each reel decelerates onto its result when its stop time arrives. ──
     const decelPromises: Promise<void>[] = [];
+    const stopDurMs = 567; // ~34 frames at 60fps
+    
     const startDecel = (reel: Reel) => {
       reel.state = "decel";
-      const startScroll = reel.scroll;
-      const F = Math.floor(startScroll / cellStep) + STOP_STEPS; // wrap index at rest
-      const targetScroll = F * cellStep;                          // grid-aligned stop
-      const dist = targetScroll - startScroll;
-      // Feed each final symbol at the wrap index that lands it in its row.
-      for (let row = 0; row < VISIBLE; row++) {
-        reel.feed.set(F - ABOVE - row, finalBoard[reel.col]![row]!);
+      
+      // Snap target symbols and buffers to the grid
+      for (let k = 0; k < N; k++) {
+        const cell = reel.cells[k]!;
+        const row = k - ABOVE;
+        const id = (row >= 0 && row < VISIBLE && finalBoard[reel.col]) 
+          ? finalBoard[reel.col]![row]! 
+          : randomSymbol();
+        this.paintCell(cell, id);
+        cell.y = topY + k * cellStep;
+        cell.container.y = cell.y;
       }
+      
+      const startOffset = -1.18 * this.cellHeight;
+      let impactFired = false;
+      
       decelPromises.push(
-        tween(decelDur, (p) => {
-          const target = startScroll + dist * easeOutQuad(p);
-          this.advanceReel(reel, target - reel.scroll, cellStep, wrapSpan);
+        tween(stopDurMs, (p) => {
+          if (p < 0.22) {
+            reel.filter.blurY = 10;
+          } else if (p <= 0.34) {
+            reel.filter.blurY = 10 * (1 - (p - 0.22) / 0.12);
+          } else {
+            reel.filter.blurY = 0;
+          }
+          
+          const sb = slamBounce(p);
+          
+          if (!impactFired && sb >= 1.03) {
+            impactFired = true;
+            this.triggerColumnStopEffect(reel.col);
+            this.onReelImpact?.(reel.col, GRID_COLUMNS);
+          }
+          
+          const offset = startOffset * (1 - sb);
+          for (let k = 0; k < N; k++) {
+            const cell = reel.cells[k]!;
+            cell.container.y = cell.y + offset;
+          }
         }, linear).then(() => {
           reel.state = "stopped";
-          this.triggerColumnStopEffect(reel.col);
+          reel.filter.blurY = 0;
+          for (let k = 0; k < N; k++) {
+            const cell = reel.cells[k]!;
+            cell.container.y = cell.y;
+          }
           this.onReelStop?.(reel.col, GRID_COLUMNS);
           
           // Trigger a red flash if this column was an anticipation column and missed the scatter
@@ -654,6 +727,7 @@ export class BoardView extends Container {
         );
       }
       for (const cell of reel.cells) cell.container.destroy({ children: true });
+      reel.container.destroy({ children: true });
     }
     await Promise.all(land);
   }
@@ -824,45 +898,99 @@ export class BoardView extends Container {
   private triggerColumnStopEffect(col: number): void {
     const cx = this.cellX(col);
     const cw = this.cellWidth;
+    const ch = this.cellHeight;
     const bottomY = this.rect.height;
 
-    const flare = new Graphics();
-    // Outer golden glow capsule
-    flare.roundRect(cx - 4, bottomY - 16, cw + 8, 16, 8)
-      .fill({ color: 0xffd700, alpha: 0.85 });
-    // Inner bright white core
-    flare.roundRect(cx + 4, bottomY - 12, cw - 8, 8, 4)
-      .fill({ color: 0xffffff, alpha: 0.95 });
+    // Layer A - flash bar
+    const flashBar = new Graphics();
+    flashBar.blendMode = "add";
+    flashBar.rect(cx + 6, bottomY - 8, cw - 12, 8).fill({ color: 0xffd84d, alpha: 0.85 });
+    flashBar.rect(cx + 12, bottomY - 4, cw - 24, 4).fill({ color: 0xffffff, alpha: 0.45 });
+    this.addChild(flashBar);
 
-    flare.alpha = 1;
-    this.addChild(flare);
+    void tween(180, (p) => {
+      const ease = 1 - Math.pow(1 - p, 2); // easeOutQuad
+      flashBar.alpha = 1 - ease;
+    }, linear).then(() => flashBar.destroy());
 
-    // Upward micro-spark particles
-    const sparkContainer = new Container();
-    for (let i = 0; i < 6; i++) {
+    // Layer B - spark burst
+    const sparkCount = 8 + col * 3;
+    const sparks = new Container();
+    this.addChild(sparks);
+    
+    interface Spark { sprite: Graphics; vx: number; vy: number; }
+    const sparkList: Spark[] = [];
+    for (let i = 0; i < sparkCount; i++) {
       const sp = new Graphics();
-      const r = 2 + Math.random() * 3;
-      sp.circle(0, 0, r).fill({ color: Math.random() < 0.5 ? 0xffdf65 : 0xffffff, alpha: 0.9 });
+      sp.blendMode = "add";
+      
+      let isHot = Math.random() < 0.35;
+      let r = 0;
+      if (isHot) {
+        r = 1.5 + Math.random() * 2;
+        sp.circle(0, 0, r).fill({ color: 0xffffff, alpha: 1 });
+      } else {
+        r = 2 + Math.random() * 3.5;
+        const color = Math.random() < 0.5 ? 0xffd84d : 0xffaa33;
+        sp.circle(0, 0, r).fill({ color, alpha: 1 });
+      }
+      
       sp.x = cx + 8 + Math.random() * (cw - 16);
-      sp.y = bottomY - 6;
-      sparkContainer.addChild(sp);
-      const vy = -(1.5 + Math.random() * 3.5);
-      const vx = (Math.random() - 0.5) * 1.5;
-      void tween(250 + Math.random() * 100, (p) => {
-        sp.x += vx;
-        sp.y += vy;
-        sp.alpha = (1 - p) * 0.9;
-      }, linear);
+      sp.y = bottomY;
+      
+      sparks.addChild(sp);
+      sparkList.push({
+        sprite: sp,
+        vx: (Math.random() - 0.5) * 7,
+        vy: -(3 + Math.random() * 7)
+      });
     }
-    this.addChild(sparkContainer);
+    
+    let sparkTimer = 0;
+    const tick = () => {
+      sparkTimer++;
+      let active = false;
+      for (const sp of sparkList) {
+        if (sp.sprite.alpha < 0.04) continue;
+        active = true;
+        sp.sprite.x += sp.vx;
+        sp.sprite.y += sp.vy;
+        sp.vx *= 0.92;
+        sp.vy += 0.45;
+        sp.sprite.alpha *= 0.91;
+        sp.sprite.scale.set(sp.sprite.scale.x * 0.97);
+      }
+      if (active && sparkTimer < 32) {
+        requestAnimationFrame(tick);
+      } else {
+        sparks.destroy({ children: true });
+      }
+    };
+    requestAnimationFrame(tick);
 
-    void tween(320, (p) => {
-      flare.alpha = 1 - p;
-      flare.scale.y = 1 + p * 0.5;
-    }, linear).then(() => {
-      flare.destroy();
-      sparkContainer.destroy({ children: true });
-    });
+    // Layer C - soft glow bloom
+    const glow = new Sprite(getSoftGlowTexture());
+    glow.blendMode = "add";
+    glow.tint = 0xffd84d;
+    glow.anchor.set(0.5, 0.5);
+    glow.alpha = 0.55;
+    glow.x = cx + cw / 2;
+    glow.y = bottomY;
+    
+    const startW = cw * 1.6;
+    const startH = ch * 0.7;
+    const endW = cw * 2.2;
+    const endH = ch * 1.0;
+    glow.width = startW;
+    glow.height = startH;
+    
+    this.addChild(glow);
+    void tween(250, (p) => {
+      const ease = 1 - Math.pow(1 - p, 2); // easeOutQuad
+      glow.alpha = 0.55 * (1 - ease);
+      glow.width = startW + (endW - startW) * ease;
+      glow.height = startH + (endH - startH) * ease;
+    }, linear).then(() => glow.destroy());
   }
 }
 

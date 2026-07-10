@@ -28,7 +28,7 @@ export class PixiGameScene {
   private readonly board = new BoardView();
   private readonly bonus = new BonusView();
   private readonly effects: EffectsLayer;
-  private readonly paytable = new PaytableView();
+  private readonly paytable: PaytableView;
   private readonly cardPeek: CardPeekView;
   private readonly gallery: GalleryView;
   private layout: LayoutMetrics;
@@ -50,10 +50,16 @@ export class PixiGameScene {
       bg: this.bgLayer,
       underParticles: this.underParticlesLayer
     });
+    this.paytable = new PaytableView(runtime);
     this.effects = new EffectsLayer(this.particleLayer);
 
     this.board.setAudioHooks({
       onReelStop: (col, total) => runtime.onReelStop?.(col, total),
+      onReelImpact: (col, total) => {
+        if (this.runtime.playAudio) {
+          this.runtime.playAudio("new_reel_stop");
+        }
+      },
       onAnticipation: () => runtime.onAnticipation?.(),
       onTransform: () => runtime.onTransform?.(),
     });
@@ -203,6 +209,23 @@ export class PixiGameScene {
     this.paytable.toggle(this.layout.width, this.layout.height);
   }
 
+  /** Overlay-state helpers — the spacebar must be dead while these are open. */
+  isPaytableOpen(): boolean {
+    return this.paytable.visible;
+  }
+  isGalleryOpen(): boolean {
+    return this.gallery.visible;
+  }
+
+  /** True when nobody is at the wheel (autoplay or replay): tap-gated screens
+   *  must auto-dismiss so the run can never freeze. */
+  private unattended(): boolean {
+    return (
+      (this.runtime.isAutoplayActive?.() ?? false) ||
+      (this.runtime.isReplayActive?.() ?? false)
+    );
+  }
+
   /** Play one collection reveal for an already-applied gain — used by the DEV
    *  "Test Collection Flow" button to replay the full flow via the real gallery. */
   async playCollectionStep(gain: PieceGain): Promise<void> {
@@ -335,7 +358,7 @@ export class PixiGameScene {
         this.runtime.onBonusHeat?.(0);
         this.effects.screenShake(this.root, turbo);
         // The bonus shows its own clean, centered result card (no board-rect banner).
-        await this.bonus.finish(event.filledScreen, event.totalPayout, turbo);
+        await this.bonus.finish(event.filledScreen, event.totalPayout, turbo, this.unattended());
         return;
       case "round_end": {
         this.hud.draw(this.layout, snapshot);
@@ -371,7 +394,8 @@ export class PixiGameScene {
             this.layout.board,
             turbo,
             currency,
-            (amt) => this.hud.setWinAmountDirect(amt)
+            (amt) => this.hud.setWinAmountDirect(amt),
+            this.unattended()
           );
         } else if (event.payoutMultiplier >= 5) {
           // NICE WIN — light, non-blocking celebration with a gold coin burst.
@@ -839,43 +863,6 @@ export class PixiGameScene {
         sweepContainer.destroy({ children: true });
       })
     );
-  }
-  showReplayFinished(): void {
-    const modal = new Container();
-    const bg = new Graphics();
-    bg.rect(0, 0, this.layout.width, this.layout.height).fill({ color: 0x000000, alpha: 0.8 });
-    
-    const box = new Graphics();
-    box.roundRect(-150, -80, 300, 160, 16).fill(0x1a1a2e).stroke({ color: 0x4a4e69, width: 4 });
-    box.position.set(this.layout.width / 2, this.layout.height / 2);
-    
-    const txt = new Text({
-      text: "Replay Finished",
-      style: new TextStyle({ fill: 0xffffff, fontFamily: "Arial", fontSize: 24, fontWeight: "bold" })
-    });
-    txt.anchor.set(0.5);
-    txt.position.set(0, -20);
-    box.addChild(txt);
-    
-    const btn = new Graphics();
-    btn.roundRect(-60, 20, 120, 40, 8).fill(0x4a4e69);
-    btn.eventMode = "static";
-    btn.cursor = "pointer";
-    btn.on("pointerdown", () => {
-      window.location.href = window.location.pathname;
-    });
-    
-    const btnTxt = new Text({
-      text: "Close",
-      style: new TextStyle({ fill: 0xffffff, fontFamily: "Arial", fontSize: 16 })
-    });
-    btnTxt.anchor.set(0.5);
-    btnTxt.position.set(0, 40);
-    
-    box.addChild(btn, btnTxt);
-    modal.addChild(bg, box);
-    
-    this.root.addChild(modal);
   }
 }
 

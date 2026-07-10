@@ -9,8 +9,7 @@ import { formatBalance, formatWin } from "../rgs/client";
 import { OutlineFilter, DropShadowFilter } from "pixi-filters";
 
 const IDLE_MESSAGES = [
-  "PLACE YOUR BET",
-  "HOLD SPACE FOR TURBO!",
+  "PRESS SPACE TO SPIN!",
   "TRY TURBO FOR RAPID SPINS!",
   "THE GETAWAY AWAITS!",
   "CRANK UP THE HEAT!",
@@ -65,7 +64,7 @@ export class HudView extends Container {
   private currentSpinMessage = "GOOD LUCK!";
   private currentMidSpinMessage = "OUTRUN THE COPS!";
   private currentTumbleMessage = "CASCADING!";
-  private currentIdleMessage = "PLACE YOUR BET";
+  private currentIdleMessage = "";
 
   public readonly bgContainer: Container;
   public readonly underParticlesContainer: Container;
@@ -129,8 +128,8 @@ export class HudView extends Container {
           this.statusText.text = this.getStatusMessage(snapshot.state);
           this.statusText.style.fill = 0xffffff;
         } else {
-          // Returning to idle with 0 win: show default starting text (idle cycling will run if active)
-          this.statusText.text = "PLACE YOUR BET";
+          // Returning to idle with 0 win: show the social-aware default prompt.
+          this.statusText.text = this.t().idlePrompt;
           this.statusText.style.fill = 0xffffff;
         }
       }
@@ -189,9 +188,23 @@ export class HudView extends Container {
     this.winAnimFrame = requestAnimationFrame(tick);
   }
 
-  /** RGS-sourced cost multiplier for a bet mode (buy/super_buy/ante), default 1. */
+  /** RGS-sourced cost multiplier for a bet mode (getaway/super_getaway/ante). */
   private costX(mode: string): number {
     return this.runtime.getCostMultiplier?.(mode) ?? 1;
+  }
+
+  /** Social-aware UI strings (bet→play etc. on Stake.US). */
+  private t() {
+    return this.runtime.getUiStrings();
+  }
+
+  /** Controls are locked during a round, autoplay and replay. */
+  private controlsLocked(): boolean {
+    return (
+      this.runtime.isPlaying() ||
+      (this.runtime.isAutoplayActive?.() ?? false) ||
+      (this.runtime.isReplayActive?.() ?? false)
+    );
   }
 
   /** Dynamic one-line collection / Power-Level status for the centre of the bar. */
@@ -272,21 +285,23 @@ export class HudView extends Container {
   private drawBuyPanel(rect: Rect): void {
     const panelWidth = rect.width;
     // Cost values are sourced from the RGS bet-mode config, never hardcoded.
-    const buyX = this.costX("buy");
-    const superX = this.costX("super_buy");
+    // The kicker word ("BUY" / "FEATURE") is jurisdiction-driven.
+    const kicker = this.t().featureKicker;
+    const buyX = this.costX("getaway");
+    const superX = this.costX("super_getaway");
     const antePct = `+${Math.round((this.costX("ante") - 1) * 100)}%`;
     const anteVal = this.runtime.isAnteEnabled() ? "ON" : "OFF";
     const anteSub = this.runtime.isAnteEnabled() ? "ACTIVE" : antePct;
     if (rect.height < 130) {
       const slot = (rect.width - 16) / 3;
-      this.panelButton(rect.x, rect.y, slot, rect.height, "BUY", "GETAWAY", `${buyX}x`, "buy");
-      this.panelButton(rect.x + slot + 8, rect.y, slot, rect.height, "BUY", "SUPER", `${superX}x`, "super_buy");
+      this.panelButton(rect.x, rect.y, slot, rect.height, kicker, "GETAWAY", `${buyX}x`, "getaway");
+      this.panelButton(rect.x + slot + 8, rect.y, slot, rect.height, kicker, "SUPER", `${superX}x`, "super_getaway");
       this.panelButton(rect.x + (slot + 8) * 2, rect.y, slot, rect.height, "ANTE", anteSub, anteVal, "ante");
       return;
     }
 
-    this.panelButton(rect.x, rect.y, panelWidth, 112, "BUY", TEXT.buy, `${buyX.toFixed(2)}x`, "buy");
-    this.panelButton(rect.x, rect.y + 124, panelWidth, 124, "BUY", TEXT.superBuy, `${superX.toFixed(2)}x`, "super_buy");
+    this.panelButton(rect.x, rect.y, panelWidth, 112, kicker, TEXT.buy, `${buyX.toFixed(2)}x`, "getaway");
+    this.panelButton(rect.x, rect.y + 124, panelWidth, 124, kicker, TEXT.superBuy, `${superX.toFixed(2)}x`, "super_getaway");
     this.panelButton(rect.x, rect.y + 262, panelWidth, 134, TEXT.ante, anteSub, anteVal, "ante");
 
     // Game name & logo below the button stack — LANDSCAPE ONLY (the compact
@@ -390,7 +405,7 @@ export class HudView extends Container {
         fontWeight: "900",
         letterSpacing: 1,
         align: "center",
-        dropShadow: { color: action === "super_buy" ? 0xff6a00 : 0x000000, alpha: 0.5, blur: 6, distance: 0 }
+        dropShadow: { color: action === "super_getaway" ? 0xff6a00 : 0x000000, alpha: 0.5, blur: 6, distance: 0 }
       })
     });
     valText.anchor.set(0.5, 0);
@@ -400,8 +415,8 @@ export class HudView extends Container {
 
     panel.position.set(x, y);
     panel.eventMode = "static";
-    
-    const disabled = this.runtime.isPlaying() || (this.runtime.isReplayActive && this.runtime.isReplayActive());
+
+    const disabled = this.controlsLocked();
     panel.cursor = disabled ? "default" : "pointer";
     if (disabled) {
        panel.alpha = 0.5;
@@ -409,7 +424,7 @@ export class HudView extends Container {
 
     // Breathing glow animation
     this.addAmbient((_dt, elapsed) => {
-      const breath = 0.6 + Math.sin(elapsed * 2.2 + (action === "super_buy" ? 1 : action === "ante" ? 2 : 0)) * 0.4;
+      const breath = 0.6 + Math.sin(elapsed * 2.2 + (action === "super_getaway" ? 1 : action === "ante" ? 2 : 0)) * 0.4;
       glow.alpha = 0.08 + breath * 0.14;
     });
 
@@ -418,7 +433,7 @@ export class HudView extends Container {
     const scaleTarget = (s: number) => { glow.scale.set(s); bg.scale.set(s); };
 
     panel.on("pointerover", () => {
-      if (!this.runtime.isPlaying()) {
+      if (!this.controlsLocked()) {
         scaleTarget(1.04);
         glow.alpha = 0.4;
       }
@@ -427,11 +442,11 @@ export class HudView extends Container {
       scaleTarget(1);
     });
     panel.on("pointerdown", () => {
-      if (!this.runtime.isPlaying()) scaleTarget(0.96);
+      if (!this.controlsLocked()) scaleTarget(0.96);
     });
     panel.on("pointerup", () => {
       scaleTarget(1);
-      void this.runtime.onAction(action);
+      if (!this.controlsLocked()) void this.runtime.onAction(action);
     });
     panel.on("pointerupoutside", () => {
       scaleTarget(1);
@@ -470,7 +485,7 @@ export class HudView extends Container {
 
     const isReplay = this.runtime.isReplayActive && this.runtime.isReplayActive();
 
-    // Credit display
+    // Credit display (hidden entirely in replay mode)
     this.creditText = new Text({
       text: isReplay ? "" : `Credit ${this.fmtMoney(credit)} ${currency}`,
       style: new TextStyle({
@@ -485,9 +500,9 @@ export class HudView extends Container {
     this.creditText.position.set(rect.x + 180, rect.y + 16);
     this.addChild(this.creditText);
 
-    // Bet display
+    // Bet display ("Play" on social casinos)
     this.betText = new Text({
-      text: `Bet ${this.fmtMoney(effectiveBet)} ${currency}`,
+      text: `${this.t().betLabel} ${this.fmtMoney(effectiveBet)} ${currency}`,
       style: new TextStyle({
         fill: 0xffdf65,
         fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
@@ -568,12 +583,12 @@ export class HudView extends Container {
         this.currentTumbleMessage = TUMBLE_MESSAGES[Math.floor(Math.random() * TUMBLE_MESSAGES.length)]!;
       }
       if (state === "idle") {
-        // 70% chance of "PLACE YOUR BET", 30% chance of a random other tip
+        // 70% chance of the standard prompt, 30% chance of a random tip.
+        // The prompt is social-aware ("PLACE YOUR BET" → "PRESS SPIN TO PLAY").
         if (Math.random() < 0.7) {
-          this.currentIdleMessage = "PLACE YOUR BET";
+          this.currentIdleMessage = this.t().idlePrompt;
         } else {
-          const tips = IDLE_MESSAGES.filter(m => m !== "PLACE YOUR BET");
-          this.currentIdleMessage = tips[Math.floor(Math.random() * tips.length)]!;
+          this.currentIdleMessage = IDLE_MESSAGES[Math.floor(Math.random() * IDLE_MESSAGES.length)]!;
         }
       }
       this.lastState = state;
@@ -592,7 +607,7 @@ export class HudView extends Container {
     }
     switch (state) {
       case "idle":
-        return this.currentIdleMessage;
+        return this.currentIdleMessage || this.t().idlePrompt;
       case "bonus_intro":
         return "THE GETAWAY CHASE!";
       case "bonus_respin":
@@ -858,19 +873,22 @@ export class HudView extends Container {
     button.addChild(txt);
     button.position.set(x, y);
     button.eventMode = "static";
-    
-    const disabled = this.runtime.isReplayActive && this.runtime.isReplayActive();
+
+    // Bet sizing is locked while a round runs, during autoplay and in replay.
+    const disabled = this.controlsLocked();
     button.cursor = disabled ? "default" : "pointer";
     if (disabled) button.alpha = 0.5;
 
     button.on("pointerover", () => { if(!disabled) { button.scale.set(1.12); g.tint = 0xccddff; }});
     button.on("pointerout", () => { if(!disabled) { button.scale.set(1); g.tint = 0xffffff; }});
-    button.on("pointertap", () => { if(!disabled) void this.runtime.onAction(action); });
+    button.on("pointertap", () => { if(!this.controlsLocked()) void this.runtime.onAction(action); });
     this.addChild(button);
   }
 
   private spinButton(x: number, y: number): void {
     const isPlaying = this.runtime.isPlaying();
+    const autoRemaining = this.runtime.getAutoplayRemaining?.() ?? 0;
+    const isAuto = autoRemaining > 0;
     const button = new Container();
     const R = 44;
 
@@ -897,16 +915,21 @@ export class HudView extends Container {
     inner.circle(R, R, R - 8).stroke({ color: isPlaying ? 0x4d6639 : 0x9ae64e, width: 1.5, alpha: 0.4 });
     visual.addChild(inner);
 
-    // SPIN text — Impact
+    // SPIN text — Impact. During autoplay the button becomes the STOP control
+    // and shows the number of spins left (∞ for endless).
+    const spinLabel = isAuto
+      ? `STOP\n${Number.isFinite(autoRemaining) ? autoRemaining : "∞"}`
+      : "SPIN";
     const spinText = new Text({
-      text: "SPIN",
+      text: spinLabel,
       style: new TextStyle({
-        fill: isPlaying ? 0x5a6a7c : 0xffffff,
+        fill: isAuto ? 0xff7676 : isPlaying ? 0x5a6a7c : 0xffffff,
         fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
-        fontSize: 24,
+        fontSize: isAuto ? 18 : 24,
         fontWeight: "900",
         letterSpacing: 3,
-        dropShadow: isPlaying ? undefined : { color: 0x9ae64e, alpha: 0.4, blur: 6, distance: 0 }
+        align: "center",
+        dropShadow: isPlaying && !isAuto ? undefined : { color: isAuto ? 0xff5555 : 0x9ae64e, alpha: 0.4, blur: 6, distance: 0 }
       })
     });
     spinText.anchor.set(0.5, 0.5);
@@ -916,8 +939,10 @@ export class HudView extends Container {
     button.addChild(visual);
     button.position.set(x, y);
     button.eventMode = "static";
-    
-    const disabled = isPlaying || (this.runtime.isReplayActive && this.runtime.isReplayActive());
+
+    // During autoplay the button stays ENABLED (it stops the run); it is
+    // disabled mid-round otherwise, and always in replay mode.
+    const disabled = (isPlaying && !isAuto) || (this.runtime.isReplayActive && this.runtime.isReplayActive());
     button.cursor = disabled ? "default" : "pointer";
     if (this.runtime.isReplayActive && this.runtime.isReplayActive()) {
         button.alpha = 0.5;

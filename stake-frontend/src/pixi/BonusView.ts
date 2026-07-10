@@ -36,8 +36,10 @@ const CINEMA_BAR = 0x050507; // letterbox bar colour
 // Used to align the grid exactly inside the truck's window.
 const TRUCK_OPENING = { wFrac: 0.3262, hFrac: 0.507, cxFrac: 0.5, cyFrac: 0.4441, aspect: 334 / 290 };
 
-// Must match stake-math BONUS_RESPINS: how many respins/pips the meter shows.
-const MAX_RESPINS = 4;
+// Must match stake-math BONUS_START_RESPINS: the meter STARTS at this budget and
+// ticks down on dead spins; a lock grants +1 spin (BONUS_RESPINS_ON_LOCK, a
+// rolling single last chance) — it never refills the meter back to 4.
+const START_RESPINS = 4;
 
 // Uniform dark-grey reel background. EVERY bonus symbol fills its cell with this
 // exact colour and the reel panel is the same flat colour, so the symbols'
@@ -102,7 +104,7 @@ export class BonusView extends Container {
 
   private heat = 0;          // 0 = baseline … 3 = max
   private busted = false;
-  private respinsShown = MAX_RESPINS;   // last value shown on the meter (for the change beat)
+  private respinsShown = START_RESPINS; // last value shown on the meter (for the change beat)
   private isSpinning = false;           // true while reels turn — drives the anticipation shake
   private shakeBoost = 0;               // 0..1 eased ramp of the high-speed chase shake
   private readonly cells = new Map<string, Container>();
@@ -603,9 +605,10 @@ export class BonusView extends Container {
   }
 
   /** End of the chase. filled = Grand Escape jackpot; otherwise Busted.
-   *  A big, dramatic result card with the win amount that stays up until the
-   *  player taps/clicks — the bonus never auto-dismisses. */
-  async finish(filled: boolean, totalX: number, turbo: boolean): Promise<void> {
+   *  A big, dramatic result card with the win amount. Manual play keeps it up
+   *  until the player taps; unattended runs (autoplay/replay) auto-dismiss so
+   *  the sequence can never freeze waiting for a tap that will not come. */
+  async finish(filled: boolean, totalX: number, turbo: boolean, autoDismiss = false): Promise<void> {
     const W = this.rect.width;
     const H = this.rect.height;
 
@@ -667,8 +670,9 @@ export class BonusView extends Container {
     };
     ambientTicker.add(idle);
 
-    // Stay up until the player taps/clicks — NEVER auto-dismiss.
-    await this.waitForDismiss();
+    // Manual play: stay up until the player taps/clicks. Autoplay/replay:
+    // hold long enough to read, then continue on its own.
+    await this.waitForDismiss(autoDismiss ? (turbo ? 1400 : 2600) : 0);
 
     ambientTicker.remove(idle);
     // A small acknowledge pop on tap before the round_end fade takes over.
@@ -800,11 +804,24 @@ export class BonusView extends Container {
     return c;
   }
 
-  /** Resolve once the player clicks/taps anywhere — used to dismiss the result. */
-  private waitForDismiss(): Promise<void> {
+  /** Resolve once the player clicks/taps anywhere — used to dismiss the result.
+   *  With `autoDismissMs` set (autoplay/replay: nobody will tap) it also
+   *  resolves on its own, so an unattended run can never freeze here. */
+  private waitForDismiss(autoDismissMs = 0): Promise<void> {
     return new Promise((resolve) => {
-      const onDown = (): void => { window.removeEventListener("pointerdown", onDown); resolve(); };
+      let timer = 0;
+      const onDown = (): void => {
+        window.removeEventListener("pointerdown", onDown);
+        if (timer) window.clearTimeout(timer);
+        resolve();
+      };
       window.addEventListener("pointerdown", onDown);
+      if (autoDismissMs > 0) {
+        timer = window.setTimeout(() => {
+          window.removeEventListener("pointerdown", onDown);
+          resolve();
+        }, autoDismissMs);
+      }
     });
   }
 
@@ -1040,8 +1057,8 @@ export class BonusView extends Container {
     this.hudLayer.addChild(stars);
     this.stars = stars;
 
-    // SPINS LEFT number, top-right — refills on a hit, drops on a dead spin
-    // (with "SPINS RESET" / "-1 SPIN" callouts so the up/down is clear).
+    // SPINS LEFT number, top-right — ticks down on a dead spin; a lock grants
+    // +1 spin (a rolling last chance), never a refill to the starting budget.
     const box = new Container();
     box.position.set(W * 0.88, H * 0.04);
     this.hudLayer.addChild(box);
@@ -1051,13 +1068,13 @@ export class BonusView extends Container {
     sLabel.position.set(0, 0);
     box.addChild(sLabel);
     this.spinsLabel = sLabel;
-    const sVal = new Text({ text: `${MAX_RESPINS}`, style: new TextStyle({ fill: 0xffd95c, fontFamily: FONT, fontSize: Math.min(56, W / 14), fontWeight: "900", dropShadow: { color: 0xff6a00, alpha: 0.6, blur: 8, distance: 0, angle: 0 } }) });
+    const sVal = new Text({ text: `${START_RESPINS}`, style: new TextStyle({ fill: 0xffd95c, fontFamily: FONT, fontSize: Math.min(56, W / 14), fontWeight: "900", dropShadow: { color: 0xff6a00, alpha: 0.6, blur: 8, distance: 0, angle: 0 } }) });
     sVal.anchor.set(0.5, 0);
     sVal.position.set(0, 16);
     box.addChild(sVal);
     this.spinsText = sVal;
 
-    this.setSpins(MAX_RESPINS);
+    this.setSpins(START_RESPINS);
 
     // COLLECTED total, bottom-centre
     const label = new Text({ text: "COLLECTED", style: new TextStyle({ fill: 0x9fb4d0, fontFamily: FONT, fontSize: 13, letterSpacing: 3 }) });
@@ -1087,10 +1104,11 @@ export class BonusView extends Container {
    * the old number rolls away while the new one drops/punches into place. No
    * floating "+1/−1" text and no pips (removed per request) — just the counter
    * cleanly updating. Turbo snaps instantly.
-   *   reset=true  → a hit refilled the spins (punch up to full)
-   *   reset=false → a dead spin spent one     (roll down one)
+   *   lock=true  → a lock granted +1 spin (a rolling last chance — punch beat;
+   *                the value can DROP here, e.g. 4→1 on the first lock)
+   *   lock=false → a dead spin spent one  (roll down one)
    */
-  private animateSpinsBeat(to: number, reset: boolean, turbo: boolean): void {
+  private animateSpinsBeat(to: number, lock: boolean, turbo: boolean): void {
     const sv = this.spinsText;
     const box = this.spinsBox;
     if (!sv || !box) { this.setSpins(to); return; }
@@ -1107,8 +1125,9 @@ export class BonusView extends Container {
     this.setSpins(to);
     sv.alpha = 0;
 
-    if (reset) {
-      // Hit: the new (full) number pops up into place; the box gives a soft punch.
+    if (lock) {
+      // Lock: the granted spin punches into place; the box gives a soft punch.
+      // Reads as "+1 — one more chance", NOT a refill to the starting budget.
       sv.scale.set(0.55);
       void tween(620, (p) => {
         ghost.alpha = (1 - p) * 0.7;

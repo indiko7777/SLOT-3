@@ -74,6 +74,9 @@ function injectStyle(): void {
 
 export class SettingsMenu {
   private overlay: HTMLDivElement | null = null;
+  /** Autoplay count picked in step 1; START (step 2) is armed only when set. */
+  private selectedCount: number | null = null;
+  private startBtn: HTMLButtonElement | null = null;
 
   constructor(private readonly hooks: SettingsMenuHooks) {}
 
@@ -88,6 +91,8 @@ export class SettingsMenu {
   open(): void {
     if (this.overlay) return;
     injectStyle();
+    this.selectedCount = null; // every open restarts the two-step confirmation
+    this.startBtn = null;
     const flags = this.hooks.getFlags();
 
     const overlay = document.createElement("div");
@@ -117,6 +122,8 @@ export class SettingsMenu {
     content.appendChild(speedRow);
 
     // ── Autoplay ──
+    // Two-step by design: pick a spin count, then press START. Autoplay must
+    // never begin from a single click.
     content.appendChild(this.label("Autoplay"));
     const autoRow = document.createElement("div");
     autoRow.className = "sm-row";
@@ -124,6 +131,30 @@ export class SettingsMenu {
       autoRow.appendChild(this.autoBtn(count, flags.disabledAutoplay));
     }
     content.appendChild(autoRow);
+
+    if (!flags.disabledAutoplay && !this.hooks.isAutoplayActive()) {
+      const startRow = document.createElement("div");
+      startRow.className = "sm-row";
+      const start = document.createElement("button");
+      start.className = "sm-btn disabled";
+      start.textContent = "▶ Start Autoplay";
+      start.addEventListener("click", () => {
+        if (this.selectedCount == null) return;
+        this.hooks.playClick?.();
+        this.hooks.startAutoplay(this.selectedCount);
+        this.selectedCount = null;
+        this.close();
+      });
+      startRow.appendChild(start);
+      content.appendChild(startRow);
+      this.startBtn = start;
+
+      const note = document.createElement("div");
+      note.className = "sm-note";
+      note.textContent =
+        "Select a number of spins, then press Start to confirm. Autoplay stops automatically if the balance cannot cover the next spin.";
+      content.appendChild(note);
+    }
 
     if (this.hooks.isAutoplayActive()) {
       const stopRow = document.createElement("div");
@@ -212,10 +243,16 @@ export class SettingsMenu {
     btn.className = `sm-btn${disabled ? " disabled" : ""}`;
     btn.textContent = Number.isFinite(count) ? String(count) : "∞";
     if (!disabled) {
+      // Step 1 of 2: selecting a count only arms the START button.
       btn.addEventListener("click", () => {
         this.hooks.playClick?.();
-        this.hooks.startAutoplay(count);
-        this.close();
+        this.selectedCount = count;
+        const row = btn.parentElement;
+        if (row) {
+          for (const child of Array.from(row.children)) child.classList.remove("active");
+          btn.classList.add("active");
+        }
+        if (this.startBtn) this.startBtn.classList.remove("disabled");
       });
     }
     return btn;

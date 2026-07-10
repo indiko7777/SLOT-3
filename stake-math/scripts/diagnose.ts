@@ -2,7 +2,7 @@ import type { BetMode } from "../src/domain";
 import { type Criteria } from "../src/model";
 import { simulateMode } from "../src/simulate";
 
-const MODES: BetMode[] = ["base", "ante", "buy", "super_buy"];
+const MODES: BetMode[] = ["base", "ante", "getaway", "super_getaway"];
 const CRITS: Criteria[] = ["zero", "basegame", "basebig", "freegame", "wincap"];
 
 for (const mode of MODES) {
@@ -10,7 +10,7 @@ for (const mode of MODES) {
   const by: Record<Criteria, number[]> = { zero: [], basegame: [], basebig: [], freegame: [], wincap: [] };
   for (const s of sims) by[s.criteria].push(s.payoutX);
   const tot = sims.length;
-  const cost = { base: 1, ante: 1.5, buy: 100, super_buy: 500 }[mode]!;
+  const cost = { base: 1, ante: 1.5, getaway: 100, super_getaway: 500 }[mode]!;
   const pct = (arr: number[], q: number): number =>
     arr.slice().sort((a, b) => a - b)[Math.min(arr.length - 1, Math.floor(arr.length * q))]!;
   console.log(`\n== ${mode} (n=${tot}, cost=${cost}x) ==`);

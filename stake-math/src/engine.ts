@@ -15,7 +15,8 @@ import {
   BASEBIG_TEASE_WEIGHTS,
   BASEGAME_TEASE_WEIGHTS,
   BONUS_CELLS,
-  BONUS_RESPINS,
+  BONUS_RESPINS_ON_LOCK,
+  BONUS_START_RESPINS,
   CLUSTER_PAY,
   cascadeMultiplier,
   clusterSizeFactor,
@@ -266,7 +267,7 @@ export function simulateRound(
   const triggered = forceBonus || reachedMaxHeat || scatterTriggered;
 
   if (triggered) {
-    const bonusMode = mode === "super_buy" ? "super_getaway" : "getaway";
+    const bonusMode = mode === "super_getaway" ? "super_getaway" : "getaway";
     // Heat 5 (the Wanted path) takes precedence. Only a genuine 3+ scatter land
     // — with no max-heat chain — highlights scatters; the Wanted path carries no
     // scatter positions so the client can theme it as an earned trigger.
@@ -554,14 +555,6 @@ function allPositions(): Position[] {
   return out;
 }
 
-function defaultScatterPositions(): Position[] {
-  return [
-    [1, 2],
-    [2, 1],
-    [4, 0]
-  ];
-}
-
 // ---------------------------------------------------------------------------
 // Hold & Spin bonus
 // ---------------------------------------------------------------------------
@@ -576,7 +569,7 @@ function runHoldAndSpin(
   const grid: BonusCell[][] = Array.from({ length: GRID_COLUMNS }, () =>
     Array.from({ length: GRID_ROWS }, () => ({ symbol: "EMPTY" }) as BonusCell)
   );
-  let respins = BONUS_RESPINS;
+  let respins = BONUS_START_RESPINS;
   let locked = 0;
 
   const emptyCells = (): Position[] => {
@@ -592,7 +585,7 @@ function runHoldAndSpin(
   // bars (real losses), giving the feature genuine high volatility instead of a
   // flat "always ~your-money-back" payout. The fat-tailed safe values then supply
   // the rare big wins. base/ante keep a more generous land rate (you earned it).
-  const landP = forceWincap ? 0.62 : mode === "super_buy" ? 0.18 : mode === "buy" ? 0.085 : 0.22;
+  const landP = forceWincap ? 0.8 : mode === "super_getaway" ? 0.27 : mode === "getaway" ? 0.19 : 0.32;
   const keyP = 0.12;
 
   let safety = 0;
@@ -625,7 +618,9 @@ function runHoldAndSpin(
       }
     }
 
-    respins = landed.length > 0 ? BONUS_RESPINS : respins - 1;
+    // A lock grants a rolling +1 (single last-chance spin), NOT a refill to the
+    // starting budget — the bonus busts on the first dead spin after any lock.
+    respins = landed.length > 0 ? BONUS_RESPINS_ON_LOCK : respins - 1;
 
     events.push({
       type: "bonus_spin",

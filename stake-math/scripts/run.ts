@@ -7,8 +7,8 @@ import { verify } from "../src/verify";
 const MODES: BetMode[] = [
   "base",
   "ante",
-  "buy",
-  "super_buy",
+  "getaway",
+  "super_getaway",
   // Collection Power-Level head-start tables (RTP-neutral; see model.ts).
   "base_tier1",
   "base_tier2",

@@ -13,16 +13,16 @@
       "weights": "lookUpTable_ante_0.csv"
     },
     {
-      "name": "buy",
+      "name": "getaway",
       "cost": 100,
-      "events": "books_buy.jsonl.zst",
-      "weights": "lookUpTable_buy_0.csv"
+      "events": "books_getaway.jsonl.zst",
+      "weights": "lookUpTable_getaway_0.csv"
     },
     {
-      "name": "super_buy",
+      "name": "super_getaway",
       "cost": 500,
-      "events": "books_super_buy.jsonl.zst",
-      "weights": "lookUpTable_super_buy_0.csv"
+      "events": "books_super_getaway.jsonl.zst",
+      "weights": "lookUpTable_super_getaway_0.csv"
     },
     {
       "name": "base_tier1",

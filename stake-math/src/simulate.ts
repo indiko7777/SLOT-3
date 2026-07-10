@@ -18,8 +18,8 @@ function seedFor(mode: BetMode, id: number): number {
   const salt: Record<BetMode, number> = {
     base: 0x1111,
     ante: 0x2222,
-    buy: 0x3333,
-    super_buy: 0x4444,
+    getaway: 0x3333,
+    super_getaway: 0x4444,
     base_tier1: 0x5555,
     base_tier2: 0x6666,
     base_tier3: 0x7777

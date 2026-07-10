@@ -12,11 +12,14 @@ export const MAX_WIN_MULTIPLIER = 5000;
  * 96%; the head-start is a faster, more frequent Getaway (variance reshaping),
  * never free EV (which Stake's per-mode RTP verification would reject).
  */
+// Mode names must not contain restricted words (buy/bet/pay) — Stake's social
+// jurisdictions forbid them in math-file mode naming — and must align with the
+// feature names shown in the game UI ("The Getaway" / "Super Getaway").
 export type BetMode =
   | "base"
   | "ante"
-  | "buy"
-  | "super_buy"
+  | "getaway"
+  | "super_getaway"
   | "base_tier1"
   | "base_tier2"
   | "base_tier3";
@@ -162,8 +165,8 @@ export const TEXT = {
   title: "Heat Chase",
   subtitle: "Grand Escape",
   maxWin: "Win up to 5,000x your bet",
-  buy: "Buy Getaway",
-  superBuy: "Buy Super Getaway",
+  buy: "The Getaway",
+  superBuy: "Super Getaway",
   ante: "Ante",
   anteHelp: "Scatter chance increased",
   spin: "Spin",
@@ -224,14 +227,14 @@ export interface RoundRecord {
 }
 
 export const BET_MODES: Record<BetMode, { label: string; priceMultiplier: number; rtpTarget: number }> = {
-  base: { label: "Base Game", priceMultiplier: 1, rtpTarget: 0.965 },
-  ante: { label: "Ante", priceMultiplier: 1.5, rtpTarget: 0.965 },
-  buy: { label: "Getaway Buy", priceMultiplier: 100, rtpTarget: 0.965 },
-  super_buy: { label: "Super Getaway Buy", priceMultiplier: 500, rtpTarget: 0.965 },
+  base: { label: "Base Game", priceMultiplier: 1, rtpTarget: 0.96 },
+  ante: { label: "Ante", priceMultiplier: 1.5, rtpTarget: 0.96 },
+  getaway: { label: "The Getaway", priceMultiplier: 100, rtpTarget: 0.96 },
+  super_getaway: { label: "Super Getaway", priceMultiplier: 500, rtpTarget: 0.96 },
   // Power-Level head-start tables (same 1x cost as base; RTP-neutral).
-  base_tier1: { label: "Base · Sapphire Head-Start", priceMultiplier: 1, rtpTarget: 0.965 },
-  base_tier2: { label: "Base · Roxy Head-Start", priceMultiplier: 1, rtpTarget: 0.965 },
-  base_tier3: { label: "Base · Vega Head-Start", priceMultiplier: 1, rtpTarget: 0.965 }
+  base_tier1: { label: "Base · Sapphire Head-Start", priceMultiplier: 1, rtpTarget: 0.96 },
+  base_tier2: { label: "Base · Roxy Head-Start", priceMultiplier: 1, rtpTarget: 0.96 },
+  base_tier3: { label: "Base · Vega Head-Start", priceMultiplier: 1, rtpTarget: 0.96 }
 };
 
 export function assertBoard(board: Board): void {
