@@ -397,7 +397,11 @@ async function boot(): Promise<void> {
       disabledSuperTurbo: Boolean(jurisdiction?.disabledSuperTurbo),
       disabledAutoplay: Boolean(jurisdiction?.disabledAutoplay)
     }),
-    playClick: () => { if (!muted) audioBus.playUI("click", false); }
+    playClick: () => { if (!muted) audioBus.playUI("click", false); },
+    // GAME INFO tab content sources (same data the Pixi paytable used).
+    getUiStrings: () => ui(),
+    isSocial: () => isSocial(),
+    getBetModes: () => betModes
   });
 
   // Observe the canvas directly with ResizeObserver for smooth, continuous,
@@ -579,8 +583,8 @@ async function handleAction(action: string): Promise<void> {
   if ((isPlaying || autoplayRemaining > 0) && lockedDuringPlay.includes(action)) return;
 
   switch (action) {
-    case "info":
-      scene.togglePaytable();
+    case "info": // ⓘ — same GTA pause menu, opened directly on the PAYTABLE tab
+      settingsMenu.toggle("paytable");
       return;
     case "menu": // ☰ — open the game menu (spin speed + autoplay)
       settingsMenu.toggle();
