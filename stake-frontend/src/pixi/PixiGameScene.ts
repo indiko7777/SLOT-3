@@ -54,11 +54,14 @@ export class PixiGameScene {
     this.effects = new EffectsLayer(this.particleLayer);
 
     this.board.setAudioHooks({
-      onReelStop: (col, total) => runtime.onReelStop?.(col, total),
+      onReelStop: (col, total) => {
+        // Reel loop stop is handled on impact to sync with the reel stop sound
+      },
       onReelImpact: (col, total) => {
         if (this.runtime.playAudio) {
           this.runtime.playAudio("new_reel_stop");
         }
+        runtime.onReelStop?.(col, total);
       },
       onAnticipation: () => runtime.onAnticipation?.(),
       onTransform: () => runtime.onTransform?.(),

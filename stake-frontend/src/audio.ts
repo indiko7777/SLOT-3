@@ -952,7 +952,7 @@ export class EventAudioBus {
   private fadeAndStop(loop: ActiveLoop): void {
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
-    const fade = (loop.track === "spin_loop" || loop.track === "reel_stop") ? 0.1 : FADE;
+    const fade = (loop.track === "spin_loop" || loop.track === "reel_stop" || loop.track === "reel_loop") ? 0.05 : FADE;
     try {
       loop.gain.gain.cancelScheduledValues(now);
       loop.gain.gain.setValueAtTime(
