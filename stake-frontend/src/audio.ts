@@ -633,15 +633,12 @@ export class EventAudioBus {
         break;
 
       /* ── scatter / bonus ─────────────────────── */
-      case "scatter_tease": {
-        // Play the old combination sound once per scatter, staggered 150ms apart
-        const scatterCount = ev.count ?? ev.positions?.length ?? 1;
-        const scatterTrack: TrackName = "good_win_combo";
-        for (let i = 0; i < scatterCount; i++) {
-          setTimeout(() => this.fire(scatterTrack, vol), i * 150);
-        }
+      case "scatter_tease":
+        // No per-scatter zoom audio (removed per request). The negative "near
+        // miss" cue for a failed anticipation is fired from BoardView's
+        // onAnticipationMiss hook, synced to the reel stopping short — so a
+        // 2-scatter tease that had no anticipation stays silent by design.
         break;
-      }
 
       case "bonus_trigger":
         this.fire("getaway_intro", vol, 1.25); // 25% faster so it ends sooner
@@ -869,6 +866,136 @@ export class EventAudioBus {
           }
         }
       }
+    });
+  }
+
+  /* ═══════════════════════════════════════════════
+     Scatter-slam hit — fired by the board the instant each zoomed
+     scatter symbol slams back down during the bonus-trigger tease.
+     A rising dopamine ladder: every hit is the cinematic banner bang
+     PLUS the win-combo jingle pitched up a step per scatter, so
+     scatter 1 → 2 → 3 audibly climbs toward the bonus.
+     ═══════════════════════════════════════════════ */
+
+  /* ═══════════════════════════════════════════════
+     Negative "miss" cue — the sound of NOTHING landing. Used for both a
+     Getaway dead spin AND a scatter anticipation that stops short of the
+     bonus. Deliberately built in the MID band (200–420 Hz) so it is clearly
+     audible on laptop/phone speakers — the previous version sat at 48–130 Hz
+     and was inaudible on anything but a subwoofer. A descending detuned
+     two-note "wah-waah" (classic fail), a short body thud, and a noise tick
+     for attack. Escalates slightly with heat (consecutive misses).
+     ═══════════════════════════════════════════════ */
+  deadSpin(heat: number): void {
+    void this.unlock().then(() => {
+      if (!this.ctx) return;
+      const ctx = this.ctx;
+      const t = ctx.currentTime;
+      const inten = 0.85 + Math.min(3, Math.max(0, heat)) * 0.12;
+
+      const out = ctx.createGain();
+      out.gain.value = 0.9 * inten;
+      out.connect(ctx.destination);
+
+      // Two descending detuned saw notes through a lowpass — the "wah-waah".
+      const note = (freq: number, start: number, dur: number, peak: number): void => {
+        const lp = ctx.createBiquadFilter();
+        lp.type = "lowpass";
+        lp.frequency.value = 1900;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, start);
+        g.gain.exponentialRampToValueAtTime(peak, start + 0.03);
+        g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+        lp.connect(g).connect(out);
+        for (const det of [-9, 8]) {
+          const o = ctx.createOscillator();
+          o.type = "sawtooth";
+          o.frequency.setValueAtTime(freq, start);
+          o.frequency.exponentialRampToValueAtTime(freq * 0.86, start + dur);
+          o.detune.value = det;
+          o.connect(lp);
+          o.start(start);
+          o.stop(start + dur + 0.03);
+        }
+      };
+      note(392, t, 0.17, 0.22);          // "wah"  (G4-ish)
+      note(311, t + 0.15, 0.30, 0.24);   // "waah" (Eb4-ish, lower — the letdown)
+
+      // Short body thud so it has weight (kept in an audible ~150 Hz range).
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "triangle";
+      o.frequency.setValueAtTime(190, t);
+      o.frequency.exponentialRampToValueAtTime(90, t + 0.2);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.28, t + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
+      o.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + 0.28);
+
+      // Noise tick for attack definition.
+      const frames = Math.floor(ctx.sampleRate * 0.04);
+      const nbuf = ctx.createBuffer(1, frames, ctx.sampleRate);
+      const nd = nbuf.getChannelData(0);
+      for (let i = 0; i < frames; i++) nd[i] = (Math.random() * 2 - 1) * (1 - i / frames);
+      const nsrc = ctx.createBufferSource();
+      nsrc.buffer = nbuf;
+      const nhp = ctx.createBiquadFilter();
+      nhp.type = "highpass"; nhp.frequency.value = 1400;
+      const ng = ctx.createGain();
+      ng.gain.setValueAtTime(0.18, t);
+      ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+      nsrc.connect(nhp).connect(ng).connect(out);
+      nsrc.start(t);
+    });
+  }
+
+  /* ═══════════════════════════════════════════════
+     Collection-piece whoosh — the airy riser that plays
+     while the body part hangs in front of the camera and
+     strikes down onto the silhouette. Timed to the visual:
+     it swells through the present+strike (~0.56s) and peaks
+     right at the moment of impact (bannerImpact fires there).
+     ═══════════════════════════════════════════════ */
+  pieceWhoosh(): void {
+    void this.unlock().then(() => {
+      if (!this.ctx) return;
+      const t = this.ctx.currentTime;
+      const dur = 0.55;
+
+      // 1) Bandpass-swept noise — the "air" of the whoosh.
+      const frames = Math.floor(this.ctx.sampleRate * dur);
+      const buf = this.ctx.createBuffer(1, frames, this.ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < frames; i++) data[i] = Math.random() * 2 - 1;
+      const src = this.ctx.createBufferSource();
+      src.buffer = buf;
+      const bp = this.ctx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.Q.value = 1.1;
+      bp.frequency.setValueAtTime(350, t);
+      bp.frequency.exponentialRampToValueAtTime(3200, t + dur);
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.16, t + dur * 0.75);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      src.connect(bp).connect(g).connect(this.ctx.destination);
+      src.start(t);
+      src.stop(t + dur + 0.02);
+
+      // 2) Subtle sine riser underneath for a sense of lift.
+      const osc = this.ctx.createOscillator();
+      const og = this.ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(240, t);
+      osc.frequency.exponentialRampToValueAtTime(760, t + dur);
+      og.gain.setValueAtTime(0.0001, t);
+      og.gain.exponentialRampToValueAtTime(0.05, t + dur * 0.7);
+      og.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      osc.connect(og).connect(this.ctx.destination);
+      osc.start(t);
+      osc.stop(t + dur + 0.05);
     });
   }
 

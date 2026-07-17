@@ -262,7 +262,6 @@ export const CASCADE_LADDER = [1, 2, 4, 7, 12, 20, 32, 50, 80] as const;
 
 /** Getaway Hold & Spin constants (mirror of stake-math/src/model.ts). */
 export const BONUS_START_RESPINS = 4;
-export const BONUS_RESPINS_ON_LOCK = 1;
 export const BONUS_CELLS = 20;
 
 /**

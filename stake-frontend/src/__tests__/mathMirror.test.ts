@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   BET_MODES,
   BONUS_CELLS,
-  BONUS_RESPINS_ON_LOCK,
   BONUS_START_RESPINS,
   CASCADE_LADDER,
   CLUSTER_PAY_X,
@@ -61,7 +60,6 @@ describe("frontend display values mirror stake-math exactly", () => {
   it("bonus constants and max win match", () => {
     expect(MAX_WIN_MULTIPLIER).toBe(math.MAX_WIN_X);
     expect(BONUS_START_RESPINS).toBe(math.BONUS_START_RESPINS);
-    expect(BONUS_RESPINS_ON_LOCK).toBe(math.BONUS_RESPINS_ON_LOCK);
     expect(BONUS_CELLS).toBe(math.BONUS_CELLS);
   });
 

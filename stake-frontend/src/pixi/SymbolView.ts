@@ -1,9 +1,10 @@
 import { Container, Graphics, Sprite, Text, BlurFilter, AnimatedSprite } from "pixi.js";
 import type { SymbolId } from "../domain";
 import { SYMBOLS } from "../domain";
-import { SYMBOL_ASSETS, getSymbolTexture, getSymbolAnimation, type SymbolAnimation } from "./assets";
+import { SYMBOL_ASSETS, getSymbolTexture, getSymbolAnimation, createSkelSymbol, type SymbolAnimation } from "./assets";
+import type { SkelPlayer } from "./SkelPlayer";
 import { makeText } from "./text";
-import { easeInOutCubic, easeOutElastic, easeOutBack, easeOutQuad, linear, tween, ambientTicker } from "./tween";
+import { easeInOutCubic, easeOutElastic, easeOutBack, easeOutQuad, linear, tween, ambientTicker, getTimeScale } from "./tween";
 
 export const WIN_ACCENT: Record<SymbolId, number> = {
   // Low Tier: Steel Blue
@@ -50,6 +51,13 @@ export class SymbolView extends Container {
   private blurFilter: BlurFilter | null = null;
   private readonly animation: SymbolAnimation | null;
   private winSprite: AnimatedSprite | null = null;
+  /** 2D skeletal player (tools/skel-pipeline bundle). When present it replaces
+   *  the static sprite entirely: idle loops on the ambient ticker, win/vanish
+   *  play the authored skeletal animations. */
+  private readonly skel: SkelPlayer | null = null;
+  private readonly skelFitW: number = 1;
+  private readonly skelFitH: number = 1;
+  private skelCb: ((dt: number) => void) | null = null;
 
   constructor(id: SymbolId) {
     super();
@@ -65,13 +73,28 @@ export class SymbolView extends Container {
       this.sprite = null;
     }
 
+    const skelInfo = createSkelSymbol(id);
+    if (skelInfo) {
+      this.skel = skelInfo.player;
+      this.skelFitW = skelInfo.fitW;
+      this.skelFitH = skelInfo.fitH;
+    }
+
     this.labelText = makeText(skin.label, 24, skin.text, 0, 0, "center");
     this.corner = makeText(SYMBOLS[id].shortLabel, 11, 0xffffff, 0, 0, "right");
     this.winGlow.alpha = 0;
     this.shimmer.alpha = 0;
 
     this.addChild(this.background, this.winGlow);
-    if (this.sprite) {
+    if (this.skel) {
+      // Skeletal symbol: the player replaces the static sprite. Its idle loop
+      // runs on the shared ambient ticker for the lifetime of this view.
+      if (this.sprite) this.sprite.visible = false;
+      this.addChild(this.skel);
+      this.skel.play("idle", { loop: true });
+      this.skelCb = (dt: number) => this.skel!.update(dt);
+      ambientTicker.add(this.skelCb);
+    } else if (this.sprite) {
       this.addChild(this.sprite);
     }
     this.addChild(this.topSheen, this.shimmer, this.shimmerMask);
@@ -131,6 +154,15 @@ export class SymbolView extends Container {
     // Scale sprite to fill cell
     if (this.sprite) this.fitInCell(this.sprite);
     if (this.winSprite) this.fitInCell(this.winSprite);
+
+    // Skeletal player: origin is the symbol centre; scale by the ART content
+    // size (fitW/fitH), not the padded canvas, so it matches the static art.
+    if (this.skel && w > 0 && h > 0) {
+      const padding = 6;
+      const s = Math.min((w - padding * 2) / this.skelFitW, (h - padding * 2) / this.skelFitH);
+      if (isFinite(s) && s > 0) this.skel.scale.set(s);
+      this.skel.position.set(w / 2, h / 2);
+    }
 
     // Fallback text
     if (!this.sprite) {
@@ -209,6 +241,7 @@ export class SymbolView extends Container {
   }
 
   async winCelebrate(turbo: boolean): Promise<void> {
+    if (this.skel) return this.winCelebrateSkel(turbo);
     const w = this.widthValue;
     const h = this.heightValue;
     this.redraw(true, false, false);
@@ -270,6 +303,32 @@ export class SymbolView extends Container {
     if (playing) this.stopWinAnimation();
   }
 
+  /** Skeletal win: play the authored `win` animation (anticipation crush →
+   *  prismatic burst) with the tier aura + shimmer sweep layered on top. */
+  private async winCelebrateSkel(turbo: boolean): Promise<void> {
+    const w = this.widthValue;
+    const h = this.heightValue;
+    this.redraw(true, false, false);
+
+    const accent = WIN_ACCENT[this.id] ?? DEFAULT_ACCENT;
+    this.winGlow.clear();
+    this.winGlow.roundRect(-8, -8, w + 16, h + 16, 16).fill({ color: accent, alpha: 0.3 });
+    this.winGlow.roundRect(-3, -3, w + 6, h + 6, 12).fill({ color: accent, alpha: 0.16 });
+    this.winGlow.alpha = 0;
+
+    const sweep = this.sweepShimmer(turbo, accent);
+    const glowIn = tween(turbo ? 90 : 200, (p) => { this.winGlow.alpha = p; });
+    // The ambient ticker keeps calling skel.update, so a one-shot play resolves
+    // itself; speed tracks turbo and the global time scale like the tweens do.
+    const speed = (turbo ? 2 : 1) * getTimeScale();
+    await new Promise<void>((resolve) => this.skel!.play("win", { speed, onComplete: resolve }));
+    await Promise.all([sweep, glowIn]);
+
+    this.winGlow.alpha = 0;
+    this.shimmer.alpha = 0;
+    this.skel!.play("idle", { loop: true });
+  }
+
   /** The element to pop/tilt: the playing win-sprite, else the static sprite. */
   private celebrationTarget(): Sprite | AnimatedSprite | null {
     if (this.winSprite?.visible) return this.winSprite;
@@ -329,6 +388,12 @@ export class SymbolView extends Container {
   }
 
   async vanish(turbo: boolean): Promise<void> {
+    if (this.skel) {
+      // Authored shatter: light flies outward, body collapses, ends invisible.
+      const speed = (turbo ? 4 : 2) * getTimeScale();
+      await new Promise<void>((resolve) => this.skel!.play("destroy", { speed, onComplete: resolve }));
+      return;
+    }
     await tween(turbo ? 100 : 220, (progress) => {
       this.alpha = 1 - progress;
       this.scale.set(1 - progress * 0.3);
@@ -338,6 +403,11 @@ export class SymbolView extends Container {
 
   override destroy(options?: { children?: boolean }): void {
     this.stopIdleShimmer();
+    if (this.skelCb) {
+      ambientTicker.remove(this.skelCb);
+      this.skelCb = null;
+    }
+    this.skel?.stop();
     this.winSprite?.stop();
     super.destroy(options);
   }

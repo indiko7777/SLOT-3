@@ -334,11 +334,18 @@ async function boot(): Promise<void> {
     onTransform: () => {
       if (!muted) audioBus.fire("poker_machine_win", 1.15);
     },
+    onAnticipationMiss: () => {
+      if (!muted) audioBus.deadSpin(0);
+    },
+    onDeadSpin: (heat) => {
+      if (!muted) audioBus.deadSpin(heat);
+    },
     playAudio: (track, volumeScale) => {
       if (!muted) {
         if (track === "win_tick_low") audioBus.playWinTick("normal");
         else if (track === "win_tick_mid") audioBus.playWinTick("medium");
         else if (track === "win_tick_high") audioBus.playWinTick("high");
+        else if (track === "piece_whoosh") audioBus.pieceWhoosh();
         else audioBus.fire(track as any, volumeScale);
       }
     },

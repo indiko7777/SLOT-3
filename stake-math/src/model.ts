@@ -157,11 +157,19 @@ export const MODES: Record<BetMode, ModeConfig> = {
     reelWeights: anteReels(),
     safeValues: safeTable(1)
   },
+  // NOTE — buy-mode `sims` is capped at 25k ON PURPOSE (do NOT raise to 100k).
+  // Every buy book is a full Hold & Spin, and the classic reset mechanic
+  // (BONUS_START_RESPINS) averages ~16 spins, each event embedding a whole
+  // 20-cell lockedGrid → ~11 KB/book. publish.ts compresses the ENTIRE books
+  // file in ONE zstd-wasm call, and the wasm heap dies ("memory access out of
+  // bounds") around the 1 GB that 100k books produce. 25k ≈ 260 MB, matching the
+  // long-standing known-good size. Coverage stays ample (22k freegame + 3k
+  // wincap outcomes) and RTP is still solved EXACTLY by the optimizer.
   getaway: {
     cost: 100,
     isFeature: false,
     isBuyBonus: true,
-    sims: 100_000,
+    sims: 25_000,
     criteria: { zero: 0, basegame: 0, basebig: 0, freegame: 0.88, wincap: 0.12 },
     reelWeights: baseReels(),
     safeValues: safeTable(1.15)
@@ -170,7 +178,7 @@ export const MODES: Record<BetMode, ModeConfig> = {
     cost: 500,
     isFeature: false,
     isBuyBonus: true,
-    sims: 100_000,
+    sims: 25_000,
     criteria: { zero: 0, basegame: 0, basebig: 0, freegame: 0.80, wincap: 0.20 },
     reelWeights: baseReels(),
     safeValues: safeTable(1.45)
@@ -240,12 +248,14 @@ export const SCATTER_TRIGGER_COUNT = 3;
  * the served Getaways are mostly Heat-5 / Wanted-triggered, not random scatters.
  */
 export const SCATTER_TRIGGER_SHARE = 0.15;
-/** Hold & Spin STARTING respin budget (4 = baseline + 3 escalating heat levels).
- *  A lock does NOT refill the meter to this value. */
-export const BONUS_START_RESPINS = 4;
-/** Respins granted when a spin locks >=1 symbol: a rolling single last-chance
- *  spin (+1 per lock), so the bonus busts on the first dead spin after a lock. */
-export const BONUS_RESPINS_ON_LOCK = 1;
+/** Hold & Spin respin budget. Classic reset mechanic: the meter STARTS here,
+ *  every lock RESETS it back to this value, and each dead spin spends one — so
+ *  the feature busts only after this many CONSECUTIVE dead spins.
+ *  3 = the industry-standard "3 lives". Do NOT raise to 4: with 20 open cells a
+ *  dead spin is ~(1-landP)^20, so a 4-deep budget makes busting ~4x rarer, the
+ *  grid fills far too often and the 5000x wincap tail alone pushes E_freegame
+ *  past the solvable ceiling (measured: mean 142x vs the ~96x cost target). */
+export const BONUS_START_RESPINS = 3;
 export const BONUS_CELLS = 20;
 /** Hard guards to keep event streams (and memory) bounded. */
 export const MAX_TUMBLES = 16;

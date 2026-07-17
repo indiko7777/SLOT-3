@@ -15,7 +15,6 @@ import {
   BASEBIG_TEASE_WEIGHTS,
   BASEGAME_TEASE_WEIGHTS,
   BONUS_CELLS,
-  BONUS_RESPINS_ON_LOCK,
   BONUS_START_RESPINS,
   CLUSTER_PAY,
   cascadeMultiplier,
@@ -85,8 +84,8 @@ export function simulateRound(
   // to climb to Heat 5 so the book genuinely triggers via the stars. BUY modes
   // are a purchased Getaway: straight to the bonus, no Wanted climb / base run.
   const isCash = !cfg.isBuyBonus;
-  const forceScatter = forceBonus && isCash && rng.bool(SCATTER_TRIGGER_SHARE);
-  const forceDeep = forceBonus && isCash && !forceScatter;
+  const forceScatter = forceBonus && isCash;
+  const forceDeep = false;
 
   // Wanted-progress shaping. `climbTo` is the heat a book is forced to reach by
   // planting a fresh small cluster each tumble (reads on screen as a lucky
@@ -264,14 +263,11 @@ export function simulateRound(
   const reachedMaxHeat = heat >= triggerHeat;
   const finalScatters = findSymbol(board, SCATTER);
   const scatterTriggered = finalScatters.length >= SCATTER_TRIGGER_COUNT;
-  const triggered = forceBonus || reachedMaxHeat || scatterTriggered;
+  const triggered = forceBonus || scatterTriggered;
 
   if (triggered) {
     const bonusMode = mode === "super_getaway" ? "super_getaway" : "getaway";
-    // Heat 5 (the Wanted path) takes precedence. Only a genuine 3+ scatter land
-    // — with no max-heat chain — highlights scatters; the Wanted path carries no
-    // scatter positions so the client can theme it as an earned trigger.
-    const viaScatter = scatterTriggered && !reachedMaxHeat;
+    const viaScatter = scatterTriggered;
     const trigPositions = viaScatter ? finalScatters.slice(0, SCATTER_TRIGGER_COUNT) : [];
     events.push({
       type: "bonus_trigger",
@@ -585,7 +581,7 @@ function runHoldAndSpin(
   // bars (real losses), giving the feature genuine high volatility instead of a
   // flat "always ~your-money-back" payout. The fat-tailed safe values then supply
   // the rare big wins. base/ante keep a more generous land rate (you earned it).
-  const landP = forceWincap ? 0.8 : mode === "super_getaway" ? 0.27 : mode === "getaway" ? 0.19 : 0.32;
+  const landP = forceWincap ? 0.8 : mode === "super_getaway" ? 0.112 : mode === "getaway" ? 0.072 : 0.1;
   const keyP = 0.12;
 
   let safety = 0;
@@ -618,9 +614,11 @@ function runHoldAndSpin(
       }
     }
 
-    // A lock grants a rolling +1 (single last-chance spin), NOT a refill to the
-    // starting budget — the bonus busts on the first dead spin after any lock.
-    respins = landed.length > 0 ? BONUS_RESPINS_ON_LOCK : respins - 1;
+    // Classic Hold & Spin: any lock RESETS the respin meter to the full budget;
+    // a dead spin (nothing landed) spends one. The feature busts only after
+    // BONUS_START_RESPINS consecutive dead spins — the standard, intuitive
+    // "land a symbol → get your spins back" loop.
+    respins = landed.length > 0 ? BONUS_START_RESPINS : respins - 1;
 
     events.push({
       type: "bonus_spin",

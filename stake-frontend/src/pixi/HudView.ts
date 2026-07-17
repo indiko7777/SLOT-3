@@ -321,9 +321,12 @@ export class HudView extends Container {
       if (availH > 24 && boxW > 24) {
         const logo = new Sprite(logoTex);
         logo.anchor.set(0.5, 0.5);
-        
-        // Use a multiplier to make it noticeably larger (pop out more)
-        const baseScale = Math.min(boxW / logoTex.width, (availH * 1.2) / logoTex.height);
+
+        // Fill the gap as fully as possible. The old `availH * 1.2` fudge was
+        // compensating for dead transparent margin in the logo file; the art is
+        // tightly cropped now, so overshooting here would genuinely overflow.
+        // 0.97 leaves headroom for the 3% breathing pulse below.
+        const baseScale = Math.min(boxW / logoTex.width, availH / logoTex.height) * 0.97;
         logo.scale.set(baseScale);
         logo.position.set(center, (regionTop + regionBottom) / 2);
         

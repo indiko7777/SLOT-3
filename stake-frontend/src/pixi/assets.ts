@@ -1,5 +1,6 @@
 import { Assets, Texture, Spritesheet } from "pixi.js";
 import type { SymbolId } from "../domain";
+import { SkelPlayer, type SkelData } from "./SkelPlayer";
 
 export interface SymbolSkin {
   color: number;
@@ -44,6 +45,17 @@ export interface SymbolAnimation {
   textures: Texture[];
   fps: number;
 }
+
+/** 2D skeletal animation bundles, produced by tools/skel-pipeline
+ *  (layered PNGs → Spine-3.8 JSON + atlas, played by our own SkelPlayer).
+ *  `fitW/fitH` is the art content size inside the padded canvas — SymbolView
+ *  scales the player so the ART fills the cell, not the empty margin. */
+const SKEL_ASSETS: Partial<Record<SymbolId, { dir: string; fitW: number; fitH: number }>> = {
+  DIAMOND: { dir: "skel/diamond", fitW: 247, fitH: 206 },
+};
+
+interface SkelBundle { data: SkelData; atlasText: string; texture: Texture; fitW: number; fitH: number }
+const skelCache = new Map<SymbolId, SkelBundle>();
 
 const textureCache = new Map<string, Texture>();
 const animCache = new Map<SymbolId, SymbolAnimation>();
@@ -95,6 +107,9 @@ const OPTIONAL_ASSETS: Record<string, string> = {
   "gold_bar": "gold_bar.webp",
   "dynamite": "dynamite.webp",
   "heat_chase_logo": "Heat Chase Logo.webp",
+  // Symbol-sized, pre-shaded variant used as the Getaway bonus reel watermark.
+  // Separate file (not just a tinted copy) so the big corner logo stays vivid.
+  "heat_chase_logo_symbol": "heat_chase_logo_symbol.webp",
 };
 
 /** Background images — loaded separately so a missing file doesn't block the game */
@@ -147,6 +162,33 @@ export async function loadSymbolTextures(): Promise<void> {
     }
   }
 
+  // Skeletal animation bundles — a missing one falls back to the static sprite.
+  await Promise.all(
+    (Object.entries(SKEL_ASSETS) as [SymbolId, { dir: string; fitW: number; fitH: number }][]).map(
+      async ([id, cfg]) => {
+        try {
+          const name = cfg.dir.split("/").pop();
+          const [data, atlasText, texture] = await Promise.all([
+            fetch(`${BASE_PATH}${cfg.dir}/${name}.json`).then((r) => {
+              if (!r.ok) throw new Error(`${r.status}`);
+              return r.json() as Promise<SkelData>;
+            }),
+            fetch(`${BASE_PATH}${cfg.dir}/${name}.atlas`).then((r) => {
+              if (!r.ok) throw new Error(`${r.status}`);
+              return r.text();
+            }),
+            Assets.load<Texture>(`${BASE_PATH}${cfg.dir}/packed.png`),
+          ]);
+          if (texture instanceof Texture) {
+            skelCache.set(id, { data, atlasText, texture, fitW: cfg.fitW, fitH: cfg.fitH });
+          }
+        } catch (err) {
+          console.warn(`[assets] No skeletal bundle for ${id} — static sprite fallback`, err);
+        }
+      }
+    )
+  );
+
   // Win sprite-sheet atlases — missing ones just use procedural glow.
   for (const [id, file] of Object.entries(ANIM_ASSETS) as [SymbolId, string][]) {
     try {
@@ -176,6 +218,20 @@ export function getExtraTexture(key: string): Texture | null {
 /** Win animation frames for a symbol, if a sprite-sheet atlas was loaded. */
 export function getSymbolAnimation(id: SymbolId): SymbolAnimation | null {
   return animCache.get(id) ?? null;
+}
+
+export interface SkelSymbol { player: SkelPlayer; fitW: number; fitH: number }
+
+/** Fresh skeletal player instance for a symbol, or null if it has no bundle.
+ *  Each SymbolView gets its own instance (cheap — textures share one base). */
+export function createSkelSymbol(id: SymbolId): SkelSymbol | null {
+  const bundle = skelCache.get(id);
+  if (!bundle) return null;
+  return {
+    player: new SkelPlayer(bundle.data, bundle.atlasText, bundle.texture),
+    fitW: bundle.fitW,
+    fitH: bundle.fitH,
+  };
 }
 
 export const IMAGE_DROP_IN_GUIDE = {

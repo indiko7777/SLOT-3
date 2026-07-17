@@ -36,10 +36,10 @@ const CINEMA_BAR = 0x050507; // letterbox bar colour
 // Used to align the grid exactly inside the truck's window.
 const TRUCK_OPENING = { wFrac: 0.3262, hFrac: 0.507, cxFrac: 0.5, cyFrac: 0.4441, aspect: 334 / 290 };
 
-// Must match stake-math BONUS_START_RESPINS: the meter STARTS at this budget and
-// ticks down on dead spins; a lock grants +1 spin (BONUS_RESPINS_ON_LOCK, a
-// rolling single last chance) — it never refills the meter back to 4.
-const START_RESPINS = 4;
+// Must match stake-math BONUS_START_RESPINS. Classic Hold & Spin: the meter
+// STARTS here, every lock RESETS it back to this value, and each dead spin
+// spends one — the feature busts only after this many CONSECUTIVE dead spins.
+const START_RESPINS = 3;
 
 // Uniform dark-grey reel background. EVERY bonus symbol fills its cell with this
 // exact colour and the reel panel is the same flat colour, so the symbols'
@@ -76,6 +76,12 @@ function fmtX(v: number): string {
   return `${r.toLocaleString("en-US", { maximumFractionDigits: 2 })}x`;
 }
 
+/** Compact money number: "4", "1.5", "0.25", "1,250" — no trailing zeros. */
+function fmtMoneyNum(amount: number): string {
+  const r = Math.round(amount * 100) / 100;
+  return r.toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+
 export class BonusView extends Container {
   private readonly bgLayer = new Container();
   private readonly truckLayer = new Container();
@@ -96,6 +102,8 @@ export class BonusView extends Container {
   private truck: Container | null = null;
   private stars: Graphics | null = null;
   private collectedText: Text | null = null;
+  /** Small always-visible USD readout of the total win, under the COLLECTED meter. */
+  private collectedUsdText: Text | null = null;
   private collectedShown = 0;
   private spinsBox: Container | null = null;
   private spinsText: Text | null = null;
@@ -108,6 +116,22 @@ export class BonusView extends Container {
   private isSpinning = false;           // true while reels turn — drives the anticipation shake
   private shakeBoost = 0;               // 0..1 eased ramp of the high-speed chase shake
   private readonly cells = new Map<string, Container>();
+
+  /** Bet context for showing REAL money on gold bars / meter / result — like an
+   *  official slot. 0 bet = fall back to raw multipliers (shouldn't happen). */
+  private betAmount = 0;
+  private currency = "";
+
+  setMoneyContext(betAmount: number, currency: string): void {
+    this.betAmount = betAmount;
+    this.currency = currency;
+  }
+
+  /** Money string with the currency, for result pop-ups and the small USD total.
+   *  Gold bars themselves keep their multiplier numbers (fmtX). */
+  private fmtTotal(v: number): string {
+    return this.betAmount > 0 ? `${fmtMoneyNum(v * this.betAmount)} ${this.currency}` : fmtX(v);
+  }
 
   constructor() {
     super();
@@ -359,7 +383,7 @@ export class BonusView extends Container {
     if (!this.truck) { this.buildHighway(); this.buildTruck(); this.buildDividers(); this.buildHud(); this.startAmbient(); }
     this.gridLayer.removeChildren();
     this.cells.clear();
-    const logoTex = getExtraTexture("heat_chase_logo");
+    const logoTex = getExtraTexture("heat_chase_logo_symbol") ?? getExtraTexture("heat_chase_logo");
     for (let c = 0; c < GRID_COLUMNS; c++)
       for (let r = 0; r < GRID_ROWS; r++) {
         const cell = grid[c][r];
@@ -370,7 +394,7 @@ export class BonusView extends Container {
     this.setCollected(this.sumGrid(grid), false);
   }
 
-  async playSpin(grid: BonusCell[][], landed: Position[], respins: number, deadSpins: number, turbo: boolean, onLand?: (i: number, n: number) => void): Promise<void> {
+  async playSpin(grid: BonusCell[][], landed: Position[], respins: number, deadSpins: number, turbo: boolean, onLand?: (i: number, n: number) => void, onDeadBeat?: () => void): Promise<void> {
     if (!this.truck) await this.intro(turbo);
     this.visible = true;
 
@@ -415,6 +439,8 @@ export class BonusView extends Container {
       await wait(turbo ? 80 : 640);
     } else {
       this.heat = Math.min(3, deadSpins);
+      // The "miss" audio fires on the same frame as the visual dead-spin beat.
+      onDeadBeat?.();
       this.deadSpinBeat();
       await wait(turbo ? 50 : 300);
       this.animateSpinsBeat(respins, false, turbo);
@@ -484,10 +510,48 @@ export class BonusView extends Container {
       g.circle(0, 0, r * 0.35).fill({ color, alpha: 0.85 * alphaScale });
     };
 
-    // Full screen blast overlay
+    // White-hot detonation core — a fast additive flash AT the dynamite cell.
+    // This is what sells the blast as physical; the old version only had the
+    // flat full-screen orange wash, which read as cheap.
+    const core = new Graphics();
+    core.circle(0, 0, reach * 0.9).fill({ color: 0xffffff, alpha: 0.9 });
+    core.circle(0, 0, reach * 0.55).fill({ color: 0xffffff, alpha: 1 });
+    core.position.set(cx, cy);
+    core.blendMode = "add";
+    core.scale.set(0.2);
+    this.fxLayer.addChild(core);
+    void tween(turbo ? 160 : 300, (p) => {
+      core.scale.set(0.2 + 2.6 * p);
+      core.alpha = 1 - p;
+    }, easeOutCubic).then(() => core.destroy());
+
+    // GPU bloom pulse over the whole grid — the frame "blows out" for a beat.
+    if (!turbo) void pulseBloom(this.lockedLayer, { scale: 1.2, duration: 500 });
+
+    // Full screen blast overlay — toned down from 0.75 to a filmic kiss.
     const blastFlash = new Graphics();
-    blastFlash.rect(0, 0, this.rect.width, this.rect.height).fill({ color: 0xffaa00, alpha: 0.75 });
+    blastFlash.rect(0, 0, this.rect.width, this.rect.height).fill({ color: 0xffaa00, alpha: 0.42 });
     this.fxLayer.addChild(blastFlash);
+
+    // ── The payout beat fires IMMEDIATELY with the blast, not after it. ──
+    // Neighbours flash gold, punch, update to their new value, and a badge
+    // shows the REAL MONEY gained — all while the fireball is still alive.
+    for (const a of affected) {
+      const nc = this.cellRect(a.position[0], a.position[1]);
+      const node = this.cells.get(keyOf(a.position));
+      if (node) {
+        this.updateGoldValue(node, a.newValue);
+        const num = node.getChildByLabel("num") as Text | null;
+        void tween(turbo ? 180 : 420, (p) => { const s = 1 + Math.sin(Math.min(1, p) * Math.PI) * 0.45; node.scale.set(s); if (num) num.scale.set(s); }).then(() => { node.scale.set(1); if (num) num.scale.set(1); });
+        const cf = new Graphics(); this.fxLayer.addChild(cf);
+        void tween(turbo ? 160 : 360, (p) => { cf.clear(); cf.circle(nc.x + nc.w / 2, nc.y + nc.h / 2, Math.max(nc.w, nc.h) * 0.55 * (1 + p * 0.4)).fill({ color: 0xffd95c, alpha: (1 - p) * 0.5 }); }).then(() => cf.destroy());
+      }
+      // Doubling: the money gained is the other half of the new value.
+      this.floatWinBadge(nc.x + nc.w / 2, nc.y + nc.h * 0.16, a.newValue / 2, turbo);
+    }
+    // Roll the COLLECTED meter up by the total gained, in sync with the badges.
+    const gained = affected.reduce((s, a) => s + a.newValue / 2, 0);
+    this.setCollected(this.collectedShown + gained, true);
 
     // Layered particles setup
     interface ExplosionParticle {
@@ -566,42 +630,58 @@ export class BonusView extends Container {
       this.cells.delete(keyOf(keyPos));
       dyn.destroy();
     }
-
-    // Double each neighbour — clear "×2" badge + a punch + a gold flash so the
-    // upgrade is unmistakable.
-    for (const a of affected) {
-      const nc = this.cellRect(a.position[0], a.position[1]);
-      const node = this.cells.get(keyOf(a.position));
-      if (node) {
-        this.updateGoldValue(node, a.newValue);
-        const num = node.getChildByLabel("num") as Text | null;
-        void tween(turbo ? 180 : 380, (p) => { const s = 1 + Math.sin(Math.min(1, p) * Math.PI) * 0.4; node.scale.set(s); if (num) num.scale.set(s); }).then(() => { node.scale.set(1); if (num) num.scale.set(1); });
-        const cf = new Graphics(); this.fxLayer.addChild(cf);
-        void tween(turbo ? 160 : 360, (p) => { cf.clear(); cf.circle(nc.x + nc.w / 2, nc.y + nc.h / 2, Math.max(nc.w, nc.h) * 0.55 * (1 + p * 0.4)).fill({ color: 0xffd95c, alpha: (1 - p) * 0.5 }); }).then(() => cf.destroy());
-      }
-      this.floatBadge(nc.x + nc.w / 2, nc.y + nc.h * 0.2, "×2");
-    }
-    await wait(turbo ? 80 : 280);
+    await wait(turbo ? 60 : 160);
   }
 
-  /** A floating "×2" badge that pops up and fades. */
-  private floatBadge(x: number, y: number, text: string): void {
+  /**
+   * Premium payout badge: the REAL MONEY gained, big and gold, with a small
+   * "×2" tag — cinematic gold-on-ink (matches the result card), not the old
+   * blue arcade chip. Pops with an overshoot, hangs so it can be read, fades.
+   */
+  private floatWinBadge(x: number, y: number, gainedX: number, turbo: boolean): void {
     const c = new Container();
     c.position.set(x, y);
-    const g = new Graphics();
-    g.roundRect(-30, -18, 60, 36, 9).fill({ color: 0x1a6bff, alpha: 0.96 });
-    g.roundRect(-30, -18, 60, 36, 9).stroke({ color: 0xffffff, width: 2.5, alpha: 0.9 });
-    c.addChild(g);
-    const t = new Text({ text, style: new TextStyle({ fill: 0xffffff, fontFamily: FONT, fontSize: 24, fontWeight: "900", letterSpacing: 1 }) });
-    t.anchor.set(0.5);
-    c.addChild(t);
+
+    const moneyStr = this.betAmount > 0 ? `+${fmtMoneyNum(gainedX * this.betAmount)}` : `+${fmtX(gainedX)}`;
+    const money = new Text({
+      text: moneyStr,
+      style: new TextStyle({
+        fill: GOLD_HI, fontFamily: FONT, fontSize: 34, fontWeight: "900", letterSpacing: 1,
+        stroke: { color: GOLD_DEEP, width: 5 },
+        dropShadow: { color: 0x000000, alpha: 0.85, blur: 6, distance: 2, angle: Math.PI / 2 }
+      })
+    });
+    money.anchor.set(0.5);
+
+    const tag = new Text({
+      text: "×2",
+      style: new TextStyle({
+        fill: 0xffffff, fontFamily: FONT, fontSize: 16, fontWeight: "900", letterSpacing: 1,
+        stroke: { color: 0x000000, width: 3 }
+      })
+    });
+    tag.anchor.set(0.5);
+    tag.position.set(0, -money.height * 0.72);
+
+    // Soft additive glow behind the number so it lifts off the busy blast frame.
+    const glow = new Graphics();
+    glow.ellipse(0, 0, money.width * 0.75, money.height * 0.85).fill({ color: GOLD, alpha: 0.30 });
+    glow.blendMode = "add";
+
+    c.addChild(glow, money, tag);
     this.fxLayer.addChild(c);
     c.alpha = 0;
-    void tween(800, (p) => {
-      c.y = y - 46 * p;
-      c.alpha = p < 0.18 ? p / 0.18 : 1 - (p - 0.18) / 0.82;
-      c.scale.set(0.4 + 0.6 * Math.min(1, p * 3.5));
-    }).then(() => c.destroy());
+    c.scale.set(0.2);
+
+    const dur = turbo ? 500 : 1050;
+    void tween(dur, (p) => {
+      // Overshoot pop in the first 22%, then a slow readable drift up + fade.
+      const pop = Math.min(1, p / 0.22);
+      c.scale.set(0.2 + 0.8 * easeOutBack(pop));
+      c.y = y - 54 * p;
+      c.alpha = p < 0.12 ? p / 0.12 : p > 0.72 ? (1 - p) / 0.28 : 1;
+      glow.alpha = 1 - p;
+    }, linear).then(() => c.destroy());
   }
 
   /** End of the chase. filled = Grand Escape jackpot; otherwise Busted.
@@ -827,10 +907,10 @@ export class BonusView extends Container {
 
   private async countUp(text: Text, target: number, turbo: boolean): Promise<void> {
     await tween(turbo ? 250 : 700, (p) => {
-      text.text = fmtX(target * p);
+      text.text = this.fmtTotal(target * p);
       text.scale.set(1 + Math.sin(p * Math.PI) * 0.12);
     }, easeOutCubic);
-    text.text = fmtX(target);
+    text.text = this.fmtTotal(target);
     text.scale.set(1);
   }
 
@@ -955,7 +1035,7 @@ export class BonusView extends Container {
     this.cells.clear();
     this.highwayTile = this.highwayProc = null;
     this.truck = this.stars = null;
-    this.collectedText = this.spinsLabel = this.spinsText = null;
+    this.collectedText = this.collectedUsdText = this.spinsLabel = this.spinsText = null;
     this.spinsBox = null;
     this.resultCard = null;
   }
@@ -1086,6 +1166,13 @@ export class BonusView extends Container {
     val.position.set(W / 2, H * 0.905);
     this.hudLayer.addChild(val);
     this.collectedText = val;
+
+    // Small real-money total tucked under the multiplier — always in the frame.
+    const usd = new Text({ text: this.fmtTotal(0), style: new TextStyle({ fill: 0xd9e4f5, fontFamily: FONT, fontSize: Math.min(17, W / 46), letterSpacing: 1.5, dropShadow: { color: 0x000000, alpha: 0.8, blur: 4, distance: 1, angle: Math.PI / 2 } }) });
+    usd.anchor.set(0.5, 0);
+    usd.position.set(W / 2, H * 0.905 + Math.min(46, W / 16) + 6);
+    this.hudLayer.addChild(usd);
+    this.collectedUsdText = usd;
   }
 
   private setSpins(n: number): void {
@@ -1104,8 +1191,8 @@ export class BonusView extends Container {
    * the old number rolls away while the new one drops/punches into place. No
    * floating "+1/−1" text and no pips (removed per request) — just the counter
    * cleanly updating. Turbo snaps instantly.
-   *   lock=true  → a lock granted +1 spin (a rolling last chance — punch beat;
-   *                the value can DROP here, e.g. 4→1 on the first lock)
+   *   lock=true  → a lock RESET the meter to full (a refill — punch beat; the
+   *                value rises back to the budget, e.g. 2→3, or holds at 3)
    *   lock=false → a dead spin spent one  (roll down one)
    */
   private animateSpinsBeat(to: number, lock: boolean, turbo: boolean): void {
@@ -1312,7 +1399,9 @@ export class BonusView extends Container {
     if (logoTex) {
       const logo = new Sprite(logoTex);
       logo.anchor.set(0.5);
-      logo.alpha = 0.5;   // clearly present as a symbol, muted vs the vivid wins
+      // The watermark art ships pre-shaded (heat_chase_logo_symbol.webp), so the
+      // alpha only has to mute it slightly — it must still read as a symbol.
+      logo.alpha = 0.7;
       const maxDim = Math.min(r.w, r.h) * 0.8;
       logo.scale.set(Math.min(maxDim / logoTex.width, maxDim / logoTex.height));
       c.addChild(logo);
@@ -1369,7 +1458,7 @@ export class BonusView extends Container {
 
     // Heat Chase logo used as a dim watermark on empty spinning cells so the
     // reel feels alive even on dead spins. Falls back gracefully if not loaded.
-    const logoTex = getExtraTexture("heat_chase_logo");
+    const logoTex = getExtraTexture("heat_chase_logo_symbol") ?? getExtraTexture("heat_chase_logo");
 
     const strip = new Container();
     const openSet = new Set(rows);
@@ -1636,22 +1725,25 @@ export class BonusView extends Container {
 
   private setCollected(total: number, animate: boolean): void {
     if (!this.collectedText) return;
+    const paint = (v: number): void => {
+      if (this.collectedText) this.collectedText.text = fmtX(v);
+      if (this.collectedUsdText) this.collectedUsdText.text = this.fmtTotal(v);
+    };
     if (!animate || total <= this.collectedShown) {
       this.collectedShown = total;
-      this.collectedText.text = fmtX(total);
+      paint(total);
       return;
     }
     const start = this.collectedShown;
     void tween(450, (p) => {
       const v = start + (total - start) * p;
       this.collectedShown = v;
-      if (this.collectedText) {
-        this.collectedText.text = fmtX(v);
-        this.collectedText.scale.set(1 + Math.sin(p * Math.PI) * 0.12);
-      }
+      paint(v);
+      this.collectedText?.scale.set(1 + Math.sin(p * Math.PI) * 0.12);
     }, easeOutCubic).then(() => {
       this.collectedShown = total;
-      if (this.collectedText) { this.collectedText.text = fmtX(total); this.collectedText.scale.set(1); }
+      paint(total);
+      this.collectedText?.scale.set(1);
     });
   }
 

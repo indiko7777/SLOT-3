@@ -2,7 +2,7 @@ import { Container, Graphics, Sprite, Text, TextStyle, BlurFilter, Texture } fro
 import { GRID_COLUMNS, GRID_ROWS, type Board, type Position, type SymbolId } from "../domain";
 import { getSymbolTexture } from "./assets";
 import { SymbolView } from "./SymbolView";
-import { tween, wait, easeOutQuad, easeOutBounce, easeOutBack, easeInOutCubic, linear, ambientTicker } from "./tween";
+import { tween, wait, easeOutBounce, easeOutBack, linear, ambientTicker } from "./tween";
 import type { Rect } from "./types";
 
 function slamBounce(r: number): number {
@@ -76,17 +76,22 @@ export class BoardView extends Container {
   private gap = 4;
   private currentBoard: Board | null = null;
   private ambientCb: ((dt: number, elapsed: number) => void) | null = null;
+  private anticipationMissFired = false; // per-spin latch for the near-miss cue
   private onReelStop?: (col: number, total: number) => void;
   private onReelImpact?: (col: number, total: number) => void;
   private onAnticipation?: () => void;
   private onTransform?: () => void;
+  /** Fired once per spin when a scatter anticipation column stops WITHOUT the
+   *  scatter — drives the "near miss" negative cue. */
+  private onAnticipationMiss?: () => void;
 
   /** Wire audio cues fired during the reel spin (reel stops, anticipation riser, symbol transforms). */
-  setAudioHooks(hooks: { onReelStop?: (col: number, total: number) => void; onReelImpact?: (col: number, total: number) => void; onAnticipation?: () => void; onTransform?: () => void }): void {
+  setAudioHooks(hooks: { onReelStop?: (col: number, total: number) => void; onReelImpact?: (col: number, total: number) => void; onAnticipation?: () => void; onTransform?: () => void; onAnticipationMiss?: () => void }): void {
     this.onReelStop = hooks.onReelStop;
     this.onReelImpact = hooks.onReelImpact;
     this.onAnticipation = hooks.onAnticipation;
     this.onTransform = hooks.onTransform;
+    this.onAnticipationMiss = hooks.onAnticipationMiss;
   }
 
   constructor() {
@@ -156,64 +161,11 @@ export class BoardView extends Container {
   }
 
   async scatterTease(positions: Position[], turbo: boolean): Promise<void> {
-    if (turbo) {
-      this.markPositions(positions, "alert");
-      await Promise.all(positions.map((p) => this.symbols.get(keyOf(p))?.punch() ?? Promise.resolve()));
-      await wait(60);
-      return;
-    }
-
-    // Non-turbo: Dramatic sequential pop & shake to build suspense (bang... then bang... then bang)
-    const alerted: Position[] = [];
-    for (const p of positions) {
-      alerted.push(p);
-      this.markPositions(alerted, "alert");
-      const sym = this.symbols.get(keyOf(p));
-      if (sym) {
-        const originalParent = sym.parent;
-        const originalIndex = originalParent ? originalParent.getChildIndex(sym) : -1;
-        
-        // Move to the BoardView parent directly (above the mask) so it doesn't clip at the edges
-        if (originalParent) {
-          this.addChild(sym);
-        }
-        
-        const origX = sym.x;
-        const origY = sym.y;
-        const w = this.cellWidth;
-        const h = this.cellHeight;
-        
-        // Phase 1: Fast scale-up (charge/rise) to a massive size (scale 2.4)
-        // Adjust position dynamically to scale relative to the symbol's center
-        await tween(120, (progress) => {
-          const s = 1 + 1.4 * easeOutQuad(progress);
-          sym.scale.set(s);
-          sym.position.set(origX + (1 - s) * w / 2, origY + (1 - s) * h / 2);
-        }, linear);
-
-        // Phase 2: Impact / Bang! Decelerating scale down + heavy screen shake
-        await Promise.all([
-          tween(480, (progress) => {
-            const s = 2.4 - 1.4 * easeInOutCubic(progress);
-            sym.scale.set(s);
-            sym.position.set(origX + (1 - s) * w / 2, origY + (1 - s) * h / 2);
-          }, linear),
-          this.localShake(28, 500)
-        ]);
-        
-        // Reset scale and position, then return to its original masked parent container
-        sym.scale.set(1);
-        sym.position.set(origX, origY);
-        if (originalParent && originalIndex !== -1) {
-          originalParent.addChildAt(sym, Math.min(originalIndex, originalParent.children.length));
-        }
-      }
-      // Wait 500ms after the thud settles before initiating the next scatter popup
-      await wait(500);
-    }
-    
+    // Per request: NO per-symbol zoom/punch and NO per-scatter audio. The tease
+    // is carried entirely by the on-screen banner (shown by the caller). We just
+    // give the scatters a static alert highlight so they're clearly flagged.
     this.markPositions(positions, "alert");
-    await wait(200);
+    await wait(turbo ? 40 : 150);
   }
 
   /* ─── CLEAR WINS: flash + vanish winning symbols, leaving gaps behind ─── */
@@ -559,6 +511,8 @@ export class BoardView extends Container {
     }
     const hasAnticipation = isAnticipationCol.some(x => x);
     if (hasAnticipation && !turbo) this.onAnticipation?.();
+    // Reset the per-spin near-miss latch so the negative cue fires at most once.
+    this.anticipationMissFired = false;
 
     // ── 3. Build the reels. The visible rows start showing the OLD symbols so
     //       the transition into the spin has no pop. ──
@@ -651,6 +605,12 @@ export class BoardView extends Container {
             }
             if (!landedScatter) {
               this.triggerRedFlash();
+              // The anticipation reel stopped short of the scatter — play the
+              // negative "near miss" cue, once per spin, synced to the flash.
+              if (!this.anticipationMissFired) {
+                this.anticipationMissFired = true;
+                this.onAnticipationMiss?.();
+              }
             }
           }
         })

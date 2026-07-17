@@ -11,7 +11,7 @@ import { PaytableView } from "./PaytableView";
 import { SymbolView, WIN_ACCENT, DEFAULT_ACCENT } from "./SymbolView";
 import { computeLayout } from "./layout";
 import { getExtraTexture } from "./assets";
-import { tween, wait, easeInOutCubic, easeOutBack, easeOutCubic } from "./tween";
+import { tween, wait, easeInCubic, easeInOutCubic, easeOutBack, easeOutCubic } from "./tween";
 import type { LayoutMetrics, SceneRuntime } from "./types";
 import { OutlineFilter } from "pixi-filters";
 import { CardPeekView } from "./CardPeekView";
@@ -65,6 +65,7 @@ export class PixiGameScene {
       },
       onAnticipation: () => runtime.onAnticipation?.(),
       onTransform: () => runtime.onTransform?.(),
+      onAnticipationMiss: () => runtime.onAnticipationMiss?.(),
     });
     this.cardPeek = new CardPeekView(runtime, () => {
       this.gallery.toggle(this.layout.width, this.layout.height);
@@ -184,6 +185,7 @@ export class PixiGameScene {
     }
     // Only re-show the bonus when resuming an ACTIVE bonus round (not after it ends).
     if (snapshot.bonusGrid && snapshot.state.startsWith("bonus")) {
+      this.bonus.setMoneyContext(snapshot.betAmount, this.runtime.getCurrency());
       this.bonus.showStatic(snapshot.bonusGrid);
     } else {
       this.bonus.hide();
@@ -330,6 +332,8 @@ export class PixiGameScene {
       case "bonus_trigger":
         this.bonusDeadSpins = 0;
         this.bonusActive = true;
+        // Gold bars / meter / result show REAL money for this bet, not bare multipliers.
+        this.bonus.setMoneyContext(snapshot.betAmount, this.runtime.getCurrency());
         this.cardPeek.visible = false;
         // Hide the entire HUD (character, wanted stars, left buttons, bet panel)
         // so the bonus board has the full screen to itself.
@@ -343,7 +347,15 @@ export class PixiGameScene {
         else this.bonusDeadSpins += 1;
         const heat = landed.length > 0 ? 0 : Math.min(3, this.bonusDeadSpins);
         this.runtime.onBonusHeat?.(heat);
-        await this.bonus.playSpin(event.lockedGrid, landed, event.respinsAfter, this.bonusDeadSpins, turbo, this.runtime.onSafeLand);
+        await this.bonus.playSpin(
+          event.lockedGrid,
+          landed,
+          event.respinsAfter,
+          this.bonusDeadSpins,
+          turbo,
+          this.runtime.onSafeLand,
+          () => this.runtime.onDeadSpin?.(Math.min(3, this.bonusDeadSpins))
+        );
         return;
       }
       case "safe_lock":
@@ -452,10 +464,6 @@ export class PixiGameScene {
    * Electric green pulse fired on every WILD cell that just landed.
    * Runs concurrently with the collection animation so it never adds wait time.
    */
-  /**
-   * Electric green pulse fired on every WILD cell that just landed.
-   * Runs concurrently with the collection animation so it never adds wait time.
-   */
   private async flashWildLanding(board: Board, turbo: boolean): Promise<void> {
     if (turbo) return;
     const wildPositions: Position[] = [];
@@ -548,9 +556,6 @@ export class PixiGameScene {
     const prefix = gain.artPrefix;
     const completed = gain.completedGirl;
 
-    // Trigger milestone voice audio for this collection step
-    this.playGirlMilestoneSound(gain);
-
     // Punch the board WILD in place — a quick scale pop, never a slide in from
     // the side. The reveal itself rushes "out of the screen" onto the body.
     const symbolView = this.board.getSymbolView(pos);
@@ -565,10 +570,13 @@ export class PixiGameScene {
       symbolView.scale.set(origScaleX, origScaleY);
     }
 
+    // The milestone voice line fires INSIDE the orientation flows, right after
+    // the piece physically snaps onto the body — the voice reacts to the reveal.
+    let flownPiece: Container | null = null;
     if (this.layout.portrait) {
-      await this.runCollectionPortrait(prefix, newCount, completed, turbo);
+      await this.runCollectionPortrait(prefix, newCount, completed, gain, turbo);
     } else {
-      await this.runCollectionLandscape(prefix, newCount, completed, turbo);
+      flownPiece = await this.runCollectionLandscape(prefix, newCount, completed, gain, turbo);
     }
 
     this.board.updateCollectionCounter(newCount);
@@ -586,6 +594,11 @@ export class PixiGameScene {
       this.currentSnapshot.collectionCount = newCount;
       this.hud.draw(this.layout, this.currentSnapshot);
     }
+
+    // The landscape flight sprite stays on screen until the redraw above bakes
+    // the piece into the persistent assembly — releasing it earlier makes the
+    // part visibly blink out during the impact FX.
+    flownPiece?.destroy({ children: true });
 
     // Light the freshly-armed gold WANTED star (the girl-completion head-start).
     if (completed && !turbo) {
@@ -621,57 +634,132 @@ export class PixiGameScene {
   }
 
   /**
-   * Fast, impactful piece reveal. The body part starts huge — as if pressed up
-   * against the camera — and rushes straight down onto its exact spot on the
-   * silhouette. It converges on the target (no lateral travel from a board cell),
-   * so it reads as coming "out of the screen" and snapping into place.
+   * Premium three-phase piece reveal, timed to the piece_whoosh audio riser:
+   *   PRESENT (~320ms) — the part eases in huge, right up against the lens,
+   *     backlit by a soft additive gold aura, and hangs there for a beat so
+   *     the player registers WHAT they just won.
+   *   STRIKE (~240ms) — it accelerates hard (easeInCubic) down onto its exact
+   *     spot on the silhouette, shedding additive ghost trails as it speeds up.
+   *   SETTLE (~140ms) — a small physical overshoot bounce as it seats itself.
+   * No lateral travel — it converges dead-on the target, so it reads as coming
+   * "out of the screen" and slamming into place.
+   *
+   * Returns the holder container with the seated piece still visible; the
+   * CALLER owns its lifetime (it must survive until the persistent art under
+   * it is repainted, otherwise the part blinks out).
    */
-  private async flyPieceFromCamera(
+  private async flyPieceToBody(
     pieceTex: Texture,
     targetX: number,
     targetY: number,
     endScale: number,
     parent: Container,
     turbo: boolean
-  ): Promise<void> {
-    if (this.runtime.playAudio) {
-      this.runtime.playAudio("wild_sound");
-    }
+  ): Promise<Container> {
+    this.runtime.playAudio?.("piece_whoosh");
+
+    const holder = new Container();
+    holder.position.set(targetX, targetY);
+    parent.addChild(holder);
+
+    const aura = new Graphics();
+    const auraR = Math.max(pieceTex.width, pieceTex.height) * endScale * 0.6;
+    aura.circle(0, 0, auraR * 1.35).fill({ color: 0xffd95c, alpha: 0.10 });
+    aura.circle(0, 0, auraR * 0.85).fill({ color: 0xffe9a0, alpha: 0.12 });
+    aura.circle(0, 0, auraR * 0.45).fill({ color: 0xffffff, alpha: 0.10 });
+    aura.blendMode = "add";
+    aura.alpha = 0;
+    holder.addChild(aura);
+
     const fly = new Sprite(pieceTex);
     fly.anchor.set(0.5);
-    fly.position.set(targetX, targetY);
-    const startScale = endScale * 4.5; // right up against the lens
-    fly.scale.set(startScale);
     fly.alpha = 0;
-    const spin = (Math.random() - 0.5) * 0.6;
-    parent.addChild(fly);
-    await tween(turbo ? 150 : 280, (p) => {
-      fly.alpha = Math.min(1, p * 3);
-      fly.scale.set(startScale + (endScale - startScale) * p);
-      fly.rotation = spin * (1 - p);
-    }, easeOutBack);
-    fly.destroy();
+    holder.addChild(fly);
+
+    const presentScale = endScale * 3.1;
+    const tilt = (Math.random() - 0.5) * 0.22;
+
+    if (turbo) {
+      fly.scale.set(presentScale);
+      await tween(130, (p) => {
+        fly.alpha = Math.min(1, p * 4);
+        fly.scale.set(presentScale + (endScale - presentScale) * p);
+      }, easeInCubic);
+      fly.alpha = 1;
+      fly.scale.set(endScale);
+      aura.destroy();
+      return holder;
+    }
+
+    // PRESENT — ease in close to the lens and hang for a beat.
+    fly.rotation = tilt;
+    await tween(320, (p) => {
+      fly.alpha = Math.min(1, p * 2.2);
+      aura.alpha = p;
+      fly.scale.set(presentScale * (0.92 + 0.08 * p));
+      fly.rotation = tilt * (1 - 0.35 * p);
+    }, easeOutCubic);
+
+    // STRIKE — accelerate hard onto the body, shedding ghost trails. The tween
+    // progress is already eased, so the ghosts naturally cluster where the
+    // piece moves fastest — a real motion-blur streak.
+    let lastGhost = 0;
+    await tween(240, (p) => {
+      const s = presentScale + (endScale - presentScale) * p;
+      fly.scale.set(s);
+      fly.rotation = tilt * 0.65 * (1 - p);
+      aura.alpha = 1 - p;
+      aura.scale.set(1 - 0.5 * p);
+      if (p - lastGhost > 0.3 && p < 0.85) {
+        lastGhost = p;
+        const ghost = new Sprite(pieceTex);
+        ghost.anchor.set(0.5);
+        ghost.scale.set(s);
+        ghost.rotation = fly.rotation;
+        ghost.alpha = 0.22;
+        ghost.blendMode = "add";
+        holder.addChildAt(ghost, holder.getChildIndex(fly));
+        void tween(180, (g) => { ghost.alpha = 0.22 * (1 - g); }).then(() => ghost.destroy());
+      }
+    }, easeInCubic);
+
+    // SETTLE — small overshoot bounce so the landing reads physical.
+    await tween(140, (p) => {
+      fly.scale.set(endScale * (1 + 0.1 * Math.sin(p * Math.PI)));
+    }, easeOutCubic);
+    fly.scale.set(endScale);
+    fly.rotation = 0;
+    aura.destroy();
+    return holder;
   }
 
-  /** --- LANDSCAPE: persistent fill, with a smooth completion → next-girl handoff. */
-  private async runCollectionLandscape(prefix: string, newCount: number, completed: boolean, turbo: boolean): Promise<void> {
+  /** --- LANDSCAPE: persistent fill, with a smooth completion → next-girl handoff.
+   *  Returns the flown-piece holder for a NON-completing piece — the caller
+   *  destroys it after the tail hud.draw bakes the part into the assembly. */
+  private async runCollectionLandscape(prefix: string, newCount: number, completed: boolean, gain: PieceGain, turbo: boolean): Promise<Container | null> {
     const t = this.artCharTransform(prefix);
-    if (!t) return;
+    if (!t) return null;
     const pieceTex = getExtraTexture(`${prefix}_piece_${newCount}`);
-    if (!pieceTex) return;
+    if (!pieceTex) return null;
 
-    // 1) The piece rushes out of the screen and snaps onto the body.
-    await this.flyPieceFromCamera(pieceTex, t.cx, t.cy, t.scale, this.root, turbo);
-    await this.triggerSnapImpact(t.cx, t.cy, this.root, newCount);
+    // 1) Present-and-strike: the piece hangs in front of the lens, then slams
+    //    onto the body. The holder keeps the seated part visible from here on.
+    const flown = await this.flyPieceToBody(pieceTex, t.cx, t.cy, t.scale, this.root, turbo);
+    await this.pieceImpact(t.cx, t.cy, pieceTex, t.scale, this.root, completed, turbo);
 
-    // Non-completing piece: the tail hud.draw bakes it into the persistent assembly.
-    if (!completed) return;
+    // 2) Voice line REACTS to the snap (it used to fire before anything moved).
+    this.playGirlMilestoneSound(gain);
+
+    // Non-completing piece: hand the holder back — the tail hud.draw bakes the
+    // part into the persistent assembly, then the caller releases the holder.
+    if (!completed) return flown;
 
     const fullTex = getExtraTexture(`${prefix}_full`);
-    if (!fullTex) return;
+    if (!fullTex) { flown.destroy({ children: true }); return null; }
 
-    // 2) Reveal the finished girl: fade the seamless full image in over the
+    // 3) Reveal the finished girl: fade the seamless full image in over the
     //    assembled parts. Same transform as the silhouette → perfect registration.
+    this.runtime.bannerImpact?.("grand");
     const charSpace = new Container();
     charSpace.position.set(t.cx, t.cy);
     charSpace.scale.set(t.scale);
@@ -681,21 +769,23 @@ export class PixiGameScene {
     fullSprite.alpha = 0;
     charSpace.addChild(fullSprite);
     await tween(turbo ? 200 : 420, (p) => { fullSprite.alpha = p; });
+    flown.destroy({ children: true });
 
-    // 3) Celebrate the completed girl.
+    // 4) Celebrate the completed girl.
     this.completionFx(t.cx, t.cy, this.root);
     await wait(turbo ? 500 : 1100);
 
-    // 4) Smooth hand-off. Redraw the HUD so the NEXT girl's all-black silhouette
+    // 5) Smooth hand-off. Redraw the HUD so the NEXT girl's all-black silhouette
     //    is rendered UNDER the overlay (the gallery already advanced), then
     //    crossfade the completed girl out to reveal it — no hard cut, no overlap.
     if (this.currentSnapshot) this.hud.draw(this.layout, this.currentSnapshot);
     await tween(turbo ? 240 : 600, (p) => { charSpace.alpha = 1 - p; }, easeInOutCubic);
     charSpace.destroy({ children: true });
+    return null;
   }
 
   /** --- PORTRAIT: full-screen pop-up reveal (fades fully out when done). */
-  private async runCollectionPortrait(prefix: string, newCount: number, completed: boolean, turbo: boolean): Promise<void> {
+  private async runCollectionPortrait(prefix: string, newCount: number, completed: boolean, gain: PieceGain, turbo: boolean): Promise<void> {
     const width = this.layout.width;
     const height = this.layout.height;
     const silTex = getExtraTexture(`${prefix}_silhouette`);
@@ -735,16 +825,29 @@ export class PixiGameScene {
 
     const pieceTex = getExtraTexture(`${prefix}_piece_${newCount}`);
     if (pieceTex) {
-      // Rush the new piece out of the screen onto the body, then bake it in.
-      await this.flyPieceFromCamera(pieceTex, charContainer.x, charContainer.y, silScale, overlay, turbo);
+      // Present-and-strike the new piece onto the body, then bake it in.
+      const flown = await this.flyPieceToBody(pieceTex, charContainer.x, charContainer.y, silScale, overlay, turbo);
       const placed = new Sprite(pieceTex);
       placed.anchor.set(0.5);
       charContainer.addChild(placed);
-      await this.triggerSnapImpact(charContainer.x, charContainer.y, overlay, newCount);
+      flown.destroy({ children: true });
+
+      // The whole body absorbs the hit — quick squash-and-recover.
+      if (!turbo) {
+        void tween(220, (p) => {
+          const k = Math.sin(p * Math.PI);
+          charContainer.scale.set(silScale * (1 + 0.02 * k), silScale * (1 - 0.03 * k));
+        }).then(() => charContainer.scale.set(silScale));
+      }
+      await this.pieceImpact(charContainer.x, charContainer.y, pieceTex, silScale, overlay, completed, turbo);
+
+      // Voice line reacts to the snap.
+      this.playGirlMilestoneSound(gain);
 
       if (completed) {
         const fullTex = getExtraTexture(`${prefix}_full`);
         if (fullTex) {
+          this.runtime.bannerImpact?.("grand");
           const fullSprite = new Sprite(fullTex);
           fullSprite.anchor.set(0.5);
           fullSprite.alpha = 0;
@@ -761,49 +864,92 @@ export class PixiGameScene {
     overlay.destroy({ children: true });
   }
 
-  private async triggerSnapImpact(x: number, y: number, parentContainer: Container, count: number): Promise<void> {
-    this.effects.screenShake(this.root, false);
+  /**
+   * The moment the piece seats itself on the silhouette. Layered for weight:
+   *  - the existing cinematic bannerImpact "bang" (sub-drop + crack) — the
+   *    snap was completely SILENT before this;
+   *  - a white-hot additive stamp of the piece ITSELF, so the exact body part
+   *    the player just won flashes bright on the body (not a generic flash);
+   *  - a gold shockwave ring from the landing point;
+   *  - a soft gold screen kiss instead of the old harsh 50% white flash;
+   *  - additive gold spark debris with gravity.
+   * Awaits only long enough for the hit to register — the sparks finish on
+   * their own so the flow stays snappy.
+   */
+  private async pieceImpact(
+    x: number,
+    y: number,
+    pieceTex: Texture,
+    pieceScale: number,
+    parentContainer: Container,
+    completed: boolean,
+    turbo: boolean
+  ): Promise<void> {
+    this.runtime.bannerImpact?.(completed ? "high" : "mid");
+    this.effects.screenShake(this.root, turbo);
+    if (turbo) return;
 
+    // White-hot stamp of the freshly-placed part.
+    const stamp = new Sprite(pieceTex);
+    stamp.anchor.set(0.5);
+    stamp.position.set(x, y);
+    stamp.scale.set(pieceScale);
+    stamp.blendMode = "add";
+    stamp.alpha = 0.85;
+    parentContainer.addChild(stamp);
+    void tween(480, (p) => {
+      stamp.alpha = 0.85 * (1 - p);
+      stamp.scale.set(pieceScale * (1 + 0.05 * p));
+    }, easeOutCubic).then(() => stamp.destroy());
+
+    // Gold shockwave ring.
+    const ring = new Graphics();
+    ring.circle(0, 0, 70).stroke({ color: 0xffe9a0, width: 8 });
+    ring.position.set(x, y);
+    ring.scale.set(0.25);
+    ring.blendMode = "add";
+    parentContainer.addChild(ring);
+    void tween(480, (p) => {
+      ring.scale.set(0.25 + 2.1 * p);
+      ring.alpha = 1 - p;
+    }, easeOutCubic).then(() => ring.destroy());
+
+    // Soft gold screen kiss (subtle — the old full white flash read as an error).
     const flash = new Graphics();
-    flash.rect(0, 0, this.layout.width, this.layout.height).fill({ color: 0xffffff, alpha: 0.5 });
+    flash.rect(0, 0, this.layout.width, this.layout.height).fill({ color: 0xffd95c });
+    flash.blendMode = "add";
+    flash.alpha = 0.14;
     parentContainer.addChild(flash);
-    void tween(200, (p) => {
-      flash.alpha = 0.5 * (1 - p);
-    }).then(() => flash.destroy());
+    void tween(240, (p) => { flash.alpha = 0.14 * (1 - p); }).then(() => flash.destroy());
 
-    const particlesContainer = new Container();
-    parentContainer.addChild(particlesContainer);
-
-    const particles: Array<{ sprite: Graphics; vx: number; vy: number; scaleSpeed: number }> = [];
-    const colors = [0xffd95c, 0x9ae64e, 0xffffff];
-    for (let i = 0; i < 24; i++) {
-      const p = new Graphics();
-      const color = colors[Math.floor(Math.random() * colors.length)]!;
-      const r = 3 + Math.random() * 5;
-      p.circle(0, 0, r).fill({ color });
-      p.x = x;
-      p.y = y;
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 2 + Math.random() * 5;
-      particlesContainer.addChild(p);
-      particles.push({
-        sprite: p,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        scaleSpeed: 0.02 + Math.random() * 0.03
-      });
+    // Gold spark debris — elongated shards with gravity, additive.
+    const sparkLayer = new Container();
+    parentContainer.addChild(sparkLayer);
+    const sparks: Array<{ g: Graphics; vx: number; vy: number; spin: number }> = [];
+    for (let i = 0; i < 18; i++) {
+      const s = new Graphics();
+      const len = 6 + Math.random() * 10;
+      s.roundRect(-len / 2, -1.5, len, 3, 1.5).fill({ color: i % 3 === 0 ? 0xffffff : 0xffd95c });
+      s.blendMode = "add";
+      s.position.set(x, y);
+      const ang = Math.random() * Math.PI * 2;
+      const sp = 3 + Math.random() * 6;
+      s.rotation = ang;
+      sparkLayer.addChild(s);
+      sparks.push({ g: s, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 2, spin: (Math.random() - 0.5) * 0.2 });
     }
-
-    await tween(400, (progress) => {
-      for (const p of particles) {
-        p.sprite.x += p.vx;
-        p.sprite.y += p.vy;
-        p.sprite.alpha = 1 - progress;
-        p.sprite.scale.set(Math.max(0, 1 - progress * p.scaleSpeed * 10));
+    void tween(520, (p) => {
+      for (const s of sparks) {
+        s.g.x += s.vx;
+        s.g.y += s.vy;
+        s.vy += 0.18;
+        s.g.rotation += s.spin;
+        s.g.alpha = 1 - p;
       }
-    });
+    }).then(() => sparkLayer.destroy({ children: true }));
 
-    particlesContainer.destroy({ children: true });
+    // Let the hit register before anything else moves.
+    await wait(260);
   }
 
   /** Gold sparkle burst + "GIRL COMPLETED!" banner — pure FX. The caller owns the

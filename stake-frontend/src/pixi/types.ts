@@ -64,6 +64,12 @@ export interface SceneRuntime {
   onAnticipation?: () => void;
   /** Fired when symbols transform to cash/money on the board. */
   onTransform?: () => void;
+  /** Fired once per spin when a scatter anticipation reel stops short of the
+   *  scatter (the bonus didn't trigger) — drives the negative near-miss cue. */
+  onAnticipationMiss?: () => void;
+  /** Fired on a Getaway dead spin (nothing landed), in sync with the visual
+   *  dead-spin beat. heat = consecutive misses, 1–3. */
+  onDeadSpin?: (heat: number) => void;
   playAudio?(track: string, volumeScale?: number): void;
   /** Start the typewriter sound (synced with getaway intro text animation). */
   onTypewriterStart?(): void;
