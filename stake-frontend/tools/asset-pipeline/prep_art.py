@@ -13,10 +13,12 @@ USAGE
   python prep_art.py <image> [--fill=0.97] [--max=512] [--quality=88]
                             [--shade=1.0] [--out=<path>]
 
-  --fill     fraction of the canvas the ART must occupy after trimming (0.97)
-  --max      long side in px of the output (512 = symbol spec; logo uses 1024)
-  --shade    brightness multiply, <1 darkens (used for the bonus watermark logo)
-  --out      write elsewhere instead of overwriting in place
+  --fill       fraction of the canvas the ART must occupy after trimming (0.97)
+  --max        long side in px of the output (512 = symbol spec; logo uses 1024)
+  --shade      brightness multiply, <1 darkens (used for the bonus watermark logo)
+  --out        write elsewhere instead of overwriting in place
+  --noupscale  never enlarge past the source's own art size. Use on low-res
+               originals: upscaling invents no detail, it only blurs and bloats.
 
 Run this on every new/regenerated symbol before dropping it in public/assets.
 """
@@ -26,7 +28,8 @@ from pathlib import Path
 from PIL import Image
 
 
-def prep(src: Path, dst: Path, fill: float, max_side: int, quality: int, shade: float) -> None:
+def prep(src: Path, dst: Path, fill: float, max_side: int, quality: int, shade: float,
+         noupscale: bool = False) -> None:
     im = Image.open(src).convert("RGBA")
     before_size, before_bytes = im.size, src.stat().st_size
 
@@ -43,6 +46,8 @@ def prep(src: Path, dst: Path, fill: float, max_side: int, quality: int, shade: 
     # scale so the ART's long side hits max_side, then pad back out to the small
     # uniform margin `fill` asks for (keeps win-pop from clipping at the edge)
     scale = max_side * fill / max(art.size)
+    if noupscale:
+        scale = min(scale, 1.0)  # low-res source: re-encode, never enlarge
     art = art.resize((max(1, round(art.width * scale)), max(1, round(art.height * scale))), Image.LANCZOS)
 
     cw, ch = round(art.width / fill), round(art.height / fill)
@@ -71,7 +76,8 @@ def main() -> None:
     src = Path(args[0])
     prep(src, Path(opts.get("out") or src),
          float(opts.get("fill", 0.97)), int(opts.get("max", 512)),
-         int(opts.get("quality", 88)), float(opts.get("shade", 1.0)))
+         int(opts.get("quality", 88)), float(opts.get("shade", 1.0)),
+         "noupscale" in opts)
 
 
 if __name__ == "__main__":
