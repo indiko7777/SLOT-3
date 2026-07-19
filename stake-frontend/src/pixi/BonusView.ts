@@ -1,5 +1,5 @@
 import { BlurFilter, Container, Graphics, Sprite, Text, TextStyle, Texture, TilingSprite } from "pixi.js";
-import { GRID_COLUMNS, GRID_ROWS, type BonusCell, type Position } from "../domain";
+import { BONUS_START_RESPINS, GRID_COLUMNS, GRID_ROWS, type BonusCell, type Position } from "../domain";
 import { getExtraTexture } from "./assets";
 import { tween, wait, easeOutBack, easeOutCubic, linear, ambientTicker } from "./tween";
 import type { Rect } from "./types";
@@ -36,10 +36,11 @@ const CINEMA_BAR = 0x050507; // letterbox bar colour
 // Used to align the grid exactly inside the truck's window.
 const TRUCK_OPENING = { wFrac: 0.3262, hFrac: 0.507, cxFrac: 0.5, cyFrac: 0.4441, aspect: 334 / 290 };
 
-// Must match stake-math BONUS_START_RESPINS. Classic Hold & Spin: the meter
-// STARTS here, every lock RESETS it back to this value, and each dead spin
-// spends one — the feature busts only after this many CONSECUTIVE dead spins.
-const START_RESPINS = 3;
+// Classic Hold & Spin: the meter STARTS here, every lock RESETS it back to this
+// value, and each dead spin spends one — the feature busts only after this many
+// CONSECUTIVE dead spins. Imported rather than redeclared: this file used to
+// hold its own copy that silently disagreed with domain.ts.
+const START_RESPINS = BONUS_START_RESPINS;
 
 // Uniform dark-grey reel background. EVERY bonus symbol fills its cell with this
 // exact colour and the reel panel is the same flat colour, so the symbols'
@@ -1137,8 +1138,10 @@ export class BonusView extends Container {
     this.hudLayer.addChild(stars);
     this.stars = stars;
 
-    // SPINS LEFT number, top-right — ticks down on a dead spin; a lock grants
-    // +1 spin (a rolling last chance), never a refill to the starting budget.
+    // SPINS LEFT number, top-right — ticks down on a dead spin; ANY lock resets
+    // it to the full budget. (This comment used to claim a lock granted "+1
+    // spin, never a refill" — the engine has always done a full reset, so the
+    // note described behaviour that does not exist.)
     const box = new Container();
     box.position.set(W * 0.88, H * 0.04);
     this.hudLayer.addChild(box);
@@ -1156,23 +1159,32 @@ export class BonusView extends Container {
 
     this.setSpins(START_RESPINS);
 
-    // COLLECTED total, bottom-centre
-    const label = new Text({ text: "COLLECTED", style: new TextStyle({ fill: 0x9fb4d0, fontFamily: FONT, fontSize: 13, letterSpacing: 3 }) });
-    label.anchor.set(0.5, 1);
-    label.position.set(W / 2, H * 0.905);
-    this.hudLayer.addChild(label);
-    const val = new Text({ text: "0x", style: new TextStyle({ fill: 0xffd95c, fontFamily: FONT, fontSize: Math.min(46, W / 16), fontWeight: "900", letterSpacing: 1, dropShadow: { color: 0xff6a00, alpha: 0.7, blur: 10, distance: 0, angle: 0 } }) });
-    val.anchor.set(0.5, 0);
-    val.position.set(W / 2, H * 0.905);
+    // COLLECTED block, bottom-centre. Stacked UPWARD from the bottom edge so it
+    // can never overflow: the old layout hung the multiplier off H*0.905 and put
+    // the USD line a further (fontSize + 6) below it, which pushed the USD text
+    // past the bottom of the view — the real-money total was clipped off-screen.
+    const valSize = Math.min(46, W / 16);
+    const usdSize = Math.min(17, W / 46);
+    const bottom = H * 0.988;
+
+    const usd = new Text({ text: this.fmtTotal(0), style: new TextStyle({ fill: 0xd9e4f5, fontFamily: FONT, fontSize: usdSize, letterSpacing: 1.5, dropShadow: { color: 0x000000, alpha: 0.8, blur: 4, distance: 1, angle: Math.PI / 2 } }) });
+    usd.anchor.set(0.5, 1);
+    usd.position.set(W / 2, bottom);
+    this.hudLayer.addChild(usd);
+    this.collectedUsdText = usd;
+
+    // anchored at its BASELINE-BOTTOM so the count-up pulse grows upward, away
+    // from the screen edge, instead of shoving the USD line out of frame.
+    const val = new Text({ text: "0x", style: new TextStyle({ fill: 0xffd95c, fontFamily: FONT, fontSize: valSize, fontWeight: "900", letterSpacing: 1, dropShadow: { color: 0xff6a00, alpha: 0.7, blur: 10, distance: 0, angle: 0 } }) });
+    val.anchor.set(0.5, 1);
+    val.position.set(W / 2, bottom - usdSize * 1.25 - 4);
     this.hudLayer.addChild(val);
     this.collectedText = val;
 
-    // Small real-money total tucked under the multiplier — always in the frame.
-    const usd = new Text({ text: this.fmtTotal(0), style: new TextStyle({ fill: 0xd9e4f5, fontFamily: FONT, fontSize: Math.min(17, W / 46), letterSpacing: 1.5, dropShadow: { color: 0x000000, alpha: 0.8, blur: 4, distance: 1, angle: Math.PI / 2 } }) });
-    usd.anchor.set(0.5, 0);
-    usd.position.set(W / 2, H * 0.905 + Math.min(46, W / 16) + 6);
-    this.hudLayer.addChild(usd);
-    this.collectedUsdText = usd;
+    const label = new Text({ text: "COLLECTED", style: new TextStyle({ fill: 0x9fb4d0, fontFamily: FONT, fontSize: 13, letterSpacing: 3 }) });
+    label.anchor.set(0.5, 1);
+    label.position.set(W / 2, val.y - valSize - 2);
+    this.hudLayer.addChild(label);
   }
 
   private setSpins(n: number): void {
@@ -1555,13 +1567,37 @@ export class BonusView extends Container {
    *  the player clearly registers that the reel spun and missed. */
   private deadSpinBeat(): void {
     const o = this.opening();
+
+    // A dead spin spends one of only three chances, so it has to LAND as bad:
+    // the reel window jolts, dims, and takes a hard amber slam ring — not just
+    // a soft outline pulse.
+    const shakeTarget = this.gridLayer;
+    const ox = shakeTarget.x;
+    const oy = shakeTarget.y;
+    void tween(260, (p) => {
+      const d = (1 - p) * 7;
+      shakeTarget.x = ox + Math.sin(p * Math.PI * 9) * d;
+      shakeTarget.y = oy + Math.cos(p * Math.PI * 7) * d * 0.6;
+    }, linear).then(() => { shakeTarget.x = ox; shakeTarget.y = oy; });
+
+    // Dark wash over the window — the light goes out for a beat.
+    const wash = new Graphics();
+    wash.rect(o.x, o.y, o.width, o.height).fill({ color: 0x000000, alpha: 1 });
+    this.fxLayer.addChild(wash);
+    void tween(430, (p) => { wash.alpha = 0.44 * Math.sin(p * Math.PI) ** 0.7; })
+      .then(() => wash.destroy());
+
     const ring = new Graphics();
     this.fxLayer.addChild(ring);
     void tween(420, (p) => {
       const a = Math.sin(p * Math.PI);
       ring.clear();
+      // Two rings: a hard inner slam plus a wider one that snaps outward.
       ring.roundRect(o.x - 8, o.y - 8, o.width + 16, o.height + 16, 10)
-        .stroke({ color: POLICE_RED, width: 6, alpha: a * 0.8 });
+        .stroke({ color: POLICE_RED, width: 9, alpha: a });
+      const g = 10 + 26 * p;
+      ring.roundRect(o.x - g, o.y - g, o.width + g * 2, o.height + g * 2, 14)
+        .stroke({ color: POLICE_RED, width: 3, alpha: a * (1 - p) * 0.8 });
     }).then(() => ring.destroy());
 
     const t = new Text({

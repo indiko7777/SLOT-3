@@ -894,8 +894,38 @@ export class EventAudioBus {
       const inten = 0.85 + Math.min(3, Math.max(0, heat)) * 0.12;
 
       const out = ctx.createGain();
-      out.gain.value = 0.9 * inten;
+      out.gain.value = 1.35 * inten;
       out.connect(ctx.destination);
+
+      // Sub-bass floor drop — this is what gives the miss real weight. Without
+      // it the cue was all midrange "wah" and read as far too polite for a
+      // spin that cost the player one of only three chances.
+      const sub = ctx.createOscillator();
+      const subG = ctx.createGain();
+      sub.type = "sine";
+      sub.frequency.setValueAtTime(120, t);
+      sub.frequency.exponentialRampToValueAtTime(38, t + 0.5);
+      subG.gain.setValueAtTime(0.0001, t);
+      subG.gain.exponentialRampToValueAtTime(0.55 * inten, t + 0.03);
+      subG.gain.exponentialRampToValueAtTime(0.0001, t + 0.62);
+      sub.connect(subG).connect(out);
+      sub.start(t);
+      sub.stop(t + 0.68);
+
+      // Sour minor-2nd rub under the fall — dissonance reads as "bad" instantly.
+      for (const f of [233, 247]) {
+        const d = ctx.createOscillator();
+        const dg = ctx.createGain();
+        d.type = "triangle";
+        d.frequency.setValueAtTime(f, t + 0.12);
+        d.frequency.exponentialRampToValueAtTime(f * 0.8, t + 0.5);
+        dg.gain.setValueAtTime(0.0001, t + 0.12);
+        dg.gain.exponentialRampToValueAtTime(0.13 * inten, t + 0.18);
+        dg.gain.exponentialRampToValueAtTime(0.0001, t + 0.52);
+        d.connect(dg).connect(out);
+        d.start(t + 0.12);
+        d.stop(t + 0.56);
+      }
 
       // Two descending detuned saw notes through a lowpass — the "wah-waah".
       const note = (freq: number, start: number, dur: number, peak: number): void => {
@@ -948,6 +978,94 @@ export class EventAudioBus {
       ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
       nsrc.connect(nhp).connect(ng).connect(out);
       nsrc.start(t);
+    });
+  }
+
+  /**
+   * Near-miss sting: the anticipation reel span up for a scatter and stopped
+   * short. That is the single most deflating moment in the base game, so it
+   * gets its OWN cue rather than reusing deadSpin — a long "power-down" swoop
+   * (the riser collapsing back on itself), a dissonant tritone rub, and a dead
+   * sub thud with no bounce. Deliberately slower and darker than deadSpin so
+   * the two are never confused.
+   */
+  anticipationMiss(): void {
+    void this.unlock().then(() => {
+      if (!this.ctx) return;
+      const ctx = this.ctx;
+      const t = ctx.currentTime;
+
+      const out = ctx.createGain();
+      out.gain.value = 1.25;
+      out.connect(ctx.destination);
+
+      // Power-down: the riser's own voice, sagging from bright to nothing while
+      // the filter closes over it — reads as the machine giving up.
+      const lp = ctx.createBiquadFilter();
+      lp.type = "lowpass";
+      lp.frequency.setValueAtTime(3200, t);
+      lp.frequency.exponentialRampToValueAtTime(260, t + 0.75);
+      lp.Q.value = 6;
+      const swG = ctx.createGain();
+      swG.gain.setValueAtTime(0.0001, t);
+      swG.gain.exponentialRampToValueAtTime(0.34, t + 0.05);
+      swG.gain.exponentialRampToValueAtTime(0.0001, t + 0.85);
+      lp.connect(swG).connect(out);
+      for (const det of [-14, 11]) {
+        const o = ctx.createOscillator();
+        o.type = "sawtooth";
+        o.frequency.setValueAtTime(540, t);
+        o.frequency.exponentialRampToValueAtTime(66, t + 0.8);
+        o.detune.value = det;
+        o.connect(lp);
+        o.start(t);
+        o.stop(t + 0.88);
+      }
+
+      // Tritone rub — the "wrong" interval, held under the fall.
+      for (const f of [196, 277]) {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = "triangle";
+        o.frequency.setValueAtTime(f, t + 0.06);
+        o.frequency.exponentialRampToValueAtTime(f * 0.72, t + 0.7);
+        g.gain.setValueAtTime(0.0001, t + 0.06);
+        g.gain.exponentialRampToValueAtTime(0.15, t + 0.14);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.72);
+        o.connect(g).connect(out);
+        o.start(t + 0.06);
+        o.stop(t + 0.76);
+      }
+
+      // Dead sub thud — lands once, does not bounce.
+      const sub = ctx.createOscillator();
+      const subG = ctx.createGain();
+      sub.type = "sine";
+      sub.frequency.setValueAtTime(96, t);
+      sub.frequency.exponentialRampToValueAtTime(32, t + 0.55);
+      subG.gain.setValueAtTime(0.0001, t);
+      subG.gain.exponentialRampToValueAtTime(0.6, t + 0.02);
+      subG.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+      sub.connect(subG).connect(out);
+      sub.start(t);
+      sub.stop(t + 0.76);
+
+      // Air release on the tail so it exhales rather than just stopping.
+      const frames = Math.floor(ctx.sampleRate * 0.5);
+      const nbuf = ctx.createBuffer(1, frames, ctx.sampleRate);
+      const nd = nbuf.getChannelData(0);
+      for (let i = 0; i < frames; i++) nd[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / frames, 2.2);
+      const nsrc = ctx.createBufferSource();
+      nsrc.buffer = nbuf;
+      const nlp = ctx.createBiquadFilter();
+      nlp.type = "lowpass";
+      nlp.frequency.setValueAtTime(2600, t);
+      nlp.frequency.exponentialRampToValueAtTime(400, t + 0.5);
+      const ng = ctx.createGain();
+      ng.gain.setValueAtTime(0.16, t + 0.03);
+      ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.55);
+      nsrc.connect(nlp).connect(ng).connect(out);
+      nsrc.start(t + 0.03);
     });
   }
 

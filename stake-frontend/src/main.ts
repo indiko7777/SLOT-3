@@ -335,7 +335,9 @@ async function boot(): Promise<void> {
       if (!muted) audioBus.fire("poker_machine_win", 1.15);
     },
     onAnticipationMiss: () => {
-      if (!muted) audioBus.deadSpin(0);
+      // Its own sting, not deadSpin(0) — a scatter reel stopping short deserves
+      // a bigger letdown than a bonus spin that landed nothing.
+      if (!muted) audioBus.anticipationMiss();
     },
     onDeadSpin: (heat) => {
       if (!muted) audioBus.deadSpin(heat);
