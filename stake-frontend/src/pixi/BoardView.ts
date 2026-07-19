@@ -542,8 +542,6 @@ export class BoardView extends Container {
 
     // ── 4. Each reel decelerates onto its result when its stop time arrives. ──
     const decelPromises: Promise<void>[] = [];
-    // Landing bounces, appended per column by handOffColumn as each reel stops.
-    const land: Promise<void>[] = [];
     const stopDurMs = 567; // ~34 frames at 60fps
     
     const startDecel = (reel: Reel) => {
@@ -563,7 +561,9 @@ export class BoardView extends Container {
       
       const startOffset = -1.18 * this.cellHeight;
       let impactFired = false;
-      
+      // Live symbols take over from the blurred strip partway through the slam.
+      let landed: { view: SymbolView; baseY: number }[] | null = null;
+
       decelPromises.push(
         tween(stopDurMs, (p) => {
           if (p < 0.22) {
@@ -573,33 +573,42 @@ export class BoardView extends Container {
           } else {
             reel.filter.blurY = 0;
           }
-          
+
           const sb = slamBounce(p);
-          
+
           if (!impactFired && sb >= 1.03) {
             impactFired = true;
             this.triggerColumnStopEffect(reel.col);
             this.onReelImpact?.(reel.col, GRID_COLUMNS);
           }
-          
+
           const offset = startOffset * (1 - sb);
-          for (let k = 0; k < N; k++) {
-            const cell = reel.cells[k]!;
-            cell.container.y = cell.y + offset;
+
+          // Swap to real SymbolViews the moment the blur reaches 0 — NOT at the
+          // end of the tween. Past this point the strip is only doing the bounce
+          // overshoot (slamBounce(0.34) puts it within ~6% of a cell of final),
+          // so the swap is invisible, and it buys the last ~370ms of the slam at
+          // full sharpness with the skeletal idle already running. Leaving it to
+          // the end meant every column spent that whole window soft and static:
+          // the filter stays attached at blur 0, and in Pixi v8 a non-empty
+          // filters array keeps resampling the container through a render texture.
+          if (!landed && p > 0.34) {
+            landed = this.handOffColumn(reel, finalBoard);
+          }
+          if (landed) {
+            for (const { view, baseY } of landed) view.y = baseY + offset;
+          } else {
+            for (let k = 0; k < N; k++) {
+              const cell = reel.cells[k]!;
+              cell.container.y = cell.y + offset;
+            }
           }
         }, linear).then(() => {
           reel.state = "stopped";
-          reel.filter.blurY = 0;
-          for (let k = 0; k < N; k++) {
-            const cell = reel.cells[k]!;
-            cell.container.y = cell.y;
-          }
-          // Hand THIS column off the moment it stops — don't wait for the other
-          // reels. The strip cells are plain sprites, so a symbol only becomes
-          // live (skeletal idle, shimmer) once its SymbolView exists; waiting for
-          // the last reel made early columns sit dead for up to a second.
-          // handOffColumn also drops the blur filter, which restores crispness.
-          land.push(...this.handOffColumn(reel, finalBoard, turbo));
+          // Normally the swap already happened at p>0.34; this covers a tween
+          // that jumped straight to completion (tab throttling, timeScale).
+          landed = landed ?? this.handOffColumn(reel, finalBoard);
+          for (const { view, baseY } of landed) view.y = baseY;
           this.onReelStop?.(reel.col, GRID_COLUMNS);
           
           // Trigger a red flash if this column was an anticipation column and missed the scatter
@@ -673,33 +682,37 @@ export class BoardView extends Container {
     // Tolerate a rejected decel (never blocks the handoff that lands the board).
     await Promise.allSettled(decelPromises);
 
-    // ── 6. Safety net: a decel that threw before its .then() never handed its
-    //       column off, so land anything still missing, then await the bounces. ──
+    // ── 6. Safety net: a decel that threw before handing its column off would
+    //       leave that column as a dead strip, so land anything still missing. ──
     for (const reel of reels) {
-      if (!reel.container.destroyed) land.push(...this.handOffColumn(reel, finalBoard, turbo));
+      if (!reel.container.destroyed) {
+        for (const { view, baseY } of this.handOffColumn(reel, finalBoard)) view.y = baseY;
+      }
     }
-    await Promise.all(land);
   }
 
   /**
-   * Swap one finished reel column from spinning strip cells to real SymbolViews
-   * (same art, same spot → invisible swap) and start its landing bounce.
+   * Swap one reel column from spinning strip cells to real SymbolViews
+   * (same art, same spot → invisible swap) and tear the strip down.
    *
-   * Called the instant that column's deceleration ends, so its symbols come
-   * alive immediately instead of waiting on the slowest reel.
+   * Called mid-slam, as soon as the motion blur reaches 0, so the column
+   * finishes its bounce already sharp and already animating. The caller keeps
+   * driving the returned views with the remaining slam offset — there is
+   * deliberately no second landing tween here, since bouncing the views again
+   * on top of the slam is exactly what made the stop feel unpolished.
    *
    * Dropping `filters` is what restores image quality: in Pixi v8 a container
    * with a non-empty `filters` array is rendered through a render texture on
    * EVERY frame, even at blur 0 — that resample is what made symbols look soft
-   * and "compressed" at the end of a spin. It must be set to null, never [],
-   * because an empty array still routes through the filter pipeline.
+   * and "compressed". It must be null, never [], because an empty array still
+   * routes through the filter pipeline.
    */
-  private handOffColumn(reel: Reel, finalBoard: Board, turbo: boolean): Promise<void>[] {
+  private handOffColumn(reel: Reel, finalBoard: Board): { view: SymbolView; baseY: number }[] {
     if (reel.container.destroyed) return [];
     reel.filter.blurY = 0;
     reel.container.filters = null;
 
-    const land: Promise<void>[] = [];
+    const views: { view: SymbolView; baseY: number }[] = [];
     for (let row = 0; row < GRID_ROWS; row++) {
       const id = finalBoard[reel.col]?.[row];
       if (!id) continue;
@@ -710,18 +723,11 @@ export class BoardView extends Container {
       view.position.set(this.cellX(reel.col), this.cellY(row));
       this.symbols.set(key, view);
       this.reelContainer.addChild(view);
-      const baseY = view.y;
-      land.push(
-        tween(turbo ? 60 : 140, (p) => {
-          const bounce = Math.sin(p * Math.PI) * 5 * (1 - p);
-          view.y = baseY + bounce;
-          view.scale.set(1 + Math.sin(p * Math.PI) * 0.04 * (1 - p));
-        }).then(() => { view.y = baseY; view.scale.set(1); })
-      );
+      views.push({ view, baseY: view.y });
     }
     for (const cell of reel.cells) cell.container.destroy({ children: true });
     reel.container.destroy({ children: true });
-    return land;
+    return views;
   }
 
   /** Advance a reel downward by `dy`, recycling cells past the bottom to the top
