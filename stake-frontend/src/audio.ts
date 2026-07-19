@@ -30,11 +30,15 @@ type TrackName =
   | "mileston1_girl3" | "mileston2_girl3" | "mileston3_girl3" | "mileston4_girl3"
   | "getaway_end" | "money_counter_end" | "money_counter_loop" | "reel_loop"
   | "win_mega_grand" | "win_max" | "getaway_explosive" | "getaway_intro"
-  | "win_big_lowest" | "sticky_gold_bar" | "typewriter";
+  | "win_big_lowest" | "sticky_gold_bar" | "typewriter"
+  | "sunset_synths" | "turbo_night" | "vice_nights";
 
 const AUDIO_BASE = "assets/audio/";
 
 const TRACK_PATHS: Partial<Record<TrackName, string>> = {
+  bg_base: "assets/audio/turbo_night.mp3",
+  sunset_synths: "assets/audio/sunset_synths.mp3",
+  vice_nights: "assets/audio/vice_nights.mp3",
   new_reel_stop: "assets/new sound/new reel stop sound.mp3",
   wild_sound: "assets/new sound/wild sound.mp3",
   good_win_combo: "assets/new sound/good winning combination soun.mp3",
@@ -79,7 +83,8 @@ const ALL_TRACKS: TrackName[] = [
   "mileston1_girl3", "mileston2_girl3", "mileston3_girl3", "mileston4_girl3",
   "getaway_end", "money_counter_end", "money_counter_loop", "reel_loop",
   "win_mega_grand", "win_max", "getaway_explosive", "getaway_intro",
-  "win_big_lowest", "sticky_gold_bar", "typewriter"
+  "win_big_lowest", "sticky_gold_bar", "typewriter",
+  "sunset_synths", "turbo_night", "vice_nights"
 ];
 
 /** Base volume per track (0–1+) */
@@ -137,6 +142,9 @@ const VOLUME: Record<TrackName, number> = {
   win_big_lowest:    0.75,
   sticky_gold_bar:   0.70,
   typewriter:        0.80,
+  sunset_synths:     0.30,
+  turbo_night:       0.30,
+  vice_nights:       0.30,
 };
 
 /** Fade duration in seconds */
@@ -155,8 +163,8 @@ export const STATION_AUDIO: Record<string, StationAudio> = {
   off:     { kind: "off" },
   heat:    { kind: "track", track: "bg_base" },
   vault:   { kind: "track", track: "bg_bonus" },
-  neon:    { kind: "synth", wave: "sawtooth", base: 220.0, tempo: 0.22, scale: [0, 3, 7, 10, 12, 10, 7, 3] },
-  vice:    { kind: "synth", wave: "square",   base: 277.18, tempo: 0.18, scale: [0, 2, 4, 7, 9, 12, 9, 4] },
+  neon:    { kind: "track", track: "sunset_synths" },
+  vice:    { kind: "track", track: "vice_nights" },
   scanner: { kind: "scanner" },
 };
 

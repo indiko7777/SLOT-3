@@ -248,13 +248,14 @@ export const SCATTER_TRIGGER_COUNT = 3;
  * the served Getaways are mostly Heat-5 / Wanted-triggered, not random scatters.
  */
 export const SCATTER_TRIGGER_SHARE = 0.15;
-/** Hold & Spin respin budget. Classic reset mechanic: the meter STARTS here,
- *  every lock RESETS it back to this value, and each dead spin spends one — so
- *  the feature busts only after this many CONSECUTIVE dead spins.
- *  3 = the industry-standard "3 lives". Do NOT raise to 4: with 20 open cells a
- *  dead spin is ~(1-landP)^20, so a 4-deep budget makes busting ~4x rarer, the
- *  grid fills far too often and the 5000x wincap tail alone pushes E_freegame
- *  past the solvable ceiling (measured: mean 142x vs the ~96x cost target). */
+/** Hold & Spin respin budget — a COUNT-DOWN, never a reset. The meter starts
+ *  here, a lock HOLDS it, and each dead spin spends one, so the feature ends
+ *  after this many dead spins in TOTAL. A number that only falls tells the
+ *  player exactly how close the feature is to ending; the reset variant made it
+ *  climb back up on every stick, which reads as arbitrary.
+ *  3 = the industry-standard "3 lives". Raising it is far more expensive under
+ *  count-down than it was under reset (the budget is now spent across the WHOLE
+ *  feature, not per dry streak), so re-run the optimizer if you ever change it. */
 export const BONUS_START_RESPINS = 3;
 export const BONUS_CELLS = 20;
 /** Hard guards to keep event streams (and memory) bounded. */

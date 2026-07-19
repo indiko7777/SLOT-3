@@ -614,11 +614,15 @@ function runHoldAndSpin(
       }
     }
 
-    // Classic Hold & Spin: any lock RESETS the respin meter to the full budget;
-    // a dead spin (nothing landed) spends one. The feature busts only after
-    // BONUS_START_RESPINS consecutive dead spins — the standard, intuitive
-    // "land a symbol → get your spins back" loop.
-    respins = landed.length > 0 ? BONUS_START_RESPINS : respins - 1;
+    // A lock HOLDS the meter (it does not spend a spin, and it does not hand
+    // one back); a dead spin spends one. So the budget only ever counts down,
+    // and the feature ends after BONUS_START_RESPINS dead spins in TOTAL.
+    //
+    // This replaces the reset-to-full variant. Resetting made the number climb
+    // back up every time a bar stuck, which reads as arbitrary — the player
+    // cannot tell how close the feature is to ending. A meter that only falls
+    // is honest and needs no explanation.
+    if (landed.length === 0) respins -= 1;
 
     events.push({
       type: "bonus_spin",
