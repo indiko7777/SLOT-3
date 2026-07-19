@@ -1,0 +1,40 @@
+packed.png
+size: 512,1024
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+glow
+  rotate: false
+  xy: 2, 2
+  size: 304, 258
+  orig: 304, 258
+  offset: 0, 0
+  index: -1
+body
+  rotate: false
+  xy: 2, 262
+  size: 230, 190
+  orig: 230, 190
+  offset: 0, 0
+  index: -1
+shine
+  rotate: false
+  xy: 234, 262
+  size: 230, 160
+  orig: 230, 160
+  offset: 0, 0
+  index: -1
+sparkle_0
+  rotate: false
+  xy: 2, 454
+  size: 68, 68
+  orig: 68, 68
+  offset: 0, 0
+  index: -1
+sparkle_1
+  rotate: false
+  xy: 72, 454
+  size: 48, 48
+  orig: 48, 48
+  offset: 0, 0
+  index: -1

@@ -542,6 +542,8 @@ export class BoardView extends Container {
 
     // ── 4. Each reel decelerates onto its result when its stop time arrives. ──
     const decelPromises: Promise<void>[] = [];
+    // Landing bounces, appended per column by handOffColumn as each reel stops.
+    const land: Promise<void>[] = [];
     const stopDurMs = 567; // ~34 frames at 60fps
     
     const startDecel = (reel: Reel) => {
@@ -592,6 +594,12 @@ export class BoardView extends Container {
             const cell = reel.cells[k]!;
             cell.container.y = cell.y;
           }
+          // Hand THIS column off the moment it stops — don't wait for the other
+          // reels. The strip cells are plain sprites, so a symbol only becomes
+          // live (skeletal idle, shimmer) once its SymbolView exists; waiting for
+          // the last reel made early columns sit dead for up to a second.
+          // handOffColumn also drops the blur filter, which restores crispness.
+          land.push(...this.handOffColumn(reel, finalBoard, turbo));
           this.onReelStop?.(reel.col, GRID_COLUMNS);
           
           // Trigger a red flash if this column was an anticipation column and missed the scatter
@@ -665,31 +673,55 @@ export class BoardView extends Container {
     // Tolerate a rejected decel (never blocks the handoff that lands the board).
     await Promise.allSettled(decelPromises);
 
-    // ── 6. Hand the resting cells off to real SymbolViews (same art, same spot
-    //       → invisible swap), then play a landing bounce. ──
-    const land: Promise<void>[] = [];
+    // ── 6. Safety net: a decel that threw before its .then() never handed its
+    //       column off, so land anything still missing, then await the bounces. ──
     for (const reel of reels) {
-      for (let row = 0; row < VISIBLE; row++) {
-        const id = finalBoard[reel.col]?.[row];
-        console.log(`[BoardView] Handoff cell col=${reel.col} row=${row} symbolId=${id}`);
-        const view = new SymbolView(id as SymbolId);
-        view.layout(this.cellWidth, this.cellHeight);
-        view.position.set(this.cellX(reel.col), this.cellY(row));
-        this.symbols.set(keyOf([reel.col, row]), view);
-        this.reelContainer.addChild(view);
-        const baseY = view.y;
-        land.push(
-          tween(turbo ? 60 : 140, (p) => {
-            const bounce = Math.sin(p * Math.PI) * 5 * (1 - p);
-            view.y = baseY + bounce;
-            view.scale.set(1 + Math.sin(p * Math.PI) * 0.04 * (1 - p));
-          }).then(() => { view.y = baseY; view.scale.set(1); })
-        );
-      }
-      for (const cell of reel.cells) cell.container.destroy({ children: true });
-      reel.container.destroy({ children: true });
+      if (!reel.container.destroyed) land.push(...this.handOffColumn(reel, finalBoard, turbo));
     }
     await Promise.all(land);
+  }
+
+  /**
+   * Swap one finished reel column from spinning strip cells to real SymbolViews
+   * (same art, same spot → invisible swap) and start its landing bounce.
+   *
+   * Called the instant that column's deceleration ends, so its symbols come
+   * alive immediately instead of waiting on the slowest reel.
+   *
+   * Dropping `filters` is what restores image quality: in Pixi v8 a container
+   * with a non-empty `filters` array is rendered through a render texture on
+   * EVERY frame, even at blur 0 — that resample is what made symbols look soft
+   * and "compressed" at the end of a spin. It must be set to null, never [],
+   * because an empty array still routes through the filter pipeline.
+   */
+  private handOffColumn(reel: Reel, finalBoard: Board, turbo: boolean): Promise<void>[] {
+    if (reel.container.destroyed) return [];
+    reel.filter.blurY = 0;
+    reel.container.filters = null;
+
+    const land: Promise<void>[] = [];
+    for (let row = 0; row < GRID_ROWS; row++) {
+      const id = finalBoard[reel.col]?.[row];
+      if (!id) continue;
+      const key = keyOf([reel.col, row]);
+      this.symbols.get(key)?.destroy({ children: true }); // never leak on a re-hand-off
+      const view = new SymbolView(id);
+      view.layout(this.cellWidth, this.cellHeight);
+      view.position.set(this.cellX(reel.col), this.cellY(row));
+      this.symbols.set(key, view);
+      this.reelContainer.addChild(view);
+      const baseY = view.y;
+      land.push(
+        tween(turbo ? 60 : 140, (p) => {
+          const bounce = Math.sin(p * Math.PI) * 5 * (1 - p);
+          view.y = baseY + bounce;
+          view.scale.set(1 + Math.sin(p * Math.PI) * 0.04 * (1 - p));
+        }).then(() => { view.y = baseY; view.scale.set(1); })
+      );
+    }
+    for (const cell of reel.cells) cell.container.destroy({ children: true });
+    reel.container.destroy({ children: true });
+    return land;
   }
 
   /** Advance a reel downward by `dy`, recycling cells past the bottom to the top

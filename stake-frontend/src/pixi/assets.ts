@@ -51,7 +51,21 @@ export interface SymbolAnimation {
  *  `fitW/fitH` is the art content size inside the padded canvas — SymbolView
  *  scales the player so the ART fills the cell, not the empty margin. */
 const SKEL_ASSETS: Partial<Record<SymbolId, { dir: string; fitW: number; fitH: number }>> = {
+  // Motion is authored per symbol in tools/skel-pipeline/symbol_motion.py —
+  // the pistol recoils, the knife flips, the bike revs, the safe's dial whirls.
+  // Regenerate with: python tools/skel-pipeline/build_all.py <name>
+  BRASS: { dir: "skel/brass_knuckles", fitW: 230, fitH: 180 },
+  KNIFE: { dir: "skel/knife", fitW: 204, fitH: 230 },
+  PISTOL: { dir: "skel/pistol", fitW: 230, fitH: 190 },
+  AMMO: { dir: "skel/ammo", fitW: 230, fitH: 193 },
+  DUFFEL: { dir: "skel/duffel", fitW: 230, fitH: 184 },
+  CASH: { dir: "skel/cash", fitW: 230, fitH: 192 },
   DIAMOND: { dir: "skel/diamond", fitW: 247, fitH: 206 },
+  BIKE: { dir: "skel/bike", fitW: 230, fitH: 210 },
+  WILD: { dir: "skel/wild_symbole", fitW: 222, fitH: 230 },
+  CAR_WILD: { dir: "skel/cyan_car_wild", fitW: 207, fitH: 230 },
+  // PHONE_SCATTER / SAFE / MASTER_KEY have no bundle: their source art was
+  // deleted in commit 288e28d, so they fall back to the static-sprite path.
 };
 
 interface SkelBundle { data: SkelData; atlasText: string; texture: Texture; fitW: number; fitH: number }

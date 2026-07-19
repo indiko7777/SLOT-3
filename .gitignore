@@ -7,3 +7,4 @@ dist
 stake-frontend/tools/asset-pipeline/_originals/
 stake-frontend/tools/asset-pipeline/raw/
 stake-frontend/tools/asset-pipeline/frames/
+stake-frontend/tools/skel-pipeline/__pycache__/

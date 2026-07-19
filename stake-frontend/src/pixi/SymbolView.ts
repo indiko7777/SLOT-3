@@ -211,7 +211,10 @@ export class SymbolView extends Container {
         this.blurFilter.strengthY = strength;
       }
     } else {
-      this.filters = [];
+      // null, never [] — in Pixi v8 an empty array still routes the container
+      // through the filter pipeline (a render-texture resample), which softens
+      // the art exactly like the reel-column blur did.
+      this.filters = null;
       this.blurFilter = null;
     }
   }
