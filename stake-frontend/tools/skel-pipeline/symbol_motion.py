@@ -421,12 +421,17 @@ def _bike(sparks, ch, cmax):
 # ---- SPECIALS --------------------------------------------------------------
 @motion("wild_symbole")
 def _wild(sparks, ch, cmax):
-    """Fabric WILD: light cloth sway with a lazy secondary flutter."""
+    """Fabric WILD: light cloth sway with a lazy secondary flutter.
+
+    Keeps ONE glint, but paced as a neon-sign flicker (a single slow cycle,
+    modest pop) rather than a twinkling star — the cartoon version fought the
+    GTA tone."""
     idle = _idle(0.014, 2.8,
                  body={"rotate": rot(bake(0, 72, loopy(lambda r: 2.4 * math.sin(TAU * r + 0.5)
                                                        + 0.8 * math.sin(TAU * 2 * r)), 2)),
                        "scale": scale(bake(0, 72, lambda r: 1 + 0.012 * math.sin(TAU * 2 * r + 1.0), 3))},
-                 glow=(0.09, 0.50), shine=(2, 2.2, 0.70, 0.09), sparks=sparks, spark_amp=0.60)
+                 glow=(0.09, 0.50), shine=(2, 2.2, 0.70, 0.09), sparks=sparks,
+                 spark_cycles=1, spark_amp=0.34, spark_spin=6)
     win = _win(pop_anchor(0.09, 0.28),
                body={"rotate": rot(seg(
                          bake(0, 5, lambda r: -6 * ease_in_quad(r), 1),

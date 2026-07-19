@@ -19,22 +19,8 @@ body
   index: -1
 shine
   rotate: false
-  xy: 66, 304
+  xy: 2, 304
   size: 69, 56
   orig: 69, 56
-  offset: 0, 0
-  index: -1
-sparkle_0
-  rotate: false
-  xy: 2, 304
-  size: 62, 62
-  orig: 62, 62
-  offset: 0, 0
-  index: -1
-sparkle_1
-  rotate: false
-  xy: 137, 304
-  size: 44, 44
-  orig: 44, 44
   offset: 0, 0
   index: -1

@@ -24,17 +24,3 @@ shine
   orig: 223, 168
   offset: 0, 0
   index: -1
-sparkle_0
-  rotate: false
-  xy: 2, 436
-  size: 62, 62
-  orig: 62, 62
-  offset: 0, 0
-  index: -1
-sparkle_1
-  rotate: false
-  xy: 66, 436
-  size: 49, 49
-  orig: 49, 49
-  offset: 0, 0
-  index: -1

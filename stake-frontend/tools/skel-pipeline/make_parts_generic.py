@@ -24,24 +24,32 @@ from PIL import Image, ImageDraw, ImageFilter
 HERE = Path(__file__).resolve().parent
 SYMBOLS_SRC = HERE.parents[1] / "public" / "assets" / "symbols"
 
-# glow tint + sparkle colours/placements, chosen to match each symbol's palette.
-# (fx, sparkles) — sparkles are (size_frac, colour, x_frac, y_frac).
+# glow tint + sparkle placements, chosen to match each symbol's palette.
+# (glow_tint, sparkles) — sparkles are (size_frac, colour, x_frac, y_frac).
+#
+# SPARKLES ARE DELIBERATELY OFF for almost everything. Twinkling stars on a
+# gun, a knife or a duffel bag read as cartoon/fairy-tale and fight the gritty
+# GTA tone. Only things that genuinely catch light keep them:
+#   diamond — a cut gem throwing prismatic glints (its own hand-authored bundle)
+#   wild    — ONE small neon-magenta glint, slow, like a sign flickering
+# Everything else expresses life through the glow pulse, the luster sweep across
+# its own highlights, and its authored body motion.
 SYMBOL_FX = {
-    "brass_knuckles": ((255, 180, 90), [(0.20, (255, 214, 140), 0.30, 0.36), (0.16, (255, 236, 200), 0.72, 0.60)]),
-    "knife":          ((150, 200, 255), [(0.20, (210, 240, 255), 0.62, 0.28), (0.14, (255, 190, 140), 0.30, 0.72)]),
-    "pistol":         ((150, 230, 130), [(0.22, (200, 255, 170), 0.24, 0.40), (0.15, (255, 240, 190), 0.70, 0.52)]),
-    "ammo":           ((255, 200, 110), [(0.20, (255, 230, 160), 0.34, 0.34), (0.17, (140, 230, 255), 0.68, 0.62)]),
-    "duffel":         ((120, 220, 230), [(0.18, (160, 240, 250), 0.30, 0.34), (0.15, (255, 150, 200), 0.66, 0.44)]),
-    "cash":           ((120, 230, 140), [(0.22, (200, 255, 190), 0.28, 0.34), (0.18, (255, 240, 170), 0.70, 0.58)]),
+    "brass_knuckles": ((255, 180, 90), []),
+    "knife":          ((150, 200, 255), []),
+    "pistol":         ((150, 230, 130), []),
+    "ammo":           ((255, 200, 110), []),
+    "duffel":         ((120, 220, 230), []),
+    "cash":           ((120, 230, 140), []),
     "diamond":        ((255, 205, 110), [(0.20, (255, 120, 230), 0.30, 0.66), (0.17, (120, 235, 255), 0.74, 0.44), (0.24, (255, 245, 200), 0.52, 0.16)]),
-    "bike":           ((255, 120, 110), [(0.20, (255, 190, 150), 0.28, 0.40), (0.16, (255, 235, 180), 0.72, 0.36)]),
-    "wild_symbole":   ((255, 120, 170), [(0.20, (255, 200, 220), 0.30, 0.40), (0.18, (255, 245, 210), 0.70, 0.56)]),
-    "cyan_car_wild":  ((255, 110, 210), [(0.22, (255, 180, 240), 0.50, 0.26), (0.16, (170, 230, 255), 0.62, 0.66)]),
-    "burner_phone":   ((120, 220, 255), [(0.18, (200, 245, 255), 0.30, 0.40), (0.16, (255, 240, 190), 0.70, 0.44)]),
-    "safe":           ((255, 200, 90), [(0.20, (255, 235, 160), 0.50, 0.46), (0.15, (255, 210, 120), 0.76, 0.28)]),
-    "master_key":     ((110, 225, 255), [(0.22, (190, 245, 255), 0.26, 0.48), (0.16, (255, 245, 210), 0.74, 0.52)]),
+    "bike":           ((255, 120, 110), []),
+    "wild_symbole":   ((255, 120, 170), [(0.13, (255, 120, 200), 0.66, 0.30)]),
+    "cyan_car_wild":  ((255, 110, 210), []),
+    "burner_phone":   ((120, 220, 255), []),
+    "safe":           ((255, 200, 90), []),
+    "master_key":     ((110, 225, 255), []),
 }
-DEFAULT_FX = ((255, 205, 120), [(0.20, (255, 235, 180), 0.32, 0.38), (0.16, (200, 240, 255), 0.70, 0.58)])
+DEFAULT_FX = ((255, 205, 120), [])
 
 
 def star(size, colour, core=(255, 255, 255)):

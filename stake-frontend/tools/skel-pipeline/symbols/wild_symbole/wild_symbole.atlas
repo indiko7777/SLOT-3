@@ -26,15 +26,8 @@ shine
   index: -1
 sparkle_0
   rotate: false
-  xy: 2, 538
-  size: 62, 62
-  orig: 62, 62
-  offset: 0, 0
-  index: -1
-sparkle_1
-  rotate: false
-  xy: 66, 538
-  size: 55, 55
-  orig: 55, 55
+  xy: 449, 306
+  size: 41, 41
+  orig: 41, 41
   offset: 0, 0
   index: -1

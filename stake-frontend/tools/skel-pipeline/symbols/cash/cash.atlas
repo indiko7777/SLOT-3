@@ -1,5 +1,5 @@
 packed.png
-size: 512,1024
+size: 512,512
 format: RGBA8888
 filter: Linear,Linear
 repeat: none
@@ -22,19 +22,5 @@ shine
   xy: 234, 264
   size: 217, 159
   orig: 217, 159
-  offset: 0, 0
-  index: -1
-sparkle_0
-  rotate: false
-  xy: 2, 458
-  size: 68, 68
-  orig: 68, 68
-  offset: 0, 0
-  index: -1
-sparkle_1
-  rotate: false
-  xy: 72, 458
-  size: 55, 55
-  orig: 55, 55
   offset: 0, 0
   index: -1
