@@ -1,4 +1,4 @@
-import { Assets, Texture, Spritesheet } from "pixi.js";
+import { Assets, Texture } from "pixi.js";
 import type { SymbolId } from "../domain";
 import { SkelPlayer, type SkelData } from "./SkelPlayer";
 
@@ -29,22 +29,13 @@ export const SYMBOL_ASSETS: Record<SymbolId, SymbolSkin> = {
 
 const BASE_PATH = "assets/";
 
-/** Win sprite-sheet atlases, produced by tools/asset-pipeline/build-sheets.mjs.
- *  Optional — a symbol without one (or before art is generated) falls back to
- *  the procedural glow in SymbolView.winCelebrate. Keys match the atlas
- *  animation name (`<file>_win`). */
-const ANIM_ASSETS: Partial<Record<SymbolId, string>> = {
-  CAR_WILD: "anim/cyan_car_wild_win.json",
-  SAFE: "anim/safe_win.json",
-  MASTER_KEY: "anim/master_key_win.json",
-  DIAMOND: "anim/diamond_win.json",
-  PHONE_SCATTER: "anim/burner_phone_win.json",
-};
-
-export interface SymbolAnimation {
-  textures: Texture[];
-  fps: number;
-}
+/** Symbols that only ever exist inside the Getaway bonus grid, where BonusView
+ *  draws them itself (SAFE → gold bar, MASTER_KEY → dynamite, EMPTY → logo
+ *  watermark). Verified against 500 published books: the base board contains
+ *  only the other 11 ids, so these three have no art and must not be fetched —
+ *  otherwise every load logs a failed-texture warning for a file that by design
+ *  does not exist. */
+const BONUS_ONLY_SYMBOLS = new Set<SymbolId>(["SAFE", "MASTER_KEY", "EMPTY"]);
 
 /** 2D skeletal animation bundles, produced by tools/skel-pipeline
  *  (layered PNGs → Spine-3.8 JSON + atlas, played by our own SkelPlayer).
@@ -74,7 +65,6 @@ interface SkelBundle { data: SkelData; atlasText: string; texture: Texture; fitW
 const skelCache = new Map<SymbolId, SkelBundle>();
 
 const textureCache = new Map<string, Texture>();
-const animCache = new Map<SymbolId, SymbolAnimation>();
 let loaded = false;
 
 /** Extra non-symbol images to preload */
@@ -142,14 +132,16 @@ export async function loadSymbolTextures(): Promise<void> {
   // All symbol PNGs have been pre-processed by tools/asset-pipeline/strip-bg.mjs —
   // black backgrounds removed at build time. Just load them directly.
   await Promise.all(
-    Object.values(SYMBOL_ASSETS).map(async (skin) => {
-      try {
-        const tex = await Assets.load<Texture>(BASE_PATH + skin.assetKey);
-        if (tex instanceof Texture) textureCache.set(skin.assetKey, tex);
-      } catch (err) {
-        console.warn(`[assets] Failed to load symbol texture: ${skin.assetKey}`, err);
-      }
-    })
+    (Object.entries(SYMBOL_ASSETS) as [SymbolId, SymbolSkin][])
+      .filter(([id]) => !BONUS_ONLY_SYMBOLS.has(id))
+      .map(async ([, skin]) => {
+        try {
+          const tex = await Assets.load<Texture>(BASE_PATH + skin.assetKey);
+          if (tex instanceof Texture) textureCache.set(skin.assetKey, tex);
+        } catch (err) {
+          console.warn(`[assets] Failed to load symbol texture: ${skin.assetKey}`, err);
+        }
+      })
   );
 
   // Extra images (silhouette, character pieces, etc.) — also isolated.
@@ -205,20 +197,6 @@ export async function loadSymbolTextures(): Promise<void> {
     )
   );
 
-  // Win sprite-sheet atlases — missing ones just use procedural glow.
-  for (const [id, file] of Object.entries(ANIM_ASSETS) as [SymbolId, string][]) {
-    try {
-      const sheet = await Assets.load<Spritesheet>(BASE_PATH + file);
-      const animName = file.replace("anim/", "").replace(".json", "");
-      const textures = sheet.animations?.[animName];
-      if (textures && textures.length) {
-        const fps = (sheet.data?.meta as { fps?: number } | undefined)?.fps ?? 16;
-        animCache.set(id, { textures, fps });
-      }
-    } catch {
-      // No atlas yet — procedural fallback will be used
-    }
-  }
 }
 
 export function getSymbolTexture(id: SymbolId): Texture | null {
@@ -229,11 +207,6 @@ export function getSymbolTexture(id: SymbolId): Texture | null {
 
 export function getExtraTexture(key: string): Texture | null {
   return textureCache.get(key) ?? null;
-}
-
-/** Win animation frames for a symbol, if a sprite-sheet atlas was loaded. */
-export function getSymbolAnimation(id: SymbolId): SymbolAnimation | null {
-  return animCache.get(id) ?? null;
 }
 
 export interface SkelSymbol { player: SkelPlayer; fitW: number; fitH: number }

@@ -1,7 +1,7 @@
-import { Container, Graphics, Sprite, Text, BlurFilter, AnimatedSprite } from "pixi.js";
+import { Container, Graphics, Sprite, Text, BlurFilter } from "pixi.js";
 import type { SymbolId } from "../domain";
 import { SYMBOLS } from "../domain";
-import { SYMBOL_ASSETS, getSymbolTexture, getSymbolAnimation, createSkelSymbol, type SymbolAnimation } from "./assets";
+import { SYMBOL_ASSETS, getSymbolTexture, createSkelSymbol } from "./assets";
 import type { SkelPlayer } from "./SkelPlayer";
 import { makeText } from "./text";
 import { easeInOutCubic, easeOutElastic, easeOutBack, easeOutQuad, linear, tween, ambientTicker, getTimeScale } from "./tween";
@@ -49,8 +49,6 @@ export class SymbolView extends Container {
   private heightValue = 0;
   private ambientCb: ((dt: number, elapsed: number) => void) | null = null;
   private blurFilter: BlurFilter | null = null;
-  private readonly animation: SymbolAnimation | null;
-  private winSprite: AnimatedSprite | null = null;
   /** 2D skeletal player (tools/skel-pipeline bundle). When present it replaces
    *  the static sprite entirely: idle loops on the ambient ticker, win/vanish
    *  play the authored skeletal animations. */
@@ -64,7 +62,6 @@ export class SymbolView extends Container {
     this.id = id;
     const skin = SYMBOL_ASSETS[id];
     const tex = getSymbolTexture(id);
-    this.animation = getSymbolAnimation(id);
 
     if (tex && tex.width > 0 && tex.height > 0) {
       this.sprite = new Sprite(tex);
@@ -153,7 +150,6 @@ export class SymbolView extends Container {
 
     // Scale sprite to fill cell
     if (this.sprite) this.fitInCell(this.sprite);
-    if (this.winSprite) this.fitInCell(this.winSprite);
 
     // Skeletal player: origin is the symbol centre; scale by the ART content
     // size (fitW/fitH), not the padded canvas, so it matches the static art.
@@ -174,7 +170,7 @@ export class SymbolView extends Container {
   }
 
   /** Scale + center a sprite to fill the cell with a small padding. */
-  private fitInCell(sprite: Sprite | AnimatedSprite): void {
+  private fitInCell(sprite: Sprite): void {
     const w = this.widthValue;
     const h = this.heightValue;
     if (w <= 0 || h <= 0) return;
@@ -249,14 +245,9 @@ export class SymbolView extends Container {
     const h = this.heightValue;
     this.redraw(true, false, false);
 
-    // If this symbol has a generated win sprite-sheet, play it over the static
-    // art for the duration of the celebration. Otherwise fall through to the
-    // procedural glow below (which still runs on top either way).
-    const playing = this.startWinAnimation();
-
     const accent = WIN_ACCENT[this.id] ?? DEFAULT_ACCENT;
     const hero = HERO_SYMBOLS.has(this.id);
-    const fx = this.celebrationTarget();
+    const fx = this.sprite;
     const baseScale = fx ? fx.scale.x : 1; // sprites are pre-scaled to fit the cell
 
     // Tier-coloured aura behind the symbol.
@@ -303,7 +294,6 @@ export class SymbolView extends Container {
     this.scale.set(1);
     this.winGlow.alpha = 0;
     this.shimmer.alpha = 0;
-    if (playing) this.stopWinAnimation();
   }
 
   /** Skeletal win: play the authored `win` animation (anticipation crush →
@@ -330,12 +320,6 @@ export class SymbolView extends Container {
     this.winGlow.alpha = 0;
     this.shimmer.alpha = 0;
     this.skel!.play("idle", { loop: true });
-  }
-
-  /** The element to pop/tilt: the playing win-sprite, else the static sprite. */
-  private celebrationTarget(): Sprite | AnimatedSprite | null {
-    if (this.winSprite?.visible) return this.winSprite;
-    return this.sprite;
   }
 
   /** A diagonal light streak sweeping left→right across the symbol (cell-clipped). */
@@ -365,31 +349,6 @@ export class SymbolView extends Container {
     g.alpha = 0;
   }
 
-  /** Show + play the win sprite-sheet (if any). Returns true if it started. */
-  private startWinAnimation(): boolean {
-    if (!this.animation) return false;
-    if (!this.winSprite) {
-      this.winSprite = new AnimatedSprite(this.animation.textures);
-      this.winSprite.anchor.set(0.5);
-      this.winSprite.loop = true;
-      this.winSprite.animationSpeed = this.animation.fps / 60;
-      // Sits above the static sprite, below the sheen/shimmer overlays.
-      this.addChildAt(this.winSprite, this.getChildIndex(this.topSheen));
-    }
-    this.fitInCell(this.winSprite);
-    this.winSprite.visible = true;
-    this.winSprite.gotoAndPlay(0);
-    if (this.sprite) this.sprite.visible = false;
-    return true;
-  }
-
-  private stopWinAnimation(): void {
-    if (!this.winSprite) return;
-    this.winSprite.stop();
-    this.winSprite.visible = false;
-    if (this.sprite) this.sprite.visible = true;
-  }
-
   async vanish(turbo: boolean): Promise<void> {
     if (this.skel) {
       // Authored shatter: light flies outward, body collapses, ends invisible.
@@ -411,7 +370,6 @@ export class SymbolView extends Container {
       this.skelCb = null;
     }
     this.skel?.stop();
-    this.winSprite?.stop();
     super.destroy(options);
   }
 }
