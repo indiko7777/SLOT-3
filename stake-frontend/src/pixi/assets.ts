@@ -64,8 +64,10 @@ const SKEL_ASSETS: Partial<Record<SymbolId, { dir: string; fitW: number; fitH: n
   BIKE: { dir: "skel/bike", fitW: 230, fitH: 210 },
   WILD: { dir: "skel/wild_symbole", fitW: 222, fitH: 230 },
   CAR_WILD: { dir: "skel/cyan_car_wild", fitW: 207, fitH: 230 },
-  // PHONE_SCATTER / SAFE / MASTER_KEY have no bundle: their source art was
-  // deleted in commit 288e28d, so they fall back to the static-sprite path.
+  // The scatter: Brinks armored truck, art recovered from commit cc06ba2.
+  PHONE_SCATTER: { dir: "skel/burner_phone", fitW: 230, fitH: 169 },
+  // SAFE / MASTER_KEY / EMPTY still have no source art (deleted in 288e28d),
+  // so they fall back to the static-sprite path.
 };
 
 interface SkelBundle { data: SkelData; atlasText: string; texture: Texture; fitW: number; fitH: number }
