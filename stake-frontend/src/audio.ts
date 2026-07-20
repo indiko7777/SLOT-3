@@ -1077,6 +1077,94 @@ export class EventAudioBus {
     });
   }
 
+  /**
+   * Getaway trigger: the armored trucks rev and tear off the board. Three
+   * phases matched to the visual — a diesel rev that BUILDS (0→0.9s, saw
+   * cluster climbing 48→150 Hz with a ~26 Hz chug tremolo), a tire screech at
+   * launch (bandpassed noise with pitch wobble), and a doppler whoosh fading
+   * left as the convoy exits.
+   */
+  truckDriveOff(): void {
+    void this.unlock().then(() => {
+      if (!this.ctx) return;
+      const ctx = this.ctx;
+      const t = ctx.currentTime;
+
+      const out = ctx.createGain();
+      out.gain.value = 1.15;
+      out.connect(ctx.destination);
+
+      // 1) Diesel rev — detuned saws through a lowpass that opens as revs climb.
+      const lp = ctx.createBiquadFilter();
+      lp.type = "lowpass";
+      lp.frequency.setValueAtTime(420, t);
+      lp.frequency.exponentialRampToValueAtTime(2400, t + 0.9);
+      const revG = ctx.createGain();
+      revG.gain.setValueAtTime(0.0001, t);
+      revG.gain.exponentialRampToValueAtTime(0.42, t + 0.12);
+      revG.gain.setValueAtTime(0.42, t + 0.88);
+      revG.gain.exponentialRampToValueAtTime(0.0001, t + 1.5);
+      // engine chug: tremolo LFO on the rev bus
+      const lfo = ctx.createOscillator();
+      const lfoG = ctx.createGain();
+      lfo.frequency.setValueAtTime(15, t);
+      lfo.frequency.linearRampToValueAtTime(30, t + 0.9);
+      lfoG.gain.value = 0.16;
+      lfo.connect(lfoG).connect(revG.gain);
+      lfo.start(t);
+      lfo.stop(t + 1.5);
+      lp.connect(revG).connect(out);
+      for (const det of [-11, 0, 9]) {
+        const o = ctx.createOscillator();
+        o.type = "sawtooth";
+        o.frequency.setValueAtTime(48, t);
+        o.frequency.exponentialRampToValueAtTime(150, t + 0.9);
+        o.detune.value = det * 3;
+        o.connect(lp);
+        o.start(t);
+        o.stop(t + 1.55);
+      }
+
+      // 2) Tire screech right at the launch.
+      const sFrames = Math.floor(ctx.sampleRate * 0.4);
+      const sBuf = ctx.createBuffer(1, sFrames, ctx.sampleRate);
+      const sd = sBuf.getChannelData(0);
+      for (let i = 0; i < sFrames; i++) sd[i] = Math.random() * 2 - 1;
+      const scr = ctx.createBufferSource();
+      scr.buffer = sBuf;
+      const bp = ctx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.Q.value = 9;
+      bp.frequency.setValueAtTime(2300, t + 0.82);
+      bp.frequency.linearRampToValueAtTime(3100, t + 0.98);
+      bp.frequency.linearRampToValueAtTime(2500, t + 1.16);
+      const sg = ctx.createGain();
+      sg.gain.setValueAtTime(0.0001, t + 0.82);
+      sg.gain.exponentialRampToValueAtTime(0.3, t + 0.86);
+      sg.gain.exponentialRampToValueAtTime(0.0001, t + 1.22);
+      scr.connect(bp).connect(sg).connect(out);
+      scr.start(t + 0.82);
+
+      // 3) Doppler whoosh as they blow past — noise sweeping down and away.
+      const wFrames = Math.floor(ctx.sampleRate * 0.7);
+      const wBuf = ctx.createBuffer(1, wFrames, ctx.sampleRate);
+      const wd = wBuf.getChannelData(0);
+      for (let i = 0; i < wFrames; i++) wd[i] = (Math.random() * 2 - 1) * (1 - i / wFrames);
+      const who = ctx.createBufferSource();
+      who.buffer = wBuf;
+      const wlp = ctx.createBiquadFilter();
+      wlp.type = "lowpass";
+      wlp.frequency.setValueAtTime(2800, t + 0.9);
+      wlp.frequency.exponentialRampToValueAtTime(320, t + 1.55);
+      const wg = ctx.createGain();
+      wg.gain.setValueAtTime(0.0001, t + 0.9);
+      wg.gain.exponentialRampToValueAtTime(0.34, t + 1.0);
+      wg.gain.exponentialRampToValueAtTime(0.0001, t + 1.6);
+      who.connect(wlp).connect(wg).connect(out);
+      who.start(t + 0.9);
+    });
+  }
+
   /* ═══════════════════════════════════════════════
      Collection-piece whoosh — the airy riser that plays
      while the body part hangs in front of the camera and

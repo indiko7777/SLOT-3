@@ -349,6 +349,15 @@ export class SymbolView extends Container {
     g.alpha = 0;
   }
 
+  /** Scatter trigger: start the armored truck's engine-rev (skeletal
+   *  `drive_off` — squat, nose-up, building shudder, glow flare). The actual
+   *  exit across the board is driven by BoardView, which owns the geometry.
+   *  Safe no-op for symbols without the animation. */
+  revEngine(turbo: boolean): void {
+    if (!this.skel || !this.skel.animations.includes("drive_off")) return;
+    this.skel.play("drive_off", { speed: (turbo ? 2 : 1) * getTimeScale() });
+  }
+
   async vanish(turbo: boolean): Promise<void> {
     if (this.skel) {
       // Authored shatter: light flies outward, body collapses, ends invisible.

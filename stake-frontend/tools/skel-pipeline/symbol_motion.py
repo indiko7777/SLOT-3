@@ -488,7 +488,35 @@ def _truck(sparks, ch, cmax):
                          bake(15, 38, lambda r: (12 * damped(r, 1.1, 2.6), 4 * damped(r, 1.1, 2.6)), 2),
                          [(40, (0, 0))]))},
                glow=0.70, sparks=sparks, spin=40, dist=18)
-    return idle, win, base_drop(3.8, ch, (1.20, 0.80), sparks), base_destroy(sparks, cmax, 175, "scatter")
+    drop = base_drop(3.8, ch, (1.20, 0.80), sparks)
+    destroy = base_destroy(sparks, cmax, 175, "scatter")
+
+    # drive_off (30f, one-shot): the rev BEFORE the getaway. Played when 3+
+    # scatters trigger the bonus, while the game tweens the whole symbol off the
+    # board — so this stays IN PLACE: squat onto the suspension, nose up, and a
+    # high-frequency engine shudder that builds instead of decaying. The exit
+    # motion itself belongs to the container, not the rig.
+    rev = {"bones": {}, "slots": {}}
+    rev["bones"]["body"] = {
+        "rotate": rot(seg(
+            bake(0, 5, lambda r: 3.5 * ease_out_quad(r), 1),           # squat back
+            bake(5, 30, lambda r: 3.5 - 9.5 * ease_out_cubic(r)        # nose lifts
+                 + 1.8 * math.sin(TAU * 11 * r) * r, 1))),             # shudder builds
+        "translate": trans(seg(
+            bake(0, 5, lambda r: (-5 * ease_out_quad(r), 0), 1),       # rock back
+            bake(5, 30, lambda r: (-5 + 3 * ease_out_quad(r),
+                                   1.2 * math.sin(TAU * 13 * r) * r), 1))),
+    }
+    rev["bones"]["glow"] = {"scale": scale(seg(
+        bake(0, 12, lambda r: 1 + 0.55 * ease_out_quad(r), 2),
+        bake(12, 30, lambda r: 1.55 + 0.25 * math.sin(TAU * 3 * r) ** 2, 2)))}
+    rev["slots"]["glow"] = {"color": color(seg(
+        bake(0, 8, lambda r: 0.6 + 0.4 * ease_out_quad(r), 2), hold(10, 30, 1.0)))}
+    rev["slots"]["shine"] = {"color": color(bake(
+        0, 30, lambda r: 0.5 + 0.5 * abs(math.sin(TAU * 4 * r)), 1))}
+    extra = {"drive_off": rev}
+
+    return idle, win, drop, destroy, extra
 
 
 # ---- BONUS -----------------------------------------------------------------
@@ -534,10 +562,16 @@ def _key(sparks, ch, cmax):
 
 
 def build_for(name, sparks, canvas_h, canvas_max):
-    """Return {idle, win, drop, destroy} for `name`, falling back to a neutral
-    but still eased/staggered personality for anything not listed above."""
+    """Return {idle, win, drop, destroy, ...extras} for `name`, falling back to
+    a neutral but still eased/staggered personality for anything not listed
+    above. A motion fn may return a 5th element: a dict of extra one-shot
+    animations (e.g. the truck's drive_off) merged into the bundle as-is."""
+    extra = {}
     if name in MOTION:
-        idle, win, drop, destroy = MOTION[name](sparks, canvas_h, canvas_max)
+        result = MOTION[name](sparks, canvas_h, canvas_max)
+        idle, win, drop, destroy = result[:4]
+        if len(result) > 4:
+            extra = result[4]
     else:
         idle = _idle(0.012, 2.0,
                      body={"rotate": rot(bake(0, 72, loopy(lambda r: 2.0 * math.sin(TAU * r + 0.6)), 3))},
@@ -549,4 +583,4 @@ def build_for(name, sparks, canvas_h, canvas_max):
             [(40, 0.0)]))}, sparks=sparks)
         drop = base_drop(3.5, canvas_h, (1.15, 0.85), sparks)
         destroy = base_destroy(sparks, canvas_max, 190, "scatter")
-    return {"idle": idle, "win": win, "drop": drop, "destroy": destroy}
+    return {"idle": idle, "win": win, "drop": drop, "destroy": destroy, **extra}

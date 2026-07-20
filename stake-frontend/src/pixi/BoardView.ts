@@ -168,6 +168,93 @@ export class BoardView extends Container {
     await wait(turbo ? 40 : 150);
   }
 
+  /* ─── GETAWAY TRIGGER: the armored trucks rev and tear off the board ─── */
+  /** 3+ scatters just triggered The Getaway. Each truck plays its skeletal
+   *  engine-rev (squat, nose-up, building shudder), belches exhaust, then
+   *  accelerates off the LEFT edge — the Brinks art faces left, so that is
+   *  forward. The reel mask clips them cleanly at the frame. Staggered
+   *  left-to-right so it reads as a convoy peeling out, not a formation. */
+  async truckDriveOff(positions: Position[], turbo: boolean): Promise<void> {
+    const trucks = positions
+      .map((p) => ({ key: keyOf(p), col: p[0], view: this.symbols.get(keyOf(p)) }))
+      .filter((t): t is { key: string; col: number; view: SymbolView } => !!t.view)
+      .sort((a, b) => a.col - b.col);
+    if (!trucks.length) return;
+
+    const exitX = -this.cellWidth * 1.9; // fully past the left mask edge
+    const revMs = turbo ? 260 : 880;
+    const driveMs = turbo ? 240 : 500;
+
+    await Promise.all(trucks.map(async ({ key, view }, i) => {
+      await wait(turbo ? i * 70 : i * 160);
+      view.revEngine(turbo);
+      this.spawnExhaust(view, revMs + driveMs, turbo);
+      await wait(revMs);
+      this.spawnSpeedLines(view, driveMs);
+      const startX = view.x;
+      const startY = view.y;
+      await tween(driveMs, (p) => {
+        const e = p * p * p; // hard launch: nothing, nothing, GONE
+        view.x = startX + (exitX - startX) * e;
+        view.y = startY - 5 * Math.min(1, p * 1.6);
+        view.scale.set(1 + 0.16 * p, 1 - 0.08 * p);   // speed stretch
+        view.rotation = 0.055 * Math.min(1, p * 2);    // nose lifts (art faces left)
+      }, linear);
+      this.symbols.delete(key);
+      view.destroy({ children: true });
+    }));
+  }
+
+  /** Exhaust puffs from the truck's rear (right side of the cell) while it revs
+   *  and launches. Added to the masked reel container so smoke never leaves the
+   *  board frame. */
+  private spawnExhaust(view: SymbolView, durMs: number, turbo: boolean): void {
+    const stepMs = turbo ? 60 : 90;
+    const n = Math.max(4, Math.floor(durMs / stepMs));
+    for (let i = 0; i < n; i++) {
+      void wait(i * stepMs).then(() => {
+        if (view.destroyed) return;
+        const puff = new Graphics();
+        const r0 = 3.5 + Math.random() * 4;
+        puff.circle(0, 0, r0).fill({ color: 0x353b46, alpha: 0.5 });
+        puff.position.set(
+          view.x + this.cellWidth * (0.82 + Math.random() * 0.12),
+          view.y + this.cellHeight * (0.68 + Math.random() * 0.14)
+        );
+        this.reelContainer.addChild(puff);
+        const dx = 14 + Math.random() * 22;  // drifts right — away from the launch
+        const dy = -(6 + Math.random() * 12);
+        void tween(380 + Math.random() * 220, (p) => {
+          puff.x += dx * 0.02;
+          puff.y += dy * 0.02;
+          puff.scale.set(1 + 1.8 * p);
+          puff.alpha = 0.5 * (1 - p);
+        }, linear).then(() => puff.destroy());
+      });
+    }
+  }
+
+  /** Horizontal speed streaks trailing off the accelerating truck. */
+  private spawnSpeedLines(view: SymbolView, durMs: number): void {
+    for (let i = 0; i < 7; i++) {
+      void wait(Math.random() * durMs * 0.5).then(() => {
+        const line = new Graphics();
+        const len = 26 + Math.random() * 46;
+        line.rect(0, 0, len, 1.6).fill({ color: i % 3 === 0 ? 0xbfe9ff : 0xffffff, alpha: 0.55 });
+        line.position.set(
+          view.destroyed ? this.rect.width * Math.random() : view.x + this.cellWidth * (0.5 + Math.random() * 0.6),
+          (view.destroyed ? this.rect.height * Math.random() : view.y) + this.cellHeight * (0.15 + Math.random() * 0.7)
+        );
+        this.reelContainer.addChild(line);
+        void tween(200 + Math.random() * 140, (p) => {
+          line.x += 9;             // streaks fall behind the leftward launch
+          line.alpha = 0.55 * (1 - p);
+          line.scale.x = 1 + p * 0.8;
+        }, linear).then(() => line.destroy());
+      });
+    }
+  }
+
   /* ─── CLEAR WINS: flash + vanish winning symbols, leaving gaps behind ─── */
   // Used by the real cascade (tumble_remove): the holes are filled afterwards by
   // tumbleTo() using the authoritative RGS board, so we must NOT refill here.

@@ -262,15 +262,14 @@ export const CASCADE_LADDER = [1, 2, 4, 7, 12, 20, 32, 50, 80] as const;
 
 /** Getaway Hold & Spin constants (mirror of stake-math/src/model.ts).
  *
- * Classic Hold & Spin, and the ONLY rule the player needs: you get
- * BONUS_START_RESPINS spins; landing anything RESETS the meter back to full;
- * a spin that lands nothing spends one. The feature ends on that many
- * CONSECUTIVE dead spins, or when all BONUS_CELLS are filled.
+ * COUNTDOWN rule, and the ONLY rule the player needs: you get
+ * BONUS_START_RESPINS spins; a spin that lands nothing spends one; a spin that
+ * locks anything is free (the meter HOLDS — it never goes back up). The
+ * feature ends at 0, or when all BONUS_CELLS are filled.
  *
  * This must equal stake-math's value — the engine decides the real numbers and
  * the books carry them, so a mismatch here shows the player a starting count
- * the feature never actually had. It read 4 while the engine used 3, which is
- * what mathMirror.test.ts was failing on. */
+ * the feature never actually had (mathMirror.test.ts guards this). */
 export const BONUS_START_RESPINS = 3;
 export const BONUS_CELLS = 20;
 

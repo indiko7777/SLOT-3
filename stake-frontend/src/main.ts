@@ -339,6 +339,9 @@ async function boot(): Promise<void> {
       // a bigger letdown than a bonus spin that landed nothing.
       if (!muted) audioBus.anticipationMiss();
     },
+    onTruckDriveOff: () => {
+      if (!muted) audioBus.truckDriveOff();
+    },
     onDeadSpin: (heat) => {
       if (!muted) audioBus.deadSpin(heat);
     },

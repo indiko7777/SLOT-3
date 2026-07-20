@@ -335,6 +335,15 @@ export class PixiGameScene {
         // Gold bars / meter / result show REAL money for this bet, not bare multipliers.
         this.bonus.setMoneyContext(snapshot.betAmount, this.runtime.getCurrency());
         this.cardPeek.visible = false;
+        // THE dopamine beat: before anything else, the armored trucks that
+        // triggered the feature rev up and tear off the board — engine audio,
+        // exhaust, speed lines, and a screen shake as they launch. Only then
+        // does the cinematic intro take over.
+        this.runtime.onTruckDriveOff?.();
+        await Promise.all([
+          this.board.truckDriveOff(event.scatterPositions, turbo),
+          this.effects.screenShake(this.root, turbo),
+        ]);
         // Hide the entire HUD (character, wanted stars, left buttons, bet panel)
         // so the bonus board has the full screen to itself.
         this.hud.visible = false;

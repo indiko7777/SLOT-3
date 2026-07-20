@@ -36,9 +36,9 @@ const CINEMA_BAR = 0x050507; // letterbox bar colour
 // Used to align the grid exactly inside the truck's window.
 const TRUCK_OPENING = { wFrac: 0.3262, hFrac: 0.507, cxFrac: 0.5, cyFrac: 0.4441, aspect: 334 / 290 };
 
-// Classic Hold & Spin: the meter STARTS here, every lock RESETS it back to this
-// value, and each dead spin spends one — the feature busts only after this many
-// CONSECUTIVE dead spins. Imported rather than redeclared: this file used to
+// Hold & Spin COUNTDOWN: the meter starts here, a lock HOLDS it, and each dead
+// spin spends one — the feature ends after this many dead spins in total. The
+// number only ever falls. Imported rather than redeclared: this file used to
 // hold its own copy that silently disagreed with domain.ts.
 const START_RESPINS = BONUS_START_RESPINS;
 
@@ -436,15 +436,17 @@ export class BonusView extends Container {
       this.heat = 0;
       this.hitFlash();
       await wait(turbo ? 50 : 240);
-      this.animateSpinsBeat(respins, true, turbo);
-      await wait(turbo ? 80 : 640);
+      // Countdown rule: a lock HOLDS the meter (the number does not change), so
+      // there is no number transition to play — just a confirming gold pulse.
+      this.spinsHeldBeat(turbo);
+      await wait(turbo ? 60 : 420);
     } else {
       this.heat = Math.min(3, deadSpins);
       // The "miss" audio fires on the same frame as the visual dead-spin beat.
       onDeadBeat?.();
       this.deadSpinBeat();
       await wait(turbo ? 50 : 300);
-      this.animateSpinsBeat(respins, false, turbo);
+      this.animateSpinsBeat(respins, turbo);
       await wait(turbo ? 80 : 680);
     }
   }
@@ -1138,10 +1140,9 @@ export class BonusView extends Container {
     this.hudLayer.addChild(stars);
     this.stars = stars;
 
-    // SPINS LEFT number, top-right — ticks down on a dead spin; ANY lock resets
-    // it to the full budget. (This comment used to claim a lock granted "+1
-    // spin, never a refill" — the engine has always done a full reset, so the
-    // note described behaviour that does not exist.)
+    // SPINS LEFT number, top-right — ticks down on a dead spin; a lock HOLDS it
+    // (never up, never refilled). The count only falls, so the player always
+    // knows exactly how close the feature is to ending.
     const box = new Container();
     box.position.set(W * 0.88, H * 0.04);
     this.hudLayer.addChild(box);
@@ -1207,7 +1208,10 @@ export class BonusView extends Container {
    *                value rises back to the budget, e.g. 2→3, or holds at 3)
    *   lock=false → a dead spin spent one  (roll down one)
    */
-  private animateSpinsBeat(to: number, lock: boolean, turbo: boolean): void {
+  /** Dead spin: old number falls away, new number drops in from above (a clean
+   *  tick-down). Locks no longer route here — under the countdown rule the
+   *  number never goes up, so a lock plays spinsHeldBeat instead. */
+  private animateSpinsBeat(to: number, turbo: boolean): void {
     const sv = this.spinsText;
     const box = this.spinsBox;
     if (!sv || !box) { this.setSpins(to); return; }
@@ -1224,27 +1228,29 @@ export class BonusView extends Container {
     this.setSpins(to);
     sv.alpha = 0;
 
-    if (lock) {
-      // Lock: the granted spin punches into place; the box gives a soft punch.
-      // Reads as "+1 — one more chance", NOT a refill to the starting budget.
-      sv.scale.set(0.55);
-      void tween(620, (p) => {
-        ghost.alpha = (1 - p) * 0.7;
-        ghost.y = baseY - 14 * p;
-        sv.alpha = Math.min(1, p * 2);
-        sv.scale.set(0.55 + 0.45 * easeOutBack(Math.min(1, p * 1.15)));
-      }).then(() => { ghost.destroy(); sv.alpha = 1; sv.scale.set(1); });
-      void tween(600, (p) => box.scale.set(1 + Math.sin(Math.min(1, p) * Math.PI) * 0.16)).then(() => box.scale.set(1));
-    } else {
-      // Dead spin: old number falls away, new number drops in from above (a clean tick-down).
-      void tween(540, (p) => {
-        ghost.alpha = 1 - p;
-        ghost.y = baseY + 22 * p;
-        ghost.scale.set(1 - 0.18 * p);
-        sv.alpha = Math.min(1, p * 1.9);
-        sv.y = baseY - 20 * (1 - easeOutBack(Math.min(1, p)));
-      }).then(() => { ghost.destroy(); sv.alpha = 1; sv.y = baseY; sv.scale.set(1); });
-    }
+    void tween(540, (p) => {
+      ghost.alpha = 1 - p;
+      ghost.y = baseY + 22 * p;
+      ghost.scale.set(1 - 0.18 * p);
+      sv.alpha = Math.min(1, p * 1.9);
+      sv.y = baseY - 20 * (1 - easeOutBack(Math.min(1, p)));
+    }).then(() => { ghost.destroy(); sv.alpha = 1; sv.y = baseY; sv.scale.set(1); });
+  }
+
+  /** Lock: the meter is HELD, not refilled — confirm it with a gold pulse on
+   *  the unchanged number so the player reads "safe, same spins left". */
+  private spinsHeldBeat(turbo: boolean): void {
+    const sv = this.spinsText;
+    const box = this.spinsBox;
+    if (!sv || !box || turbo) return;
+    void tween(480, (p) => {
+      const s = Math.sin(Math.min(1, p) * Math.PI);
+      box.scale.set(1 + s * 0.12);
+      sv.style.dropShadow = { color: 0xffd95c, alpha: 0.5 + s * 0.5, blur: 8 + s * 10, distance: 0, angle: 0 };
+    }).then(() => {
+      box.scale.set(1);
+      sv.style.dropShadow = { color: 0xff6a00, alpha: 0.6, blur: 8, distance: 0, angle: 0 };
+    });
   }
 
   private drawStars(elapsed: number): void {

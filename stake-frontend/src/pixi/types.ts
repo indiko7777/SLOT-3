@@ -67,6 +67,9 @@ export interface SceneRuntime {
   /** Fired once per spin when a scatter anticipation reel stops short of the
    *  scatter (the bonus didn't trigger) — drives the negative near-miss cue. */
   onAnticipationMiss?: () => void;
+  /** 3+ scatters triggered The Getaway — the trucks are revving and tearing off
+   *  the board. Fires once, at the start of the drive-off beat. */
+  onTruckDriveOff?: () => void;
   /** Fired on a Getaway dead spin (nothing landed), in sync with the visual
    *  dead-spin beat. heat = consecutive misses, 1–3. */
   onDeadSpin?: (heat: number) => void;
