@@ -136,7 +136,7 @@ export class HudView extends Container {
     }
     // Update credit display (deduct could happen externally)
     if (this.creditText) {
-      this.creditText.text = `${TEXT.credit} ${this.runtime.getCredit().toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${this.runtime.getCurrency()}`;
+      this.creditText.text = `CREDIT ${this.fmtMoney(this.runtime.getCredit())} ${this.runtime.getCurrency()}`;
     }
   }
 
@@ -248,31 +248,22 @@ export class HudView extends Container {
   }
 
   private drawBackground(layout: LayoutMetrics, snapshot: PlaybackSnapshot): void {
-    // The base game has exactly ONE background. There used to be a third
-    // "max heat" burning-city image swapped in on `heatLevel >= 5 ||
-    // state === "big_win"` — retired art, and the condition meant every
-    // Getaway that paid 100x+ dumped the player onto it on the way back
-    // (round_end sets state "big_win"), and hitting 5 wanted stars swapped
-    // it in mid-round with no other feedback. Base art only, always.
     const isBonus = snapshot.state.startsWith("bonus");
     const bgTex = getExtraTexture(isBonus ? "bg_bonus" : "bg_base");
 
     if (bgTex) {
       const sprite = new Sprite(bgTex);
-      // Cover the entire screen (maintain aspect ratio, crop overflow)
       const scaleX = layout.width / bgTex.width;
       const scaleY = layout.height / bgTex.height;
       const scale = Math.max(scaleX, scaleY);
       sprite.scale.set(scale);
-      sprite.anchor.set(0, 1); // Anchor at bottom-left so logo is fully visible
+      sprite.anchor.set(0, 1);
       sprite.position.set(0, layout.height);
       this.bgContainer.addChild(sprite);
-      // Dim overlay so UI remains readable
       const dim = new Graphics();
       dim.rect(0, 0, layout.width, layout.height).fill({ color: 0x000000, alpha: 0.15 });
       this.bgContainer.addChild(dim);
     } else {
-      // Fallback procedural background
       const g = new Graphics();
       g.rect(0, 0, layout.width, layout.height).fill(0x000000);
       g.circle(layout.width * 0.78, layout.height * 0.2, Math.max(layout.width, layout.height) * 0.26).fill({ color: 0x2ea847, alpha: 0.24 });
@@ -283,14 +274,22 @@ export class HudView extends Container {
 
   private drawBuyPanel(rect: Rect): void {
     const panelWidth = rect.width;
-    // Cost values are sourced from the RGS bet-mode config, never hardcoded.
-    // The kicker word ("BUY" / "FEATURE") is jurisdiction-driven.
     const kicker = this.t().featureKicker;
     const buyX = this.costX("getaway");
     const superX = this.costX("super_getaway");
     const antePct = `+${Math.round((this.costX("ante") - 1) * 100)}%`;
     const anteVal = this.runtime.isAnteEnabled() ? "ON" : "OFF";
     const anteSub = this.runtime.isAnteEnabled() ? "ACTIVE" : antePct;
+
+    if (rect.height < 60) {
+      const gap = 8;
+      const slot = (rect.width - gap * 2) / 3;
+      this.panelButton(rect.x, rect.y, slot, rect.height, kicker, "GETAWAY", `${buyX}x`, "getaway");
+      this.panelButton(rect.x + slot + gap, rect.y, slot, rect.height, kicker, "SUPER", `${superX}x`, "super_getaway");
+      this.panelButton(rect.x + (slot + gap) * 2, rect.y, slot, rect.height, "ANTE", anteSub, anteVal, "ante");
+      return;
+    }
+
     if (rect.height < 130) {
       const slot = (rect.width - 16) / 3;
       this.panelButton(rect.x, rect.y, slot, rect.height, kicker, "GETAWAY", `${buyX}x`, "getaway");
@@ -303,40 +302,26 @@ export class HudView extends Container {
     this.panelButton(rect.x, rect.y + 124, panelWidth, 124, kicker, TEXT.superBuy, `${superX.toFixed(2)}x`, "super_getaway");
     this.panelButton(rect.x, rect.y + 262, panelWidth, 134, TEXT.ante, anteSub, anteVal, "ante");
 
-    // Game name & logo below the button stack — LANDSCAPE ONLY (the compact
-    // portrait layout returned above). A deliberately bigger gap separates it
-    // from the buttons so it doesn't read as "just another button", and it's
-    // sized as large as the side gap allows while staying clear of everything.
     const logoTex = getExtraTexture("heat_chase_logo");
     if (logoTex && logoTex.width > 0 && logoTex.height > 0) {
       const center = rect.x + panelWidth / 2;
       const buttonsBottom = rect.y + 396;
       const spaceBelow = (rect.y + rect.height) - buttonsBottom;
-      const gap = Math.min(56, spaceBelow * 0.32);   // > the ~12px inter-button gaps
+      const gap = Math.min(56, spaceBelow * 0.32);
       const regionTop = buttonsBottom + gap;
       const regionBottom = rect.y + rect.height - 8;
       const availH = regionBottom - regionTop;
-      const boxW = Math.max(0, rect.width * 1.4);      // Allow it to be significantly wider than the buttons
+      const boxW = Math.max(0, rect.width * 1.4);
       if (availH > 24 && boxW > 24) {
         const logo = new Sprite(logoTex);
         logo.anchor.set(0.5, 0.5);
-
-        // Fill the gap as fully as possible. The old `availH * 1.2` fudge was
-        // compensating for dead transparent margin in the logo file; the art is
-        // tightly cropped now, so overshooting here would genuinely overflow.
-        // 0.97 leaves headroom for the 3% breathing pulse below.
         const baseScale = Math.min(boxW / logoTex.width, availH / logoTex.height) * 0.97;
         logo.scale.set(baseScale);
         logo.position.set(center, (regionTop + regionBottom) / 2);
-        
-        // Add a drop shadow to separate it clearly from the background
         logo.filters = [new DropShadowFilter({ color: 0x000000, alpha: 0.9, blur: 8, offset: { x: 0, y: 5 } })];
-
-        // Subtle breathing animation to draw the eye
         this.addAmbient((_dt, elapsed) => {
           logo.scale.set(baseScale * (1 + 0.03 * Math.sin(elapsed * 2)));
         });
-
         this.addChild(logo);
       }
     }
@@ -351,69 +336,102 @@ export class HudView extends Container {
 
   private panelButton(x: number, y: number, width: number, height: number, kicker: string, title: string, value: string, action: string): void {
     const panel = new Container();
+    const glowColor = 0xe30000;
 
-    const glowColor = 0xe30000; // Red theme color (#E30000)
-
-    // Outer neon glow
     const glow = new Graphics();
-    glow.roundRect(-4, -4, width + 8, height + 8, 10)
-      .fill({ color: glowColor, alpha: 0.16 });
+    glow.roundRect(-4, -4, width + 8, height + 8, 10).fill({ color: glowColor, alpha: 0.16 });
     glow.alpha = 0.8;
     panel.addChild(glow);
 
-    // Dark body (with a tiny bit bolder strokes for extra depth/weight)
     const bg = new Graphics();
     bg.roundRect(0, 0, width, height, 8).fill({ color: 0x000000, alpha: 0.5 });
     bg.roundRect(0, 0, width, height, 8).stroke({ color: glowColor, width: 3.5, alpha: 0.85 });
     panel.addChild(bg);
 
-    // Inner width available for text (account for the rounded body padding)
-    const textMaxWidth = width - 16;
+    const textMaxWidth = width - 12;
 
-    // Kicker text
-    const kickerSize = Math.min(13, Math.max(10, width / 12));
-    const kickerColor = 0xffd1d1; // Soft light red
-    const kickerText = makeText(kicker, kickerSize, kickerColor, width / 2, 10, "center");
-    this.fitText(kickerText, textMaxWidth);
-    panel.addChild(kickerText);
+    if (height < 60) {
+      const kickerSize = Math.min(10, Math.max(8, width / 10));
+      const kickerText = makeText(kicker, kickerSize, 0xffd1d1, width / 2, 3, "center");
+      this.fitText(kickerText, textMaxWidth);
+      panel.addChild(kickerText);
 
-    // Title — bold Impact
-    const tSize = Math.min(22, Math.max(13, width / 8));
-    const titleText = new Text({
-      text: title,
-      style: new TextStyle({
-        fill: 0xffffff,
-        fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
-        fontSize: tSize,
-        fontWeight: "900",
-        letterSpacing: 1,
-        align: "center",
-        dropShadow: { color: 0x000000, alpha: 0.6, blur: 4, distance: 0 }
-      })
-    });
-    titleText.anchor.set(0.5, 0);
-    titleText.position.set(width / 2, height * 0.34);
-    this.fitText(titleText, textMaxWidth);
-    panel.addChild(titleText);
+      const tSize = Math.min(13, Math.max(10, width / 7));
+      const titleText = new Text({
+        text: title,
+        style: new TextStyle({
+          fill: 0xffffff,
+          fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
+          fontSize: tSize,
+          fontWeight: "900",
+          letterSpacing: 0.5,
+          align: "center",
+          dropShadow: { color: 0x000000, alpha: 0.6, blur: 3, distance: 0 }
+        })
+      });
+      titleText.anchor.set(0.5, 0);
+      titleText.position.set(width / 2, 15);
+      this.fitText(titleText, textMaxWidth);
+      panel.addChild(titleText);
 
-    // Value — gold or active red with drop shadow
-    const vSize = Math.min(26, Math.max(16, width / 6));
-    const valText = new Text({
-      text: value,
-      style: new TextStyle({
-        fill: action === "ante" && this.runtime.isAnteEnabled() ? 0xff3333 : 0xffdf65,
-        fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
-        fontSize: vSize,
-        fontWeight: "900",
-        letterSpacing: 1,
-        align: "center",
-        dropShadow: { color: action === "super_getaway" ? 0xff6a00 : 0x000000, alpha: 0.5, blur: 6, distance: 0 }
-      })
-    });
-    valText.anchor.set(0.5, 0);
-    valText.position.set(width / 2, height * 0.65);
-    this.fitText(valText, textMaxWidth);
-    panel.addChild(valText);
+      const vSize = Math.min(14, Math.max(11, width / 6));
+      const valText = new Text({
+        text: value,
+        style: new TextStyle({
+          fill: action === "ante" && this.runtime.isAnteEnabled() ? 0xff3333 : 0xffdf65,
+          fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
+          fontSize: vSize,
+          fontWeight: "900",
+          letterSpacing: 0.5,
+          align: "center"
+        })
+      });
+      valText.anchor.set(0.5, 0);
+      valText.position.set(width / 2, 29);
+      this.fitText(valText, textMaxWidth);
+      panel.addChild(valText);
+    } else {
+      const kickerSize = Math.min(13, Math.max(10, width / 12));
+      const kickerText = makeText(kicker, kickerSize, 0xffd1d1, width / 2, 10, "center");
+      this.fitText(kickerText, textMaxWidth);
+      panel.addChild(kickerText);
+
+      const tSize = Math.min(22, Math.max(13, width / 8));
+      const titleText = new Text({
+        text: title,
+        style: new TextStyle({
+          fill: 0xffffff,
+          fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
+          fontSize: tSize,
+          fontWeight: "900",
+          letterSpacing: 1,
+          align: "center",
+          dropShadow: { color: 0x000000, alpha: 0.6, blur: 4, distance: 0 }
+        })
+      });
+      titleText.anchor.set(0.5, 0);
+      titleText.position.set(width / 2, height * 0.34);
+      this.fitText(titleText, textMaxWidth);
+      panel.addChild(titleText);
+
+      const vSize = Math.min(26, Math.max(16, width / 6));
+      const valText = new Text({
+        text: value,
+        style: new TextStyle({
+          fill: action === "ante" && this.runtime.isAnteEnabled() ? 0xff3333 : 0xffdf65,
+          fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
+          fontSize: vSize,
+          fontWeight: "900",
+          letterSpacing: 1,
+          align: "center",
+          dropShadow: { color: action === "super_getaway" ? 0xff6a00 : 0x000000, alpha: 0.5, blur: 6, distance: 0 }
+        })
+      });
+      valText.anchor.set(0.5, 0);
+      valText.position.set(width / 2, height * 0.65);
+      this.fitText(valText, textMaxWidth);
+      panel.addChild(valText);
+    }
 
     panel.position.set(x, y);
     panel.eventMode = "static";
@@ -424,14 +442,11 @@ export class HudView extends Container {
        panel.alpha = 0.5;
     }
 
-    // Breathing glow animation
     this.addAmbient((_dt, elapsed) => {
       const breath = 0.6 + Math.sin(elapsed * 2.2 + (action === "super_getaway" ? 1 : action === "ante" ? 2 : 0)) * 0.4;
       glow.alpha = 0.08 + breath * 0.14;
     });
 
-    // Scale visual children (glow + bg), not the panel container itself.
-    // This keeps the hit area stable so pointerup always routes back to `panel`.
     const scaleTarget = (s: number) => { glow.scale.set(s); bg.scale.set(s); };
 
     panel.on("pointerover", () => {
@@ -458,8 +473,6 @@ export class HudView extends Container {
 
   private drawBoardFrame(rect: Rect): void {
     const frame = new Graphics();
-    // Fully transparent interior — background shows through
-    // Outer neon edge border only
     frame.roundRect(rect.x - 2, rect.y - 2, rect.width + 4, rect.height + 4, 12)
       .stroke({ color: 0x9ae64e, width: 2, alpha: 0.45 });
     frame.roundRect(rect.x, rect.y, rect.width, rect.height, 10)
@@ -470,24 +483,117 @@ export class HudView extends Container {
   private drawControls(rect: Rect, snapshot: PlaybackSnapshot): void {
     // Bar background
     const bar = new Graphics();
-    bar.rect(rect.x, rect.y, rect.width, rect.height).fill({ color: 0x000000, alpha: 0.5 });
+    bar.rect(rect.x, rect.y, rect.width, rect.height).fill({ color: 0x000000, alpha: 0.65 });
+    bar.rect(rect.x, rect.y, rect.width, 1).fill({ color: 0xffffff, alpha: 0.15 });
     this.addChild(bar);
-
-    // Small utility buttons
-    this.smallButton(rect.x + 18, rect.y + rect.height / 2 - 20, 40, "☰", "menu");
-    this.smallButton(rect.x + 66, rect.y + rect.height / 2 - 20, 40, this.runtime.isMuted() ? "🔇" : "📻", "mute");
-    this.smallButton(rect.x + 114, rect.y + rect.height / 2 - 20, 40, "i", "info");
 
     const credit = this.runtime.getCredit();
     const betLevel = this.runtime.getBetLevel();
     const currency = this.runtime.getCurrency();
-    // Effective bet uses the ante cost multiplier straight from the RGS config.
     const anteMult = this.runtime.isAnteEnabled() ? this.costX("ante") : 1;
     const effectiveBet = betLevel * anteMult;
-
     const isReplay = this.runtime.isReplayActive && this.runtime.isReplayActive();
 
-    // Credit display (hidden entirely in replay mode)
+    const isPortrait = rect.height > 110;
+
+    if (isPortrait) {
+      // ── PORTRAIT MODE: Prominent Header & Level-Aligned Controls ───────
+
+      const cx = rect.x + rect.width / 2;
+
+      // 1) Prominent Centered Header (Bigger 22px Font)
+      this.statusText = new Text({
+        text: "",
+        style: new TextStyle({
+          fill: 0xffffff,
+          fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
+          fontSize: 22,
+          fontWeight: "900",
+          letterSpacing: 2,
+          align: "center",
+          dropShadow: { color: 0x000000, alpha: 0.8, blur: 6, distance: 0 }
+        })
+      });
+      this.statusText.anchor.set(0.5, 0);
+      this.statusText.position.set(cx, rect.y + 10);
+      this.addChild(this.statusText);
+      this.winText = this.statusText;
+
+      // 2) Single Main Horizontal Level (Level Y)
+      const levelY = rect.y + 48;
+
+      // Left: Stacked Balances (Credit & Bet)
+      this.creditText = new Text({
+        text: isReplay ? "" : `CREDIT ${this.fmtMoney(credit)} ${currency}`,
+        style: new TextStyle({
+          fill: 0xffffff,
+          fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
+          fontSize: 13,
+          fontWeight: "900",
+          letterSpacing: 0.5
+        })
+      });
+      this.creditText.anchor.set(0, 0);
+      this.creditText.position.set(rect.x + 14, levelY + 12);
+      this.addChild(this.creditText);
+
+      this.betText = new Text({
+        text: `${this.t().betLabel} ${this.fmtMoney(effectiveBet)} ${currency}`,
+        style: new TextStyle({
+          fill: 0xffdf65,
+          fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
+          fontSize: 13,
+          fontWeight: "900",
+          letterSpacing: 0.5,
+          dropShadow: { color: 0xff6a00, alpha: 0.3, blur: 4, distance: 0 }
+        })
+      });
+      this.betText.anchor.set(0, 0);
+      this.betText.position.set(rect.x + 14, levelY + 34);
+      this.addChild(this.betText);
+
+      // Center: Spin Button & Minus / Plus Controls
+      this.betButton(cx - 96, levelY + 22, 38, "−", "minus");
+      this.spinButton(cx - 44, levelY); // 88px diameter spin button
+      this.betButton(cx + 58, levelY + 22, 38, "+", "plus");
+
+      // Right: Utility Buttons (Menu, Radio, Info)
+      const btnSize = 34;
+      const rightX = rect.x + rect.width;
+      this.smallButton(rightX - 120, levelY + 24, btnSize, "☰", "menu");
+      this.smallButton(rightX - 78, levelY + 24, btnSize, this.runtime.isMuted() ? "🔇" : "📻", "mute");
+      this.smallButton(rightX - 36, levelY + 24, btnSize, "i", "info");
+
+      const initBet = snapshot.betAmount || betLevel;
+      const initWin = snapshot.roundWin > 0 ? snapshot.roundWin * initBet : 0;
+      if (snapshot.state === "idle") {
+        if (initWin > 0) {
+          this.statusText.text = `WIN ${this.fmtWinMoney(initWin)} ${currency}`;
+          this.statusText.style.fill = 0xffdf65;
+        } else {
+          this.statusText.text = this.currentIdleMessage;
+          this.statusText.style.fill = 0xffffff;
+        }
+      } else {
+        if (initWin > 0) {
+          this.statusText.text = `WIN ${this.fmtWinMoney(initWin)} ${currency}`;
+          this.statusText.style.fill = 0xffdf65;
+        } else {
+          this.statusText.text = this.getStatusMessage(snapshot.state);
+          this.statusText.style.fill = 0xffffff;
+        }
+      }
+      this.displayedWin = initWin;
+      this.targetWin = initWin;
+      this.cancelWinAnim();
+      return;
+    }
+
+    // ── LANDSCAPE MODE: Standard Wide Bar ──────────────────────────────
+    this.smallButton(rect.x + 18, rect.y + rect.height / 2 - 20, 40, "☰", "menu");
+    this.smallButton(rect.x + 66, rect.y + rect.height / 2 - 20, 40, this.runtime.isMuted() ? "🔇" : "📻", "mute");
+    this.smallButton(rect.x + 114, rect.y + rect.height / 2 - 20, 40, "i", "info");
+
     this.creditText = new Text({
       text: isReplay ? "" : `Credit ${this.fmtMoney(credit)} ${currency}`,
       style: new TextStyle({
@@ -502,7 +608,6 @@ export class HudView extends Container {
     this.creditText.position.set(rect.x + 180, rect.y + 16);
     this.addChild(this.creditText);
 
-    // Bet display ("Play" on social casinos)
     this.betText = new Text({
       text: `${this.t().betLabel} ${this.fmtMoney(effectiveBet)} ${currency}`,
       style: new TextStyle({
@@ -518,7 +623,6 @@ export class HudView extends Container {
     this.betText.position.set(rect.x + 180, rect.y + 44);
     this.addChild(this.betText);
 
-    // ── Centre column: single large text field centered in the panel ──
     const cx = rect.x + rect.width / 2;
     const cy = rect.y + rect.height / 2;
 
@@ -538,7 +642,6 @@ export class HudView extends Container {
     this.statusText.position.set(cx, cy);
     this.addChild(this.statusText);
 
-    // Keep winText as a reference pointing to statusText for clean backwards compatibility!
     this.winText = this.statusText;
 
     const initBet = snapshot.betAmount || betLevel;
@@ -547,10 +650,10 @@ export class HudView extends Container {
     if (snapshot.state === "idle") {
       if (initWin > 0) {
         this.statusText.text = `WIN ${this.fmtWinMoney(initWin)} ${currency}`;
-        this.statusText.style.fill = 0xffdf65; // Gold
+        this.statusText.style.fill = 0xffdf65;
       } else {
         this.statusText.text = this.currentIdleMessage;
-        this.statusText.style.fill = 0xffffff; // White
+        this.statusText.style.fill = 0xffffff;
       }
     } else {
       if (initWin > 0) {
@@ -566,7 +669,6 @@ export class HudView extends Container {
     this.targetWin = initWin;
     this.cancelWinAnim();
 
-    // Right side: bet controls + spin
     const right = rect.x + rect.width - 220;
     this.betButton(right, rect.y + rect.height / 2 - 20, 42, "−", "minus");
     this.spinButton(right + 64, rect.y + rect.height / 2 - 44);
@@ -585,8 +687,6 @@ export class HudView extends Container {
         this.currentTumbleMessage = TUMBLE_MESSAGES[Math.floor(Math.random() * TUMBLE_MESSAGES.length)]!;
       }
       if (state === "idle") {
-        // 70% chance of the standard prompt, 30% chance of a random tip.
-        // The prompt is social-aware ("PLACE YOUR BET" → "PRESS SPIN TO PLAY").
         if (Math.random() < 0.7) {
           this.currentIdleMessage = this.t().idlePrompt;
         } else {
@@ -630,8 +730,6 @@ export class HudView extends Container {
   }
 
   private drawArt(rect: Rect, _snapshot: PlaybackSnapshot): void {
-    // Landscape: the 5 wanted stars sit in a strip at the TOP of the panel, ABOVE
-    // the black character silhouette ("shadow") that fills the rest below.
     const starR = Math.min(22, rect.width / 11);
     const labelSize = Math.min(13, rect.width * 0.04);
     const starsH = labelSize + starR * 2 + 16;
@@ -639,11 +737,6 @@ export class HudView extends Container {
     this.drawCharacter(rect, _snapshot.collectionCount);
   }
 
-  /**
-   * Animate a single star filling in — call AFTER draw() so the static star is
-   * already rendered; this overlay pops on top then fades, directing the player's
-   * eye to the newly-earned heat star.
-   */
   async animateStarFill(starIndex: number): Promise<void> {
     const rect = this.starDrawRect;
     if (!rect || starIndex < 0 || starIndex >= 5) return;
@@ -656,7 +749,6 @@ export class HudView extends Container {
     const starCY = rect.y + rect.height / 2 + labelSize * 0.5 + 2;
     const sx = startX + starIndex * (starR * 2 + gap);
 
-    // Overlay star — slight pop in and flash white (GTA style)
     const starGfx = new Graphics();
     const pts = this.starPoints(0, 0, starR, starR * 0.42);
     starGfx.poly(pts).fill(0xffffff);
@@ -665,7 +757,6 @@ export class HudView extends Container {
     starGfx.alpha = 0;
     this.underParticlesContainer.addChild(starGfx);
 
-    // Fast fade in with slight bump, then holds
     await tween(150, (p) => {
       starGfx.alpha = p;
       starGfx.scale.set(1.0 + Math.sin(p * Math.PI) * 0.3);
@@ -673,38 +764,27 @@ export class HudView extends Container {
 
     starGfx.scale.set(1);
 
-    // Hold for a moment, then fade away (revealing the static filled star underneath)
     await wait(100);
     await tween(150, (p) => { starGfx.alpha = 1 - p; }, linear);
     starGfx.destroy();
   }
 
-  /**
-   * Draw the 5 GTA-style wanted-level stars inside `rect`.
-   * Works for both the landscape art panel (full height) and the portrait
-   * starsBar strip (narrow strip above the board).
-   */
   private drawWantedStars(rect: Rect): void {
     this.starDrawRect = rect;
-    const starR = Math.min(22, rect.width / 11); // outer radius
+    const starR = Math.min(22, rect.width / 11);
     this.starRadius = starR;
-    const starIR = starR * 0.42;                 // inner radius — sharper GTA points
+    const starIR = starR * 0.42;
     const gap = starR * 0.55;
     const totalW = starR * 2 * 5 + gap * 4;
     const startX = rect.x + (rect.width - totalW) / 2 + starR;
-    // Centre the stars vertically in the rect, leaving a bit of room for the label above.
     const labelSize = Math.min(13, rect.width * 0.04);
     const starCY = rect.y + rect.height / 2 + labelSize * 0.5 + 2;
 
     const meter = Math.max(0, Math.min(5, this.runtime.getWantedLevel()));
     const filledStars: Graphics[] = [];
-    // Collection head-start: the first `headStart` stars are pre-lit (gold) as
-    // the active Power-Level advantage. `activeTier` stars exist but show dimmed
-    // when the current bet is above that tier's average-bet lock (advantage off).
     const headStart = Math.max(0, Math.min(5, this.runtime.getHeadStartStars?.() ?? 0));
     const activeTier = Math.max(0, Math.min(5, this.runtime.getActiveTier?.() ?? 0));
 
-    // "WANTED LEVEL" label centred above the star row
     this.underParticlesContainer.addChild(makeText(
       "WANTED LEVEL",
       labelSize,
@@ -723,17 +803,13 @@ export class HudView extends Container {
       base.poly(pts).stroke({ color: 0x4a5570, width: 2.5, alpha: 0.6 });
       this.underParticlesContainer.addChild(base);
 
-      // The first `headStart` stars are the pre-lit gold advantage; the live heat
-      // climb fills the stars AFTER them, so head-start + climb tops out at 5★
-      // exactly when the Getaway triggers on a tier book.
       if (i < headStart) {
         const hs = new Graphics();
         hs.poly(pts).fill({ color: 0xffcf40, alpha: 0.9 });
         hs.poly(pts).stroke({ color: 0xffe680, width: 1.5, alpha: 0.95 });
         this.underParticlesContainer.addChild(hs);
-        continue; // a head-start star carries no live (white) fill
+        continue;
       }
-      // Tier unlocked but dimmed (bet above the average-bet lock → advantage off).
       if (i < activeTier) {
         const dim = new Graphics();
         dim.poly(pts).fill({ color: 0xffcf40, alpha: 0.12 });
@@ -741,7 +817,6 @@ export class HudView extends Container {
         this.underParticlesContainer.addChild(dim);
       }
 
-      // Quantize to 0, 0.5, or 1 — never three-quarters or any other fraction.
       const rawFill = Math.max(0, Math.min(1, meter - (i - headStart)));
       const fill = rawFill < 0.25 ? 0 : rawFill < 0.75 ? 0.5 : 1;
 
@@ -751,8 +826,6 @@ export class HudView extends Container {
         filled.poly(pts).stroke({ color: 0xffffff, width: 1.5, alpha: 0.75 });
         this.underParticlesContainer.addChild(filled);
         if (fill < 1) {
-          // Reveal the leftmost `fill` fraction of the star horizontally (left-to-right fill).
-          // Star bounding box: x ∈ [sx - starR, sx + starR], y ∈ [starCY - starR, starCY + starR]
           const filledW = 2 * starR * fill;
           const mask = new Graphics();
           mask.rect(sx - starR, starCY - starR, filledW, starR * 2).fill(0xffffff);
@@ -762,7 +835,6 @@ export class HudView extends Container {
         filledStars.push(filled);
       }
     }
-
 
     if (filledStars.length > 0) {
       const near = meter / 5;
@@ -775,11 +847,9 @@ export class HudView extends Container {
   }
 
   private drawCharacter(rect: Rect, _count: number): void {
-    // Driven by the PERSISTENT gallery (not the old wrap-at-8 counter).
     const prog = this.runtime.getGalleryProgress();
-
     const silTex = getExtraTexture(`${prog.artPrefix}_silhouette`);
-    if (!silTex) return; // no art for this girl yet (girls 2/3) — see card options
+    if (!silTex) return;
 
     const assembly = new Container();
     const silSprite = new Sprite(silTex);
@@ -801,7 +871,6 @@ export class HudView extends Container {
       }
     }
 
-    // When complete, draw the full image instead of separate layers (no seams).
     if (prog.pieces >= prog.totalPieces) {
       const fullTex = getExtraTexture(`${prog.artPrefix}_full`);
       if (fullTex) {
@@ -820,7 +889,6 @@ export class HudView extends Container {
     this.underParticlesContainer.addChild(assembly);
   }
 
-  /** Generate points for a 5-pointed star polygon */
   private starPoints(cx: number, cy: number, outerR: number, innerR: number): number[] {
     const pts: number[] = [];
     for (let i = 0; i < 10; i++) {
@@ -831,7 +899,6 @@ export class HudView extends Container {
     return pts;
   }
 
-  /** Simple linear color interpolation */
   private lerpColor(a: number, b: number, t: number): number {
     const ar = (a >> 16) & 0xff, ag = (a >> 8) & 0xff, ab = a & 0xff;
     const br = (b >> 16) & 0xff, bg = (b >> 8) & 0xff, bb = b & 0xff;
@@ -876,7 +943,6 @@ export class HudView extends Container {
     button.position.set(x, y);
     button.eventMode = "static";
 
-    // Bet sizing is locked while a round runs, during autoplay and in replay.
     const disabled = this.controlsLocked();
     button.cursor = disabled ? "default" : "pointer";
     if (disabled) button.alpha = 0.5;
@@ -894,31 +960,22 @@ export class HudView extends Container {
     const button = new Container();
     const R = 44;
 
-    // `visual` is the element that scales on press.
-    // Keeping it separate from `button` (the hit-area container) means the
-    // interactive bounds never change mid-press, so Pixi always routes pointerup
-    // back to `button` even if the pointer drifted slightly during the press.
     const visual = new Container();
 
-    // Halo glow behind
     const halo = new Graphics();
     halo.circle(R, R, R + 10).fill({ color: 0x9ae64e, alpha: isPlaying ? 0 : 0.08 });
     visual.addChild(halo);
 
-    // Outer ring
     const outer = new Graphics();
     outer.circle(R, R, R).fill({ color: 0x000000, alpha: 0.5 });
     outer.circle(R, R, R).stroke({ color: isPlaying ? 0x5d7d49 : 0x9ae64e, width: 4 });
     visual.addChild(outer);
 
-    // Inner disc
     const inner = new Graphics();
     inner.circle(R, R, R - 8).fill({ color: 0x000000, alpha: 0.5 });
     inner.circle(R, R, R - 8).stroke({ color: isPlaying ? 0x4d6639 : 0x9ae64e, width: 1.5, alpha: 0.4 });
     visual.addChild(inner);
 
-    // SPIN text — Impact. During autoplay the button becomes the STOP control
-    // and shows the number of spins left (∞ for endless).
     const spinLabel = isAuto
       ? `STOP\n${Number.isFinite(autoRemaining) ? autoRemaining : "∞"}`
       : "SPIN";
@@ -927,9 +984,10 @@ export class HudView extends Container {
       style: new TextStyle({
         fill: isAuto ? 0xff7676 : isPlaying ? 0x5a6a7c : 0xffffff,
         fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
-        fontSize: isAuto ? 18 : 24,
+        fontSize: isAuto ? 18 : 22,
         fontWeight: "900",
-        letterSpacing: 3,
+        letterSpacing: 1,
+        padding: 12,
         align: "center",
         dropShadow: isPlaying && !isAuto ? undefined : { color: isAuto ? 0xff5555 : 0x9ae64e, alpha: 0.4, blur: 6, distance: 0 }
       })
@@ -942,8 +1000,6 @@ export class HudView extends Container {
     button.position.set(x, y);
     button.eventMode = "static";
 
-    // During autoplay the button stays ENABLED (it stops the run); it is
-    // disabled mid-round otherwise, and always in replay mode.
     const disabled = (isPlaying && !isAuto) || (this.runtime.isReplayActive && this.runtime.isReplayActive());
     button.cursor = disabled ? "default" : "pointer";
     if (this.runtime.isReplayActive && this.runtime.isReplayActive()) {
@@ -967,8 +1023,6 @@ export class HudView extends Container {
       button.on("pointerdown", () => {
         visual.scale.set(0.94);
       });
-      // Use pointerup (not pointertap) so the action fires reliably even when
-      // the pointer drifted a few pixels between down and up.
       button.on("pointerup", () => {
         visual.scale.set(1);
         void this.runtime.onAction("spin");

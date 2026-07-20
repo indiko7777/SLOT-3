@@ -2,25 +2,29 @@ import type { LayoutMetrics, Rect } from "./types";
 
 export function computeLayout(width: number, height: number): LayoutMetrics {
   const portrait = width < 980 || height > width;
-  const bottomHeight = portrait ? 86 : 96;
-  const bottomBar: Rect = { x: 0, y: height - bottomHeight, width, height: bottomHeight };
 
   if (portrait) {
     // Reserve a strip above the board for the 5 wanted-level stars.
-    // starR ≈ min(18, width/12) → row height ≈ starR*2 + label(14) + padding
-    const starR = Math.min(18, width / 12);
-    const starsH = Math.ceil(starR * 2 + 14 + 12); // stars diameter + label + padding
+    const starR = Math.min(16, width / 14);
+    const starsH = Math.ceil(starR * 2 + 14 + 8);
     const starsBar: Rect = { x: 0, y: 4, width, height: starsH };
 
-    // Push the machine down by starsH + 4px gap (replacing the old fixed y:48).
+    const bottomHeight = 136; // 2-tier stacked bottom deck
+    const bottomBar: Rect = { x: 0, y: height - bottomHeight, width, height: bottomHeight };
+
+    const buyPanelH = 46;
+    const buyPanelY = height - bottomHeight - buyPanelH - 8;
+    const leftPanel: Rect = { x: 8, y: buyPanelY, width: width - 16, height: buyPanelH };
+
     const machineY = starsBar.y + starsH + 4;
-    const machine: Rect = { x: 8, y: machineY, width: width - 16, height: height - bottomHeight - machineY - 130 };
+    const machineH = Math.max(180, buyPanelY - machineY - 8);
+    const machine: Rect = { x: 8, y: machineY, width: width - 16, height: machineH };
     const boardFrame: Rect = { x: machine.x, y: machine.y, width: machine.width, height: machine.height };
     const board: Rect = {
-      x: boardFrame.x + 12,
-      y: boardFrame.y + 16,
-      width: boardFrame.width - 24,
-      height: boardFrame.height - 32
+      x: boardFrame.x + 10,
+      y: boardFrame.y + 12,
+      width: boardFrame.width - 20,
+      height: boardFrame.height - 24
     };
 
     return {
@@ -28,7 +32,7 @@ export function computeLayout(width: number, height: number): LayoutMetrics {
       height,
       portrait,
       bottomBar,
-      leftPanel: { x: 8, y: height - bottomHeight - 122, width: width - 16, height: 110 },
+      leftPanel,
       artPanel: null,
       starsBar,
       machine,
@@ -36,6 +40,9 @@ export function computeLayout(width: number, height: number): LayoutMetrics {
       board
     };
   }
+
+  const bottomHeight = 96;
+  const bottomBar: Rect = { x: 0, y: height - bottomHeight, width, height: bottomHeight };
 
   const leftWidth = Math.max(164, width * 0.15);
   const rightWidth = Math.max(246, width * 0.23);

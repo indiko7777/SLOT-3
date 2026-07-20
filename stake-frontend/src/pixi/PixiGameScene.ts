@@ -396,6 +396,18 @@ export class PixiGameScene {
           start: () => this.runtime.winCounterStart?.(),
           tick: (level) => this.runtime.playWinTick?.(level),
           end: () => this.runtime.winCounterEnd?.(),
+          // Same tier ladder the base game's cinematic banner uses, so a
+          // Getaway total lands with the sting the player already associates
+          // with a win that size.
+          impact: () => {
+            const x = event.totalPayout;
+            const key = x >= 5000 ? "win_max"
+                      : x >= 100 ? "win_mega_grand"
+                      : x >= 20 ? "win_big_lowest"
+                      : "good_win_combo";
+            this.runtime.playAudio?.(key);
+            this.runtime.bannerImpact?.(x >= 500 ? "grand" : x >= 100 ? "high" : x >= 20 ? "mid" : "low");
+          },
         });
         return;
       case "round_end": {

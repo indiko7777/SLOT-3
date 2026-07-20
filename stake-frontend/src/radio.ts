@@ -12,12 +12,12 @@ export interface RadioStation {
 
 /** Wheel order is clockwise from the top. */
 export const RADIO_STATIONS: RadioStation[] = [
-  { id: "heat",    name: "LOS SANTOS HEAT", tag: "Lo-fi Miami groove", icon: "🌴", color: "#ff5ea8" },
-  { id: "vault",   name: "VAULT FM",        tag: "Heist tension",      icon: "💰", color: "#ffd95c" },
-  { id: "neon",    name: "NEON NIGHTS",     tag: "Synthwave",          icon: "🌆", color: "#36d7ff" },
-  { id: "vice",    name: "VICE 95.6",       tag: "Retro synth-pop",    icon: "📼", color: "#b56bff" },
-  { id: "scanner", name: "LSPD SCANNER",    tag: "Police chatter",     icon: "🚓", color: "#5cff9d" },
-  { id: "off",     name: "RADIO OFF",       tag: "Silence the city",   icon: "✕",  color: "#ff5b5b" },
+  { id: "heat",      name: "LOS SANTOS HEAT", tag: "Lo-fi Miami groove", icon: "🌴", color: "#ff5ea8" },
+  { id: "vault",     name: "VAULT FM",        tag: "Heist tension",      icon: "💰", color: "#ffd95c" },
+  { id: "neon",      name: "NEON NIGHTS",     tag: "Synthwave",          icon: "🌆", color: "#36d7ff" },
+  { id: "vice",      name: "VICE 95.6",       tag: "Retro synth-pop",    icon: "📼", color: "#b56bff" },
+  { id: "open_live", name: "OPEN LIVE",       tag: "Late-night podcast", icon: "🎙️", color: "#5cff9d" },
+  { id: "off",       name: "RADIO OFF",       tag: "Silence the city",   icon: "✕",  color: "#ff5b5b" },
 ];
 
 const SIZE = 500;        // Wheel container size

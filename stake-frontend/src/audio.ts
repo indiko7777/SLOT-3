@@ -31,7 +31,7 @@ type TrackName =
   | "getaway_end" | "money_counter_end" | "money_counter_loop" | "reel_loop"
   | "win_mega_grand" | "win_max" | "getaway_explosive" | "getaway_intro"
   | "win_big_lowest" | "sticky_gold_bar" | "typewriter"
-  | "sunset_synths" | "turbo_night" | "vice_nights";
+  | "sunset_synths" | "turbo_night" | "vice_nights" | "open_lines";
 
 const AUDIO_BASE = "assets/audio/";
 
@@ -39,6 +39,7 @@ const TRACK_PATHS: Partial<Record<TrackName, string>> = {
   bg_base: "assets/audio/turbo_night.mp3",
   sunset_synths: "assets/audio/sunset_synths.mp3",
   vice_nights: "assets/audio/vice_nights.mp3",
+  open_lines: "assets/Open Lines 97.mp3",
   new_reel_stop: "assets/new sound/new reel stop sound.mp3",
   wild_sound: "assets/new sound/wild sound.mp3",
   good_win_combo: "assets/new sound/good winning combination soun.mp3",
@@ -84,7 +85,7 @@ const ALL_TRACKS: TrackName[] = [
   "getaway_end", "money_counter_end", "money_counter_loop", "reel_loop",
   "win_mega_grand", "win_max", "getaway_explosive", "getaway_intro",
   "win_big_lowest", "sticky_gold_bar", "typewriter",
-  "sunset_synths", "turbo_night", "vice_nights"
+  "sunset_synths", "turbo_night", "vice_nights", "open_lines"
 ];
 
 /** Base volume per track (0–1+) */
@@ -145,6 +146,7 @@ const VOLUME: Record<TrackName, number> = {
   sunset_synths:     0.30,
   turbo_night:       0.30,
   vice_nights:       0.30,
+  open_lines:        0.55,
 };
 
 /** Fade duration in seconds */
@@ -160,12 +162,13 @@ type StationAudio =
   | { kind: "scanner" };
 
 export const STATION_AUDIO: Record<string, StationAudio> = {
-  off:     { kind: "off" },
-  heat:    { kind: "track", track: "bg_base" },
-  vault:   { kind: "track", track: "bg_bonus" },
-  neon:    { kind: "track", track: "sunset_synths" },
-  vice:    { kind: "track", track: "vice_nights" },
-  scanner: { kind: "scanner" },
+  off:       { kind: "off" },
+  heat:      { kind: "track", track: "bg_base" },
+  vault:     { kind: "track", track: "bg_bonus" },
+  neon:      { kind: "track", track: "sunset_synths" },
+  vice:      { kind: "track", track: "vice_nights" },
+  open_live: { kind: "track", track: "open_lines" },
+  scanner:   { kind: "track", track: "open_lines" },
 };
 
 /* ── Active loop handle ─────────────────────────── */
@@ -227,7 +230,8 @@ export class EventAudioBus {
     await Promise.all(
       ALL_TRACKS.map(async (t) => {
         try {
-          const path = TRACK_PATHS[t] ?? `${AUDIO_BASE}${t}.mp3`;
+          const rawPath = TRACK_PATHS[t] ?? `${AUDIO_BASE}${t}.mp3`;
+          const path = encodeURI(rawPath);
           const r = await fetch(path);
           if (!r.ok) return;
           this.rawData.set(t, await r.arrayBuffer());

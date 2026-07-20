@@ -9,6 +9,9 @@ export interface BonusCountAudio {
   start(): void;
   tick(level: "normal" | "medium" | "high"): void;
   end(): void;
+  /** Fires once the total has landed — the tier-matched win sting that gives
+   *  the count-up a payoff instead of just petering out. */
+  impact(): void;
 }
 import type { Rect } from "./types";
 import { shockwave, pulseBloom, pulseChromaticAberration } from "../vfx/Shaders";
@@ -975,6 +978,8 @@ export class BonusView extends Container {
     window.removeEventListener("pointerdown", onSkip);
     audio?.end();
     finish();
+    // The payoff: the win sting lands on the same frame as the final number.
+    audio?.impact();
     // Landing pop — the number arrives, it doesn't just stop.
     await tween(220, (p) => text.scale.set(1 + 0.14 * Math.sin(p * Math.PI)), linear);
     text.scale.set(1);
