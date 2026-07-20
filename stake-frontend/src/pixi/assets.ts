@@ -121,7 +121,6 @@ const OPTIONAL_ASSETS: Record<string, string> = {
 /** Background images — loaded separately so a missing file doesn't block the game */
 const BG_ASSETS: Record<string, string> = {
   "bg_base": "slot3_bg.webp",
-  "bg_max_heat": "chase_max_heat.webp",
   "bg_bonus": "vault_bonus.webp",
   "bg_slot3": "slot3_bg.webp",
 };
@@ -226,6 +225,6 @@ export function createSkelSymbol(id: SymbolId): SkelSymbol | null {
 export const IMAGE_DROP_IN_GUIDE = {
   basePath: "public/assets/",
   requiredSymbolFiles: Object.values(SYMBOL_ASSETS).map((skin) => skin.assetKey),
-  backgrounds: ["chase_base.webp", "chase_max_heat.webp", "vault_bonus.webp"],
+  backgrounds: ["slot3_bg.webp", "vault_bonus.webp"],
   rightPanel: ["brand/logo.webp", "characters/getaway_driver.webp", "vehicles/cyan_sports_car.webp"]
 } as const;

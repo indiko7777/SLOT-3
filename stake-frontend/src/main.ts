@@ -360,6 +360,7 @@ async function boot(): Promise<void> {
     winCounterStart: () => { if (!muted) audioBus.startWinCounter(); },
     winCounterUpdate: (p, tier) => { if (!muted) audioBus.updateWinCounter(p, tier); },
     winCounterEnd: () => audioBus.stopWinCounter(),
+    playWinTick: (level) => { if (!muted) audioBus.playWinTick(level); },
     previewRecord: PREVIEW_RECORD
   });
 

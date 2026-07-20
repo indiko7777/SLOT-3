@@ -1,7 +1,15 @@
 import { BlurFilter, Container, Graphics, Sprite, Text, TextStyle, Texture, TilingSprite } from "pixi.js";
 import { BONUS_START_RESPINS, GRID_COLUMNS, GRID_ROWS, type BonusCell, type Position } from "../domain";
 import { getExtraTexture } from "./assets";
-import { tween, wait, easeOutBack, easeOutCubic, linear, ambientTicker } from "./tween";
+import { tween, wait, easeOutBack, easeOutCubic, linear, ambientTicker, getTimeScale } from "./tween";
+
+/** Audio hooks for the Getaway result count-up, supplied by the scene so
+ *  BonusView stays free of any direct audio dependency. */
+export interface BonusCountAudio {
+  start(): void;
+  tick(level: "normal" | "medium" | "high"): void;
+  end(): void;
+}
 import type { Rect } from "./types";
 import { shockwave, pulseBloom, pulseChromaticAberration } from "../vfx/Shaders";
 
@@ -691,7 +699,7 @@ export class BonusView extends Container {
    *  A big, dramatic result card with the win amount. Manual play keeps it up
    *  until the player taps; unattended runs (autoplay/replay) auto-dismiss so
    *  the sequence can never freeze waiting for a tap that will not come. */
-  async finish(filled: boolean, totalX: number, turbo: boolean, autoDismiss = false): Promise<void> {
+  async finish(filled: boolean, totalX: number, turbo: boolean, autoDismiss = false, audio?: BonusCountAudio): Promise<void> {
     const W = this.rect.width;
     const H = this.rect.height;
 
@@ -739,7 +747,7 @@ export class BonusView extends Container {
 
     // Count the win amount up — big and central.
     const payout = card.getChildByLabel("payout") as Text | null;
-    if (payout) await this.countUp(payout, totalX, turbo);
+    if (payout) await this.countUp(payout, totalX, turbo, audio);
     this.setCollected(totalX, false);
 
     // Keep it alive: slowly rotate the rays, pulse the amount + the tap hint,
@@ -908,12 +916,67 @@ export class BonusView extends Container {
     });
   }
 
-  private async countUp(text: Text, target: number, turbo: boolean): Promise<void> {
-    await tween(turbo ? 250 : 700, (p) => {
-      text.text = this.fmtTotal(target * p);
-      text.scale.set(1 + Math.sin(p * Math.PI) * 0.12);
-    }, easeOutCubic);
-    text.text = this.fmtTotal(target);
+  /**
+   * Count the Getaway total up. Deliberately paced — the old version rushed the
+   * whole thing in a silent 700ms, which threw away the single best dopamine
+   * moment in the feature.
+   *
+   * - Length scales with the win (log, so a 5000x doesn't take a minute), so a
+   *   bigger total visibly takes longer to land.
+   * - A continuous money-counter loop underneath plus discrete ticks that climb
+   *   in pitch across three phases, so the ear tracks the number rising.
+   * - Tapping (or double-tapping) anywhere skips straight to the final amount
+   *   and resolves the audio cleanly — never leaves the loop droning.
+   */
+  private async countUp(
+    text: Text,
+    target: number,
+    turbo: boolean,
+    audio?: BonusCountAudio
+  ): Promise<void> {
+    const finish = (): void => {
+      text.text = this.fmtTotal(target);
+      text.scale.set(1);
+    };
+    if (turbo || target <= 0) {
+      finish();
+      return;
+    }
+
+    // 1.6s floor, +~700ms per 10x, capped at 5s.
+    const durMs = Math.min(5000, 1600 + Math.log10(Math.max(1, target)) * 700) / getTimeScale();
+    const TICK_MS = 85;
+
+    audio?.start();
+    let skipped = false;
+    const onSkip = (): void => { skipped = true; };
+    window.addEventListener("pointerdown", onSkip);
+
+    await new Promise<void>((resolve) => {
+      const t0 = performance.now();
+      let lastTick = 0;
+      const frame = (now: number): void => {
+        const p = skipped ? 1 : Math.min(1, (now - t0) / durMs);
+        // Slight front-load so the number moves immediately, then settles.
+        const eased = Math.pow(p, 0.88);
+        text.text = this.fmtTotal(target * eased);
+        text.scale.set(1 + Math.sin(p * Math.PI) * 0.1);
+
+        if (!skipped && now - lastTick >= TICK_MS) {
+          lastTick = now;
+          audio?.tick(p < 0.4 ? "normal" : p < 0.75 ? "medium" : "high");
+        }
+        if (p < 1) requestAnimationFrame(frame);
+        else resolve();
+      };
+      requestAnimationFrame(frame);
+    });
+
+    window.removeEventListener("pointerdown", onSkip);
+    audio?.end();
+    finish();
+    // Landing pop — the number arrives, it doesn't just stop.
+    await tween(220, (p) => text.scale.set(1 + 0.14 * Math.sin(p * Math.PI)), linear);
     text.scale.set(1);
   }
 

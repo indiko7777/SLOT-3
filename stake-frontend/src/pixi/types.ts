@@ -86,6 +86,8 @@ export interface SceneRuntime {
   winCounterStart?(): void;
   winCounterUpdate?(progress: number, tier: "none" | "big" | "mega" | "grand" | "max"): void;
   winCounterEnd?(): void;
+  /** Discrete escalating tick under a count-up (Getaway result total). */
+  playWinTick?(level: "normal" | "medium" | "high"): void;
   previewRecord: RoundRecord;
 }
 

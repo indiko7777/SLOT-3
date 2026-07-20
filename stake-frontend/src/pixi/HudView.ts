@@ -248,11 +248,14 @@ export class HudView extends Container {
   }
 
   private drawBackground(layout: LayoutMetrics, snapshot: PlaybackSnapshot): void {
-    // Try texture-based backgrounds first
+    // The base game has exactly ONE background. There used to be a third
+    // "max heat" burning-city image swapped in on `heatLevel >= 5 ||
+    // state === "big_win"` — retired art, and the condition meant every
+    // Getaway that paid 100x+ dumped the player onto it on the way back
+    // (round_end sets state "big_win"), and hitting 5 wanted stars swapped
+    // it in mid-round with no other feedback. Base art only, always.
     const isBonus = snapshot.state.startsWith("bonus");
-    const isMaxHeat = snapshot.heatLevel >= 5 || snapshot.state === "big_win";
-    const bgKey = isBonus ? "bg_bonus" : isMaxHeat ? "bg_max_heat" : "bg_base";
-    const bgTex = getExtraTexture(bgKey);
+    const bgTex = getExtraTexture(isBonus ? "bg_bonus" : "bg_base");
 
     if (bgTex) {
       const sprite = new Sprite(bgTex);
@@ -274,10 +277,6 @@ export class HudView extends Container {
       g.rect(0, 0, layout.width, layout.height).fill(0x000000);
       g.circle(layout.width * 0.78, layout.height * 0.2, Math.max(layout.width, layout.height) * 0.26).fill({ color: 0x2ea847, alpha: 0.24 });
       g.circle(layout.width * 0.26, layout.height * 0.96, Math.max(layout.width, layout.height) * 0.25).fill({ color: 0xff6129, alpha: 0.3 });
-      if (isMaxHeat) {
-        g.rect(0, 0, layout.width / 2, layout.height).fill({ color: 0xffb000, alpha: 0.14 });
-        g.rect(layout.width / 2, 0, layout.width / 2, layout.height).fill({ color: 0x7cf595, alpha: 0.14 });
-      }
       this.bgContainer.addChild(g);
     }
   }

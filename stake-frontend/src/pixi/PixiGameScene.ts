@@ -392,7 +392,11 @@ export class PixiGameScene {
         this.runtime.onBonusHeat?.(0);
         this.effects.screenShake(this.root, turbo);
         // The bonus shows its own clean, centered result card (no board-rect banner).
-        await this.bonus.finish(event.filledScreen, event.totalPayout, turbo, this.unattended());
+        await this.bonus.finish(event.filledScreen, event.totalPayout, turbo, this.unattended(), {
+          start: () => this.runtime.winCounterStart?.(),
+          tick: (level) => this.runtime.playWinTick?.(level),
+          end: () => this.runtime.winCounterEnd?.(),
+        });
         return;
       case "round_end": {
         this.hud.draw(this.layout, snapshot);
