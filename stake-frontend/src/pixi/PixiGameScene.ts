@@ -18,6 +18,16 @@ import { CardPeekView } from "./CardPeekView";
 import { GalleryView } from "./GalleryView";
 import { formatWin as formatWinClient } from "../rgs/client";
 
+/** Collection voice lines per girl, indexed by GIRLS[] id, in PLAY ORDER.
+ *  The file names are inconsistent ("milstone1", "mileston3", and girl 1's set
+ *  starting at 2), so order is defined here explicitly rather than parsed from
+ *  the names. playGirlMilestoneSound spreads these across the girl's pieces. */
+const GIRL_VOICE_LINES: string[][] = [
+  ["milestone2_girl1", "mileston3_girl1", "mileston4_girl1"],
+  ["milstone1_girl2", "milestone2_girl2", "mileston3_girl2", "mileston4_girl2"],
+  ["mileston1_girl3", "mileston2_girl3", "mileston3_girl3", "mileston4_girl3"],
+];
+
 export class PixiGameScene {
   private readonly root = new Container();
   private readonly bgLayer = new Container();
@@ -557,39 +567,28 @@ export class PixiGameScene {
   }
 
   private playGirlMilestoneSound(gain: PieceGain): void {
-    const girlNum = gain.girlId + 1; // 1, 2, 3
-    let milestone = 0;
+    // Each girl's voice lines IN ORDER. Note girl 1 only ever had three files
+    // (her set starts at "milestone2"), which is why the old fixed mapping left
+    // her silent until the 4th piece — it looked for a "milestone1" that does
+    // not exist. Ordering by file, not by name, makes that a non-issue.
+    const lines = GIRL_VOICE_LINES[gain.girlId];
+    if (!lines?.length || !this.runtime.playAudio) return;
 
+    // Spread the lines across her pieces: the FIRST line lands on the very
+    // first piece revealed, the LAST always lands on completion, the rest sit
+    // evenly between. Derived from totalPieces so girls with different piece
+    // counts (Sapphire 8, Roxy 7, Vega 8) each stay evenly paced.
+    const n = lines.length;
     if (gain.completedGirl) {
-      milestone = 4;
-    } else if (gain.pieceIndex === 2) {
-      milestone = 1;
-    } else if (gain.pieceIndex === 4) {
-      milestone = 2;
-    } else if (gain.pieceIndex === 6) {
-      milestone = 3;
+      this.runtime.playAudio(lines[n - 1]!);
+      return;
     }
-
-    if (milestone > 0) {
-      let trackName = "";
-      if (girlNum === 1) {
-        if (milestone === 2) trackName = "milestone2_girl1";
-        else if (milestone === 3) trackName = "mileston3_girl1";
-        else if (milestone === 4) trackName = "mileston4_girl1";
-      } else if (girlNum === 2) {
-        if (milestone === 1) trackName = "milstone1_girl2";
-        else if (milestone === 2) trackName = "milestone2_girl2";
-        else if (milestone === 3) trackName = "mileston3_girl2";
-        else if (milestone === 4) trackName = "mileston4_girl2";
-      } else if (girlNum === 3) {
-        if (milestone === 1) trackName = "mileston1_girl3";
-        else if (milestone === 2) trackName = "mileston2_girl3";
-        else if (milestone === 3) trackName = "mileston3_girl3";
-        else if (milestone === 4) trackName = "mileston4_girl3";
-      }
-
-      if (trackName && this.runtime.playAudio) {
-        this.runtime.playAudio(trackName);
+    const total = Math.max(2, gain.totalPieces);
+    for (let i = 0; i < n - 1; i++) {
+      const piece = i === 0 ? 1 : Math.round(1 + (i * (total - 1)) / (n - 1));
+      if (gain.pieceIndex === piece) {
+        this.runtime.playAudio(lines[i]!);
+        return;
       }
     }
   }
