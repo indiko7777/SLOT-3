@@ -9,7 +9,6 @@ const PINK   = 0xff00b8;
 const GOLD   = 0xffdf65;
 const CYAN   = 0x00ffff;
 const GREEN  = 0x4ee06a;
-const RED    = 0xff5252;
 
 const IMPACT = "Impact,'Arial Black',sans-serif";
 const FONT   = "'Archivo Narrow','Arial Narrow','Helvetica Neue',Helvetica,Arial,sans-serif";
@@ -58,7 +57,7 @@ export class GalleryView extends Container {
     this.visible = true;
     this.isVisible = true;
     this.alpha = 0;
-    void tween(250, (p) => { this.alpha = p; });
+    void tween(220, (p) => { this.alpha = p; });
   }
 
   hide(): void {
@@ -84,57 +83,45 @@ export class GalleryView extends Container {
     this.deckContainer.removeChildren();
     this.cards = [];
 
-    // ── Fullscreen Backdrop ─────────────────────────────────────────────
+    // ── Pure Fullscreen Transparent Dark Backdrop (No Outer Panel/Borders!) ──
     this.bg.clear();
-    this.bg.rect(0, 0, W, H).fill({ color: BLACK, alpha: 0.93 });
+    this.bg.rect(0, 0, W, H).fill({ color: BLACK, alpha: 0.88 });
 
-    // ── Centered Backdrop Panel ──────────────────────────────────────────
-    const pw = isP ? Math.min(W * 0.95, 440) : Math.min(W * 0.88, 860);
-    const ph = isP ? Math.min(H * 0.92, 720) : Math.min(H * 0.88, 560);
-    const px = (W - pw) / 2;
-    const py = (H - ph) / 2;
+    // ── Standard Playing Card Aspect Ratio (1 : 1.4) ──────────────────────
+    const maxW = isP ? Math.min(W * 0.82, 300) : Math.min(W * 0.38, 300);
+    const maxH = Math.min(H * 0.72, maxW * 1.4);
+    const cardW = Math.min(maxW, maxH / 1.4);
+    const cardH = cardW * 1.4;
 
-    const panelBg = new Graphics();
-    panelBg.roundRect(px, py, pw, ph, 8).fill({ color: 0x070707, alpha: 0.96 });
-    panelBg.rect(px, py, pw, 3).fill({ color: GOLD, alpha: 0.9 });
-    panelBg.roundRect(px, py, pw, ph, 8).stroke({ color: GOLD, width: 1.5, alpha: 0.35 });
-    this.ct.addChild(panelBg);
+    const deckCenterX = W / 2;
+    const deckCenterY = H / 2 - 10;
 
-    // ── Title Header ────────────────────────────────────────────────────
-    const titleH = isP ? 44 : 52;
-    const title = this.txt("BEACH GIRL DECK", isP ? 22 : 28, GOLD, IMPACT, 3);
-    title.anchor.set(0.5, 0.5);
-    title.position.set(px + pw / 2, py + titleH / 2 + 4);
-    this.ct.addChild(title);
+    // ── Floating Close Button (Top-Right ✕) ──────────────────────────────
+    const closeBtn = new Container();
+    const cSize = 40;
+    const cG = new Graphics();
+    cG.circle(0, 0, cSize / 2).fill({ color: 0x111111, alpha: 0.9 }).stroke({ color: WHITE, width: 1.5, alpha: 0.6 });
+    closeBtn.addChild(cG);
 
-    const titleLine = new Graphics();
-    titleLine.rect(px + 24, py + titleH + 2, pw - 48, 1).fill({ color: GOLD, alpha: 0.4 });
-    this.ct.addChild(titleLine);
+    const cTxt = this.txt("✕", 18, WHITE, FONT, 0);
+    cTxt.anchor.set(0.5, 0.5);
+    closeBtn.addChild(cTxt);
 
-    // Sub-title prompt
-    const subTitle = this.txt("SWIPE OR TAP TO CYCLE DECK", isP ? 10 : 12, 0x888888, FONT, 1.5);
-    subTitle.anchor.set(0.5, 0.5);
-    subTitle.position.set(px + pw / 2, py + titleH + 16);
-    this.ct.addChild(subTitle);
+    closeBtn.position.set(W - 30, 30);
+    closeBtn.eventMode = "static";
+    closeBtn.cursor = "pointer";
+    closeBtn.on("pointerover", () => { cG.tint = GOLD; cTxt.style.fill = BLACK; });
+    closeBtn.on("pointerout", () => { cG.tint = WHITE; cTxt.style.fill = WHITE; });
+    closeBtn.on("pointertap", (e) => { e.stopPropagation(); this.hide(); });
+    this.ct.addChild(closeBtn);
 
-    // ── Deck Dimensions ─────────────────────────────────────────────────
-    const footerH = isP ? 90 : 80;
-    const deckTop = py + titleH + 28;
-    const deckAvailH = ph - titleH - footerH - 40;
+    // ── Header Prompt ────────────────────────────────────────────────────
+    const headerText = this.txt("BEACH GIRL DECK", isP ? 20 : 26, WHITE, IMPACT, 3);
+    headerText.anchor.set(0.5, 0.5);
+    headerText.position.set(W / 2, deckCenterY - cardH / 2 - (isP ? 26 : 34));
+    this.ct.addChild(headerText);
 
-    let cardW: number, cardH: number;
-    if (isP) {
-      cardW = Math.min(pw - 60, 310);
-      cardH = Math.min(deckAvailH, 440);
-    } else {
-      cardW = Math.min(pw * 0.38, 320);
-      cardH = Math.min(deckAvailH, 420);
-    }
-
-    const deckCenterX = px + pw / 2;
-    const deckCenterY = deckTop + cardH / 2;
-
-    // ── Create 3 Stacked Cards ──────────────────────────────────────────
+    // ── Create 3 Stacked Cards (Exact Same Size & 1:1.4 Ratio) ────────────
     const prog = this.runtime.getGalleryProgress();
     const curGirl = prog.completedGirls;
 
@@ -142,7 +129,7 @@ export class GalleryView extends Container {
       const done = i < curGirl;
       const active = i === curGirl && !prog.mastered;
       const locked = i > curGirl || (prog.mastered && i >= 3);
-      const theme = locked ? 0x444444 : THEME[i]!;
+      const theme = locked ? 0x333333 : THEME[i]!;
 
       const card = this.buildCard(cardW, cardH, i, done, active, locked, theme, prog);
       this.cards.push(card);
@@ -152,80 +139,37 @@ export class GalleryView extends Container {
     this.deckContainer.eventMode = "static";
     this.deckContainer.cursor = "grab";
 
-    // Setup drag/swipe handlers
     this.setupSwipeHandlers(this.deckContainer);
-
     this.ct.addChild(this.deckContainer);
 
-    // Arrange initial stacked positions
+    // Initial Stack Arrangement
     this.updateStackPositions(false, deckCenterX, deckCenterY);
 
     // ── Side Navigation Chevrons ────────────────────────────────────────
-    const arrowY = deckCenterY;
-    const arrowPad = isP ? 12 : 24;
-
-    // Left Arrow
-    const btnLeft = this.buildArrow(px + arrowPad, arrowY, "◄", () => this.prevCard(deckCenterX, deckCenterY));
+    const arrowDist = cardW / 2 + (isP ? 28 : 42);
+    const btnLeft = this.buildArrow(deckCenterX - arrowDist, deckCenterY, "◄", () => this.prevCard(deckCenterX, deckCenterY));
     this.ct.addChild(btnLeft);
 
-    // Right Arrow
-    const btnRight = this.buildArrow(px + pw - arrowPad, arrowY, "►", () => this.nextCard(deckCenterX, deckCenterY));
+    const btnRight = this.buildArrow(deckCenterX + arrowDist, deckCenterY, "►", () => this.nextCard(deckCenterX, deckCenterY));
     this.ct.addChild(btnRight);
 
-    // ── Pagination Dots & Footer ────────────────────────────────────────
-    const footerY = py + ph - footerH;
+    // ── Pagination Dots & Status Hint ────────────────────────────────────
+    const paginationY = deckCenterY + cardH / 2 + 24;
+    this.renderPagination(deckCenterX, paginationY);
 
-    // Dots
-    this.renderPagination(px + pw / 2, footerY + 12);
-
-    // Mastered / Next Hint
     if (prog.mastered) {
-      const masterLabel = this.txt("★  GALLERY MASTERED  ·  VIP BADGE UNLOCKED  ★", isP ? 11 : 13, GREEN, IMPACT, 1.5);
+      const masterLabel = this.txt("★  GALLERY MASTERED  ★", isP ? 11 : 13, GREEN, IMPACT, 1.5);
       masterLabel.anchor.set(0.5, 0.5);
-      masterLabel.position.set(px + pw / 2, footerY + 34);
+      masterLabel.position.set(deckCenterX, paginationY + 22);
       this.ct.addChild(masterLabel);
     } else {
       const nName = NAMES[curGirl] ?? "VEGA";
       const rem = (PIECES[curGirl] ?? 8) - prog.pieces;
-      const hint = this.txt(`NEXT: ${nName} THEME · ${rem} WILDS NEEDED`, isP ? 11 : 13, GOLD, FONT, 1);
+      const hint = this.txt(`NEXT: ${nName} THEME · ${rem} WILDS NEEDED`, isP ? 11 : 12, GOLD, FONT, 1);
       hint.anchor.set(0.5, 0.5);
-      hint.position.set(px + pw / 2, footerY + 34);
+      hint.position.set(deckCenterX, paginationY + 22);
       this.ct.addChild(hint);
     }
-
-    // ── Close Button ────────────────────────────────────────────────────
-    const closeY = py + ph - 38;
-    const btnW = isP ? 140 : 160;
-    const btnH = 32;
-    const btnX = px + (pw - btnW) / 2;
-
-    const closeBg = new Graphics();
-    closeBg.roundRect(btnX, closeY, btnW, btnH, 4)
-      .fill({ color: 0x111111 })
-      .stroke({ color: GOLD, width: 1.5, alpha: 0.6 });
-    this.ct.addChild(closeBg);
-
-    const closeText = this.txt("CLOSE", 14, GOLD, FONT, 3);
-    closeText.anchor.set(0.5, 0.5);
-    closeText.position.set(btnX + btnW / 2, closeY + btnH / 2);
-    this.ct.addChild(closeText);
-
-    const closeHit = new Graphics();
-    closeHit.roundRect(btnX, closeY, btnW, btnH, 4).fill({ color: BLACK, alpha: 0.001 });
-    closeHit.eventMode = "static";
-    closeHit.cursor = "pointer";
-    closeHit.on("pointerover", () => {
-      closeBg.clear();
-      closeBg.roundRect(btnX, closeY, btnW, btnH, 4).fill({ color: GOLD }).stroke({ color: GOLD, width: 1.5 });
-      closeText.style.fill = BLACK;
-    });
-    closeHit.on("pointerout", () => {
-      closeBg.clear();
-      closeBg.roundRect(btnX, closeY, btnW, btnH, 4).fill({ color: 0x111111 }).stroke({ color: GOLD, width: 1.5, alpha: 0.6 });
-      closeText.style.fill = GOLD;
-    });
-    closeHit.on("pointertap", (e) => { e.stopPropagation(); this.hide(); });
-    this.ct.addChild(closeHit);
   }
 
   // ════════════════════════════════════════════════════════════════════════
@@ -234,16 +178,16 @@ export class GalleryView extends Container {
   private updateStackPositions(animate = true, cx = this.screenW / 2, cy = this.screenH / 2): void {
     const offsets = [
       { dx: 0,   dy: 0,   scale: 1.0,  alpha: 1.0,  rotation: 0,      zIndex: 10 },
-      { dx: 22,  dy: 16,  scale: 0.93, alpha: 0.85, rotation: 0.04,   zIndex: 5 },
-      { dx: 44,  dy: 32,  scale: 0.86, alpha: 0.65, rotation: -0.04,  zIndex: 1 }
+      { dx: 18,  dy: 14,  scale: 0.93, alpha: 0.85, rotation: 0.04,   zIndex: 5 },
+      { dx: 36,  dy: 28,  scale: 0.86, alpha: 0.65, rotation: -0.04,  zIndex: 1 }
     ];
 
     this.cards.forEach((card, idx) => {
       const stackPos = (idx - this.activeIndex + 3) % 3;
       const target = offsets[stackPos]!;
 
-      const targetX = cx + target.dx - 22; // Center offset compensation
-      const targetY = cy + target.dy - 16;
+      const targetX = cx + target.dx - 18;
+      const targetY = cy + target.dy - 14;
 
       card.zIndex = target.zIndex;
 
@@ -260,8 +204,7 @@ export class GalleryView extends Container {
         const startRot = card.rotation;
 
         this.isAnimating = true;
-        void tween(280, (p) => {
-          // Ease out cubic
+        void tween(250, (p) => {
           const ep = 1 - Math.pow(1 - p, 3);
           card.position.set(
             startX + (targetX - startX) * ep,
@@ -276,7 +219,6 @@ export class GalleryView extends Container {
       }
     });
 
-    // Sort z-index so front card renders on top
     this.deckContainer.sortChildren();
   }
 
@@ -313,9 +255,9 @@ export class GalleryView extends Container {
       if (!this.isDragging) return;
       this.isDragging = false;
       const dx = this.dragCurrentX - this.dragStartX;
-      if (dx < -35) {
+      if (dx < -30) {
         this.nextCard();
-      } else if (dx > 35) {
+      } else if (dx > 30) {
         this.prevCard();
       }
     };
@@ -325,7 +267,7 @@ export class GalleryView extends Container {
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  //  BUILD INDIVIDUAL CARD
+  //  BUILD INDIVIDUAL PLAYING CARD
   // ════════════════════════════════════════════════════════════════════════
   private buildCard(
     w: number, h: number, idx: number,
@@ -337,25 +279,25 @@ export class GalleryView extends Container {
 
     const radius = 12;
 
-    // ── Outer Neon Glow ──────────────────────────────────────────────────
+    // ── Outer Neon Edge Glow ─────────────────────────────────────────────
     const glow = new Graphics();
-    glow.roundRect(-4, -4, w + 8, h + 8, radius + 4)
-      .fill({ color: theme, alpha: locked ? 0.05 : 0.22 });
+    glow.roundRect(-3, -3, w + 6, h + 6, radius + 3)
+      .fill({ color: theme, alpha: locked ? 0.04 : 0.25 });
     card.addChild(glow);
 
-    // ── Black Card Body ──────────────────────────────────────────────────
+    // ── Pure Black Card Body ──────────────────────────────────────────────
     const body = new Graphics();
     body.roundRect(0, 0, w, h, radius)
-      .fill({ color: 0x0b0b0b })
-      .stroke({ color: theme, width: 2.5, alpha: locked ? 0.25 : 0.85 });
+      .fill({ color: 0x0a0a0a })
+      .stroke({ color: theme, width: 2.5, alpha: locked ? 0.2 : 0.9 });
     body.roundRect(3, 3, w - 6, h - 6, radius - 2)
-      .stroke({ color: theme, width: 0.5, alpha: locked ? 0.05 : 0.15 });
+      .stroke({ color: theme, width: 0.5, alpha: locked ? 0.04 : 0.15 });
     card.addChild(body);
 
     // ── Card Header (Girl Name) ───────────────────────────────────────────
     const nameH = 34;
     const nameBg = new Graphics();
-    nameBg.roundRect(4, 4, w - 8, nameH, 6).fill({ color: theme, alpha: locked ? 0.06 : 0.14 });
+    nameBg.roundRect(4, 4, w - 8, nameH, 6).fill({ color: theme, alpha: locked ? 0.05 : 0.14 });
     card.addChild(nameBg);
 
     const nameText = this.txt(NAMES[idx]!, 18, locked ? 0x555555 : WHITE, IMPACT, 2);
@@ -363,9 +305,9 @@ export class GalleryView extends Container {
     nameText.position.set(w / 2, 4 + nameH / 2);
     card.addChild(nameText);
 
-    // ── Character Art Viewport ───────────────────────────────────────────
+    // ── Character Art Viewport (CONTAIN FIT — ZERO CLIPPING!) ───────────
     const artPad = 10;
-    const progressZoneH = 68; // height reserved for bar + badge + reward
+    const progressZoneH = 66; // reserved for progress bar + badge + reward
     const artX = artPad;
     const artY = 4 + nameH + 6;
     const artW = w - artPad * 2;
@@ -380,16 +322,15 @@ export class GalleryView extends Container {
     artContainer.mask = artMask;
 
     const artBg = new Graphics();
-    artBg.roundRect(0, 0, artW, artH, 8).fill({ color: 0x050505 });
+    artBg.roundRect(0, 0, artW, artH, 8).fill({ color: 0x040404 });
     artContainer.addChild(artBg);
 
     if (locked) {
-      // Frosted Locked State
+      // Frosted Locked Viewport
       const frost = new Graphics();
       frost.rect(0, 0, artW, artH).fill({ color: 0x0a0a0a, alpha: 0.92 });
       artContainer.addChild(frost);
 
-      // Lock Icon
       const lx = artW / 2, ly = artH / 2 - 6;
       const lSize = Math.min(artW, artH) * 0.22;
       const lock = new Graphics();
@@ -406,25 +347,21 @@ export class GalleryView extends Container {
       artContainer.addChild(lockText);
 
     } else if (done) {
-      // Completed Girl Art
+      // Completed Girl Art — CONTAIN FIT (Math.min) so NO part of girl is cut off!
       const texKey = `${PREFIX[idx]!}_full`;
       const tex = getExtraTexture(texKey);
       if (tex) {
         const spr = new Sprite(tex);
         spr.anchor.set(0.5, 0.5);
-        const scale = Math.max(artW / tex.width, artH / tex.height);
+        // Contain fit scaling so full body image fits inside viewport with ZERO clipping!
+        const scale = Math.min((artW - 6) / tex.width, (artH - 6) / tex.height);
         spr.scale.set(scale);
         spr.position.set(artW / 2, artH / 2);
         artContainer.addChild(spr);
       }
 
-      // Bottom subtle gradient
-      const grad = new Graphics();
-      grad.rect(0, artH * 0.75, artW, artH * 0.25).fill({ color: BLACK, alpha: 0.4 });
-      artContainer.addChild(grad);
-
     } else if (active) {
-      // Active In-Progress Girl Art (Silhouette + Pieces)
+      // Active In-Progress Girl Art (Silhouette + Pieces) — CONTAIN FIT!
       const prefix = PREFIX[idx]!;
       const silTex = getExtraTexture(`${prefix}_silhouette`);
       if (silTex) {
@@ -447,7 +384,8 @@ export class GalleryView extends Container {
           }
         }
 
-        const scale = Math.max((artW - 4) / silTex.width, (artH - 4) / silTex.height) * 0.9;
+        // Contain fit scaling so full silhouette & pieces fit inside viewport!
+        const scale = Math.min((artW - 6) / silTex.width, (artH - 6) / silTex.height);
         assembly.scale.set(scale);
         assembly.position.set(artW / 2, artH / 2);
         artContainer.addChild(assembly);
@@ -456,7 +394,7 @@ export class GalleryView extends Container {
 
     // Inner Border Frame around Art Viewport
     const artFrame = new Graphics();
-    artFrame.roundRect(0, 0, artW, artH, 8).stroke({ color: theme, width: 1, alpha: locked ? 0.12 : 0.35 });
+    artFrame.roundRect(0, 0, artW, artH, 8).stroke({ color: theme, width: 1, alpha: locked ? 0.1 : 0.3 });
     artContainer.addChild(artFrame);
 
     card.addChild(artContainer);
@@ -486,7 +424,7 @@ export class GalleryView extends Container {
       card.addChild(fill);
     }
 
-    // Pieces Badge Text (e.g. "3 / 8 PARTS UNLOCKED")
+    // Status / Pieces Badge
     const totalPieces = PIECES[idx]!;
     const curPieces = done ? totalPieces : active ? prog.pieces : 0;
     const statusStr = done ? "★ UNLOCKED" : locked ? "LOCKED" : `${curPieces} / ${totalPieces} PARTS UNLOCKED`;
@@ -513,10 +451,10 @@ export class GalleryView extends Container {
     const btn = new Container();
     const size = 36;
     const g = new Graphics();
-    g.circle(0, 0, size / 2).fill({ color: 0x111111, alpha: 0.9 }).stroke({ color: GOLD, width: 1.5, alpha: 0.7 });
+    g.circle(0, 0, size / 2).fill({ color: 0x111111, alpha: 0.9 }).stroke({ color: WHITE, width: 1.5, alpha: 0.6 });
     btn.addChild(g);
 
-    const txt = this.txt(label, 16, GOLD, IMPACT, 0);
+    const txt = this.txt(label, 16, WHITE, IMPACT, 0);
     txt.anchor.set(0.5, 0.5);
     btn.addChild(txt);
 
@@ -525,7 +463,7 @@ export class GalleryView extends Container {
     btn.cursor = "pointer";
 
     btn.on("pointerover", () => { g.tint = GOLD; txt.style.fill = BLACK; });
-    btn.on("pointerout", () => { g.tint = WHITE; txt.style.fill = GOLD; });
+    btn.on("pointerout", () => { g.tint = WHITE; txt.style.fill = WHITE; });
     btn.on("pointertap", (e) => { e.stopPropagation(); onClick(); });
 
     return btn;

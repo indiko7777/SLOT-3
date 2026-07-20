@@ -298,24 +298,25 @@ export class HudView extends Container {
       return;
     }
 
+    const anteH = 86; // Reduced height for Ante button in landscape mode
     this.panelButton(rect.x, rect.y, panelWidth, 112, kicker, TEXT.buy, `${buyX.toFixed(2)}x`, "getaway");
     this.panelButton(rect.x, rect.y + 124, panelWidth, 124, kicker, TEXT.superBuy, `${superX.toFixed(2)}x`, "super_getaway");
-    this.panelButton(rect.x, rect.y + 262, panelWidth, 134, TEXT.ante, anteSub, anteVal, "ante");
+    this.panelButton(rect.x, rect.y + 260, panelWidth, anteH, TEXT.ante, anteSub, anteVal, "ante");
 
     const logoTex = getExtraTexture("heat_chase_logo");
     if (logoTex && logoTex.width > 0 && logoTex.height > 0) {
       const center = rect.x + panelWidth / 2;
-      const buttonsBottom = rect.y + 396;
+      const buttonsBottom = rect.y + 260 + anteH;
       const spaceBelow = (rect.y + rect.height) - buttonsBottom;
-      const gap = Math.min(56, spaceBelow * 0.32);
+      const gap = Math.min(24, Math.max(8, spaceBelow * 0.12));
       const regionTop = buttonsBottom + gap;
-      const regionBottom = rect.y + rect.height - 8;
+      const regionBottom = rect.y + rect.height - 4;
       const availH = regionBottom - regionTop;
-      const boxW = Math.max(0, rect.width * 1.4);
-      if (availH > 24 && boxW > 24) {
+      const boxW = Math.max(0, rect.width * 1.6);
+      if (availH > 20 && boxW > 20) {
         const logo = new Sprite(logoTex);
         logo.anchor.set(0.5, 0.5);
-        const baseScale = Math.min(boxW / logoTex.width, availH / logoTex.height) * 0.97;
+        const baseScale = Math.min(boxW / logoTex.width, availH / logoTex.height) * 1.05;
         logo.scale.set(baseScale);
         logo.position.set(center, (regionTop + regionBottom) / 2);
         logo.filters = [new DropShadowFilter({ color: 0x000000, alpha: 0.9, blur: 8, offset: { x: 0, y: 5 } })];
