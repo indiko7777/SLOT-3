@@ -336,16 +336,59 @@ export class HudView extends Container {
 
   private panelButton(x: number, y: number, width: number, height: number, kicker: string, title: string, value: string, action: string): void {
     const panel = new Container();
-    const glowColor = 0xe30000;
 
+    // Vice-neon buy panels. The old look was a flat black box with a 3.5px
+    // pure-red outline (0xe30000) — cheap, and off-palette for a game whose
+    // signage is magenta/cyan/gold. Each action now gets its own neon tube,
+    // on a chamfered "cyberpunk plate" silhouette. Geometry and contents are
+    // untouched: same x/y/width/height, same text, same hit area.
+    const accent = action === "super_getaway" ? 0xff2fa0   // premium buy — hot magenta
+                 : action === "ante" ? 0x3ad4ff            // modifier — cyan
+                 : 0xffb000;                               // standard buy — amber
+    const glowColor = accent;
+    // Corner cut, clamped so the short Ante/compact panels stay sane.
+    const notch = Math.max(6, Math.min(16, height * 0.26, width * 0.14));
+    /** Chamfered plate outline, inflated by `pad` on every side. */
+    const plateAt = (pad: number): number[] => [
+      -pad, -pad,
+      width + pad - notch, -pad,
+      width + pad, notch,
+      width + pad, height + pad,
+      notch, height + pad,
+      -pad, height + pad - notch,
+    ];
+    const plate = plateAt(0);
+
+    // Outer neon bloom — the ambient tween below breathes this.
     const glow = new Graphics();
-    glow.roundRect(-4, -4, width + 8, height + 8, 10).fill({ color: glowColor, alpha: 0.16 });
+    glow.poly(plateAt(5)).fill({ color: accent, alpha: 0.20 });
     glow.alpha = 0.8;
     panel.addChild(glow);
 
     const bg = new Graphics();
-    bg.roundRect(0, 0, width, height, 8).fill({ color: 0x000000, alpha: 0.5 });
-    bg.roundRect(0, 0, width, height, 8).stroke({ color: glowColor, width: 3.5, alpha: 0.85 });
+    // Dark smoked plate — kept translucent so the city art still reads through.
+    bg.poly(plate).fill({ color: 0x080a12, alpha: 0.62 });
+    // Accent wash, strongest at the top, faked with stacked bands (no gradient
+    // fill needed, so this stays cheap to redraw on every hud.draw).
+    const bands = 4;
+    for (let i = 0; i < bands; i++) {
+      bg.rect(1, (height / bands) * i, width - 2, height / bands)
+        .fill({ color: accent, alpha: 0.11 - i * 0.026 });
+    }
+    // Specular sheen along the top edge — sells it as glass, not a flat box.
+    bg.rect(2, 1, width - notch - 4, 1.4).fill({ color: 0xffffff, alpha: 0.24 });
+    // Neon tube: soft wide pass under a bright hairline.
+    bg.poly(plate).stroke({ color: accent, width: 3.4, alpha: 0.32 });
+    bg.poly(plate).stroke({ color: accent, width: 1.4, alpha: 0.95 });
+    // HUD corner brackets — the small targeting ticks that read as GTA UI.
+    const tick = Math.max(7, Math.min(15, width * 0.16));
+    bg.moveTo(0, tick).lineTo(0, 0).lineTo(tick, 0)
+      .stroke({ color: 0xffffff, width: 1.6, alpha: 0.5 });
+    bg.moveTo(width, height - tick).lineTo(width, height).lineTo(width - tick, height)
+      .stroke({ color: 0xffffff, width: 1.6, alpha: 0.5 });
+    // The chamfer itself, lit brighter than the rest of the outline.
+    bg.moveTo(width - notch, 0).lineTo(width, notch)
+      .stroke({ color: 0xffffff, width: 1.5, alpha: 0.55 });
     panel.addChild(bg);
 
     const textMaxWidth = width - 12;
