@@ -264,6 +264,16 @@ export class PixiGameScene {
 
     switch (event.type) {
       case "round_start":
+        // Safety net: a new round must never start with last round's Getaway
+        // still on screen. round_end normally tears it down, but if that path
+        // was skipped (interrupted playback, resume, an error mid-bonus) the
+        // stale bonus art would sit over the base game.
+        if (!this.bonusActive && this.bonus.visible) {
+          this.bonus.hide();
+          this.bonus.alpha = 1;
+          this.hud.visible = true;
+          this.cardPeek.visible = true;
+        }
         // No siren sweep at spin start — keeps the round clean and red-free.
         return;
       case "board_settle": {
@@ -388,14 +398,22 @@ export class PixiGameScene {
         this.hud.draw(this.layout, snapshot);
         if (this.bonusActive) {
           // The chase result card waits for the player's tap inside finish(), so
-          // by the time we reach round_end they've acknowledged it — fade straight out.
+          // by the time we reach round_end they've acknowledged it.
           this.bonusActive = false;
-          await wait(turbo ? 40 : 140);
-          await this.bonus.fadeOutAndHide(turbo);
-          // Restore HUD (character art, wanted stars, left buttons, bet panel)
+
+          // Bring the base game back FIRST, then dissolve the bonus over it, so
+          // the two cross-fade. HudView.visible also toggles the shared bgLayer
+          // (the bottom-most layer), so restoring the HUD only AFTER the fade
+          // meant the bonus dissolved into nothing — a black screen showing bare
+          // reel symbols — and then popped the entire base UI in at the end.
+          // hud.draw() above already rebuilt it with the base background, since
+          // round_end's state is idle/round_complete/big_win, never "bonus*".
           this.hud.visible = true;
           this.cardPeek.visible = true;
           this.cardPeek.layout(this.layout);
+
+          await wait(turbo ? 40 : 140);
+          await this.bonus.fadeOutAndHide(turbo);
           return;
         }
         if (event.payoutMultiplier === 0) {

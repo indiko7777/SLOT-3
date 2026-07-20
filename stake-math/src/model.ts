@@ -253,10 +253,20 @@ export const SCATTER_TRIGGER_SHARE = 0.15;
  *  after this many dead spins in TOTAL. A number that only falls tells the
  *  player exactly how close the feature is to ending; the reset variant made it
  *  climb back up on every stick, which reads as arbitrary.
- *  3 = the industry-standard "3 lives". Raising it is far more expensive under
- *  count-down than it was under reset (the budget is now spent across the WHOLE
- *  feature, not per dry streak), so re-run the optimizer if you ever change it. */
-export const BONUS_START_RESPINS = 3;
+ *
+ *  5, raised from 3 (2026-07-20): at 3 the feature was over in ~8.8 spins and
+ *  felt rushed. Under COUNT-DOWN the budget is spent across the whole feature,
+ *  so it buys length almost linearly and cheaply — measured mean payout for the
+ *  getaway buy (cost 100, so E_freegame must stay clear of ~96x or the wincap
+ *  probability the optimizer needs goes to zero):
+ *      start 3 -> 8.8 spins, ~45x     start 6 -> 14.9 spins, ~67x
+ *      start 5 -> 13.0 spins, ~61x    start 8 -> 18.2 spins, ~74x
+ *  5 nearly doubles the feature length while leaving ample room under the
+ *  ceiling for the 5000x tail. (The old "do NOT raise to 4" warning here
+ *  applied to the RESET rule, where a deeper budget made busting exponentially
+ *  rarer and blew past the ceiling; that no longer holds.)
+ *  Re-run `npm run generate` after changing this — RTP is re-solved from it. */
+export const BONUS_START_RESPINS = 5;
 export const BONUS_CELLS = 20;
 /** Hard guards to keep event streams (and memory) bounded. */
 export const MAX_TUMBLES = 16;

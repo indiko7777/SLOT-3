@@ -1,8 +1,12 @@
 /**
  * Shared DOM modals: interrupted-round resume, replay intro/finish, and the
- * RGS error toast. Styled to match the settings menu. All strings are passed
- * in by the caller so social-mode terminology stays centralised in domain.ts.
+ * RGS error toast. Styled to match the GTA V Settings Menu (full-screen pause menu
+ * layout, translucent black bars, white accent lines, desaturated backdrop blur).
+ * All strings are passed in by the caller so social-mode terminology stays
+ * centralised in domain.ts.
  */
+
+const FONT = `'Archivo Narrow','Arial Narrow','Helvetica Neue',Helvetica,Arial,sans-serif`;
 
 let styleInjected = false;
 function injectStyle(): void {
@@ -10,40 +14,66 @@ function injectStyle(): void {
   styleInjected = true;
   const s = document.createElement("style");
   s.textContent = `
-  .hc-modal-overlay{position:fixed;inset:0;z-index:100002;display:flex;align-items:center;justify-content:center;
-    background:radial-gradient(circle at center, rgba(16,20,36,.85) 0%, rgba(5,7,16,.98) 100%);
-    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
-    opacity:0;transition:opacity .22s cubic-bezier(.16,1,.3,1);
-    font-family:'Impact','Arial Black','Helvetica Neue',sans-serif;color:#fff;user-select:none;}
+  .hc-modal-overlay{position:fixed;inset:0;z-index:100002;display:flex;flex-direction:column;
+    --gx:clamp(16px,6vw,110px);
+    background:linear-gradient(180deg,rgba(0,0,0,.55) 0%,rgba(0,0,0,.78) 100%);
+    backdrop-filter:blur(7px) saturate(.25) brightness(.8);
+    -webkit-backdrop-filter:blur(7px) saturate(.25) brightness(.8);
+    opacity:0;transition:opacity .15s ease-out;
+    font-family:${FONT};color:#fff;user-select:none;-webkit-user-select:none;}
   .hc-modal-overlay.show{opacity:1;}
-  .hc-modal-card{width:90%;max-width:440px;background:linear-gradient(135deg,#0e111a 0%,#05060b 100%);
-    border:4px solid #1f2538;border-radius:16px;overflow:hidden;position:relative;
-    box-shadow:0 25px 60px rgba(0,0,0,.85),0 0 35px rgba(154,230,78,.10);
-    transform:scale(.86) translateY(28px);transition:transform .3s cubic-bezier(.34,1.56,.64,1);}
-  .hc-modal-overlay.show .hc-modal-card{transform:scale(1) translateY(0);}
-  .hc-modal-header{padding:16px 24px;text-transform:uppercase;font-size:22px;font-weight:900;letter-spacing:3px;
-    background:repeating-linear-gradient(-45deg,#121727,#121727 12px,#1d243c 12px,#1d243c 24px);
-    border-bottom:4px solid #9ae64e;text-align:center;text-shadow:0 2px 4px rgba(0,0,0,.5);}
-  .hc-modal-body{padding:20px 26px;display:flex;flex-direction:column;gap:10px;}
-  .hc-modal-line{display:flex;justify-content:space-between;gap:16px;align-items:baseline;
-    font-family:system-ui,-apple-system,sans-serif;font-size:14px;color:#cdd8ea;}
-  .hc-modal-line b{font-family:'Impact','Arial Black',sans-serif;font-size:18px;color:#ffdf65;
-    font-weight:900;letter-spacing:.5px;}
-  .hc-modal-text{font-family:system-ui,-apple-system,sans-serif;font-size:14px;line-height:1.55;
-    color:#b9c4d6;text-align:center;}
-  .hc-modal-actions{display:flex;gap:10px;padding:0 26px 22px;}
-  .hc-modal-btn{flex:1;background:rgba(0,0,0,.55);border:2px solid #303b58;border-radius:10px;color:#cdd8ea;
-    font-family:'Impact','Arial Black',sans-serif;font-size:17px;font-weight:900;letter-spacing:1.5px;
-    padding:15px 10px;cursor:pointer;text-transform:uppercase;transition:all .15s;outline:none;}
-  .hc-modal-btn:hover{border-color:#9ae64e;color:#fff;box-shadow:0 0 14px rgba(154,230,78,.25);}
-  .hc-modal-btn.primary{border-color:#9ae64e;background:rgba(154,230,78,.16);color:#fff;
-    box-shadow:0 0 16px rgba(154,230,78,.35);}
+  
+  .gta-modal-head{padding:clamp(12px,3.5vh,30px) var(--gx) 10px;flex-shrink:0;}
+  .gta-modal-title{font-size:clamp(28px,5.5vw,46px);font-weight:700;line-height:1;
+    text-transform:uppercase;letter-spacing:.5px;text-shadow:0 2px 10px rgba(0,0,0,.8);}
+  
+  .gta-modal-bar{display:flex;gap:clamp(16px,3.5vw,30px);border-bottom:2px solid rgba(255,255,255,.95);
+    padding:0 var(--gx);flex-shrink:0;height:4px;}
+  
+  .gta-modal-scroll{flex:1;overflow-y:auto;overflow-x:hidden;padding:14px 0 24px;
+    scrollbar-width:none;min-height:0;}
+  .gta-modal-scroll::-webkit-scrollbar{display:none;}
+  
+  .gta-modal-sep{font-size:clamp(11.5px,2.4vw,13px);letter-spacing:2.5px;text-transform:uppercase;font-weight:600;
+    color:rgba(255,255,255,.6);background:rgba(0,0,0,.72);padding:8px var(--gx);margin-top:12px;}
+  .gta-modal-scroll > .gta-modal-sep:first-child{margin-top:0;}
+  
+  .gta-modal-row{display:flex;align-items:center;justify-content:space-between;gap:16px;
+    background:rgba(0,0,0,.52);padding:12px var(--gx);margin-top:2px;
+    font-size:clamp(15px,3vw,17.5px);font-weight:500;color:#e6e6e6;letter-spacing:.2px;}
+  
+  .gta-modal-stat{font-size:clamp(16px,3vw,20px);font-weight:700;letter-spacing:.5px;text-align:right;flex-shrink:0;}
+  
+  .gta-modal-text{background:rgba(0,0,0,.38);padding:14px var(--gx);margin-top:2px;
+    font-size:clamp(13px,2.6vw,14.5px);line-height:1.6;color:#bcbcbc;letter-spacing:.2px;}
+  
+  .gta-modal-desc{background:rgba(0,0,0,.66);border-top:2px solid rgba(255,255,255,.9);
+    padding:11px var(--gx);font-size:clamp(12.5px,2.6vw,14px);line-height:1.5;color:#bcbcbc;
+    min-height:46px;letter-spacing:.2px;flex-shrink:0;}
+  
+  .gta-modal-actions{display:flex;gap:16px;padding:14px var(--gx) 16px;background:rgba(0,0,0,.52);margin-top:2px;
+    border-top:1px solid rgba(255,255,255,.15);flex-shrink:0;}
+  
+  .hc-modal-btn{flex:1;background:rgba(0,0,0,.65);border:1px solid rgba(255,255,255,.25);border-radius:6px;
+    color:#e6e6e6;font-family:${FONT};font-size:17px;font-weight:700;letter-spacing:1.5px;
+    padding:14px 12px;cursor:pointer;text-transform:uppercase;transition:all .15s ease-out;outline:none;}
+  .hc-modal-btn:hover{background:#f2f2f2;color:#000;border-color:#f2f2f2;box-shadow:0 4px 15px rgba(255,255,255,.2);}
+  .hc-modal-btn.primary{border-color:#9ae64e;background:rgba(154,230,78,.2);color:#ffffff;
+    box-shadow:0 0 14px rgba(154,230,78,.3);}
+  .hc-modal-btn.primary:hover{background:#9ae64e;color:#000;border-color:#9ae64e;box-shadow:0 0 20px rgba(154,230,78,.6);}
+  
+  .gta-modal-hints{display:flex;justify-content:flex-end;gap:20px;padding:8px var(--gx) 12px;flex-shrink:0;
+    font-size:clamp(11px,2.2vw,12.5px);letter-spacing:1px;color:rgba(255,255,255,.6);text-transform:uppercase;
+    flex-wrap:wrap;}
+  .gta-key{display:inline-block;border:1px solid rgba(255,255,255,.55);border-radius:3px;
+    padding:1px 6px;margin-right:6px;font-size:11px;color:#fff;}
+  
   .hc-toast{position:fixed;left:50%;bottom:118px;transform:translateX(-50%) translateY(16px);
-    z-index:100003;background:rgba(10,6,8,.96);border:2px solid #ff5555;border-radius:12px;
-    color:#ffdddd;font-family:'Impact','Arial Black',sans-serif;font-size:16px;font-weight:900;
+    z-index:100003;background:rgba(0,0,0,.96);border:2px solid #ff5252;border-radius:0;
+    color:#ffffff;font-family:${FONT};font-size:16px;font-weight:700;
     letter-spacing:1.2px;padding:14px 26px;text-transform:uppercase;opacity:0;
     transition:opacity .25s ease,transform .25s ease;pointer-events:none;max-width:86vw;text-align:center;
-    box-shadow:0 12px 30px rgba(0,0,0,.7),0 0 24px rgba(255,85,85,.25);}
+    box-shadow:0 12px 30px rgba(0,0,0,.8),0 0 24px rgba(255,82,82,.3);}
   .hc-toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
   `;
   document.head.appendChild(s);
@@ -77,7 +107,29 @@ export function trackModalClosed(): void {
   openModals = Math.max(0, openModals - 1);
 }
 
-/** Show a blocking choice modal; resolves with the picked button's key. */
+/**
+ * Determine text color for modal row values:
+ * - Multiplier values (ending with 'x'): RED (#ff5252) when equal to 0, GREEN (#4ee06a) when > 0.
+ * - Currency / USD values: Always GREEN (#4ee06a).
+ * - Other strings (e.g. Mode names): White (#ffffff).
+ */
+function getValueColor(valStr: string): string {
+  const trimmed = valStr.trim();
+  if (/^[\d.]+\s*x$/i.test(trimmed)) {
+    const num = parseFloat(trimmed);
+    if (isNaN(num) || num <= 0) {
+      return "#ff5252"; // RED when equal to 0
+    }
+    return "#4ee06a"; // GREEN when over 0
+  }
+  // If value contains digits (e.g. 1 USD, 0.00 USD, $100), it's a monetary/currency value -> ALWAYS GREEN
+  if (/[\d.]/.test(trimmed)) {
+    return "#4ee06a";
+  }
+  return "#ffffff";
+}
+
+/** Show a blocking choice modal in full-screen GTA V Pause Menu style; resolves with picked button key. */
 export function showChoiceModal(spec: ModalSpec, playClick?: () => void): Promise<string> {
   injectStyle();
   openModals += 1;
@@ -85,42 +137,67 @@ export function showChoiceModal(spec: ModalSpec, playClick?: () => void): Promis
     const overlay = document.createElement("div");
     overlay.className = "hc-modal-overlay";
 
-    const card = document.createElement("div");
-    card.className = "hc-modal-card";
+    // 1) Top GTA Head & Title
+    const head = document.createElement("div");
+    head.className = "gta-modal-head";
+    const title = document.createElement("div");
+    title.className = "gta-modal-title";
+    title.textContent = "Heat Chase";
+    head.appendChild(title);
+    overlay.appendChild(head);
 
-    const header = document.createElement("div");
-    header.className = "hc-modal-header";
-    header.textContent = spec.title;
-    card.appendChild(header);
+    // 2) Top accent underline bar
+    const bar = document.createElement("div");
+    bar.className = "gta-modal-bar";
+    overlay.appendChild(bar);
 
-    const body = document.createElement("div");
-    body.className = "hc-modal-body";
+    // 3) Scrollable content area (GTA-style section & rows)
+    const scroll = document.createElement("div");
+    scroll.className = "gta-modal-scroll";
+
+    const sep = document.createElement("div");
+    sep.className = "gta-modal-sep";
+    sep.textContent = spec.title;
+    scroll.appendChild(sep);
+
     for (const line of spec.lines ?? []) {
       const row = document.createElement("div");
-      row.className = "hc-modal-line";
+      row.className = "gta-modal-row";
       const label = document.createElement("span");
       label.textContent = line.label;
-      const value = document.createElement("b");
+      const value = document.createElement("span");
+      value.className = "gta-modal-stat";
       value.textContent = line.value;
+      value.style.color = getValueColor(line.value);
       row.append(label, value);
-      body.appendChild(row);
+      scroll.appendChild(row);
     }
-    if (spec.text) {
-      const p = document.createElement("div");
-      p.className = "hc-modal-text";
-      p.textContent = spec.text;
-      body.appendChild(p);
-    }
-    card.appendChild(body);
 
+    if (spec.text) {
+      const textBlock = document.createElement("div");
+      textBlock.className = "gta-modal-text";
+      textBlock.textContent = spec.text;
+      scroll.appendChild(textBlock);
+    }
+    overlay.appendChild(scroll);
+
+    // 4) GTA-style description box
+    const desc = document.createElement("div");
+    desc.className = "gta-modal-desc";
+    desc.textContent = spec.text ? spec.text : spec.title;
+    overlay.appendChild(desc);
+
+    // 5) Action buttons container
     const actions = document.createElement("div");
-    actions.className = "hc-modal-actions";
+    actions.className = "gta-modal-actions";
+
     const finish = (key: string): void => {
       openModals = Math.max(0, openModals - 1);
       overlay.classList.remove("show");
-      window.setTimeout(() => overlay.remove(), 220);
+      window.setTimeout(() => overlay.remove(), 160);
       resolve(key);
     };
+
     for (const btn of spec.buttons) {
       const b = document.createElement("button");
       b.className = `hc-modal-btn${btn.primary ? " primary" : ""}`;
@@ -131,8 +208,14 @@ export function showChoiceModal(spec: ModalSpec, playClick?: () => void): Promis
       });
       actions.appendChild(b);
     }
-    card.appendChild(actions);
-    overlay.appendChild(card);
+    overlay.appendChild(actions);
+
+    // 6) Keyboard hints footer
+    const hints = document.createElement("div");
+    hints.className = "gta-modal-hints";
+    hints.innerHTML = `<span><span class="gta-key">Esc</span>Back</span>`;
+    overlay.appendChild(hints);
+
     document.body.appendChild(overlay);
     overlay.offsetHeight; // reflow for the transition
     overlay.classList.add("show");
