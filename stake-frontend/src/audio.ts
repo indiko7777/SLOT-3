@@ -1169,6 +1169,83 @@ export class EventAudioBus {
     });
   }
 
+  /**
+   * The armored doors unlatching and swinging open on the Getaway reels.
+   * Three phases matched to the visual: a heavy latch CLUNK, a metal groan as
+   * the hinges take the weight, and a resonant boom as they come to rest.
+   */
+  truckDoors(): void {
+    void this.unlock().then(() => {
+      if (!this.ctx) return;
+      const ctx = this.ctx;
+      const t = ctx.currentTime;
+
+      const out = ctx.createGain();
+      out.gain.value = 1.1;
+      out.connect(ctx.destination);
+
+      // 1) Latch clunk — a short, hard metallic hit.
+      const cFrames = Math.floor(ctx.sampleRate * 0.16);
+      const cBuf = ctx.createBuffer(1, cFrames, ctx.sampleRate);
+      const cd = cBuf.getChannelData(0);
+      for (let i = 0; i < cFrames; i++) cd[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / cFrames, 3);
+      const clunk = ctx.createBufferSource();
+      clunk.buffer = cBuf;
+      const cbp = ctx.createBiquadFilter();
+      cbp.type = "bandpass"; cbp.frequency.value = 220; cbp.Q.value = 2.2;
+      const cg = ctx.createGain();
+      cg.gain.setValueAtTime(0.55, t);
+      cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+      clunk.connect(cbp).connect(cg).connect(out);
+      clunk.start(t);
+      // low thud under it for weight
+      const thud = ctx.createOscillator();
+      const tg = ctx.createGain();
+      thud.type = "sine";
+      thud.frequency.setValueAtTime(90, t);
+      thud.frequency.exponentialRampToValueAtTime(42, t + 0.22);
+      tg.gain.setValueAtTime(0.0001, t);
+      tg.gain.exponentialRampToValueAtTime(0.5, t + 0.015);
+      tg.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+      thud.connect(tg).connect(out);
+      thud.start(t); thud.stop(t + 0.34);
+
+      // 2) Hinge groan — a detuned saw sliding down through a tight bandpass.
+      const gStart = t + 0.16;
+      const gbp = ctx.createBiquadFilter();
+      gbp.type = "bandpass"; gbp.Q.value = 7;
+      gbp.frequency.setValueAtTime(760, gStart);
+      gbp.frequency.exponentialRampToValueAtTime(300, gStart + 0.6);
+      const gg = ctx.createGain();
+      gg.gain.setValueAtTime(0.0001, gStart);
+      gg.gain.exponentialRampToValueAtTime(0.2, gStart + 0.09);
+      gg.gain.exponentialRampToValueAtTime(0.0001, gStart + 0.68);
+      gbp.connect(gg).connect(out);
+      for (const det of [-9, 7]) {
+        const o = ctx.createOscillator();
+        o.type = "sawtooth";
+        o.frequency.setValueAtTime(196, gStart);
+        o.frequency.exponentialRampToValueAtTime(104, gStart + 0.62);
+        o.detune.value = det;
+        o.connect(gbp);
+        o.start(gStart); o.stop(gStart + 0.7);
+      }
+
+      // 3) Settle boom as the doors hit their stops.
+      const bT = t + 0.72;
+      const boom = ctx.createOscillator();
+      const bg = ctx.createGain();
+      boom.type = "sine";
+      boom.frequency.setValueAtTime(120, bT);
+      boom.frequency.exponentialRampToValueAtTime(38, bT + 0.4);
+      bg.gain.setValueAtTime(0.0001, bT);
+      bg.gain.exponentialRampToValueAtTime(0.45, bT + 0.02);
+      bg.gain.exponentialRampToValueAtTime(0.0001, bT + 0.55);
+      boom.connect(bg).connect(out);
+      boom.start(bT); boom.stop(bT + 0.6);
+    });
+  }
+
   /* ═══════════════════════════════════════════════
      Collection-piece whoosh — the airy riser that plays
      while the body part hangs in front of the camera and

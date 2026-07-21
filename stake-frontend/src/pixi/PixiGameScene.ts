@@ -367,7 +367,12 @@ export class PixiGameScene {
         // Hide the entire HUD (character, wanted stars, left buttons, bet panel)
         // so the bonus board has the full screen to itself.
         this.hud.visible = false;
-        await this.bonus.intro(turbo, this.runtime.onTypewriterStart, this.runtime.onTypewriterStop);
+        await this.bonus.intro(
+          turbo,
+          this.runtime.onTypewriterStart,
+          this.runtime.onTypewriterStop,
+          () => this.runtime.onTruckDoors?.()
+        );
         return;
       case "bonus_spin": {
         const landed = event.landedSymbols.map((s) => s.position);

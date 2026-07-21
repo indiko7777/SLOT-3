@@ -70,6 +70,8 @@ export interface SceneRuntime {
   /** 3+ scatters triggered The Getaway — the trucks are revving and tearing off
    *  the board. Fires once, at the start of the drive-off beat. */
   onTruckDriveOff?: () => void;
+  /** The armored truck's rear doors unlatch and swing open on the bonus reels. */
+  onTruckDoors?: () => void;
   /** Fired on a Getaway dead spin (nothing landed), in sync with the visual
    *  dead-spin beat. heat = consecutive misses, 1–3. */
   onDeadSpin?: (heat: number) => void;

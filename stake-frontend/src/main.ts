@@ -4,6 +4,7 @@ import { displayCurrency, uiStrings, type GameEvent, type RoundRecord } from "./
 import { isModalOpen, showChoiceModal, showToast } from "./modals";
 import { formatWin } from "./rgs/client";
 import { hideLoader, showLoader, updateLoader } from "./loader";
+import { showIntro } from "./intro";
 import { applyEvent, INITIAL_SNAPSHOT, type PlaybackSnapshot } from "./playback";
 import { GIRLS, type PieceGain, collectWild as collectWildPiece, consumeGetawayStars, sanitize as sanitizeGallery, emptyGallery, type GalleryData } from "./meta/collection";
 import {
@@ -342,6 +343,9 @@ async function boot(): Promise<void> {
     onTruckDriveOff: () => {
       if (!muted) audioBus.truckDriveOff();
     },
+    onTruckDoors: () => {
+      if (!muted) audioBus.truckDoors();
+    },
     onDeadSpin: (heat) => {
       if (!muted) audioBus.deadSpin(heat);
     },
@@ -367,6 +371,14 @@ async function boot(): Promise<void> {
   scene.resize();
   scene.renderSnapshot(snapshot);
   hideLoader();
+
+  // Feature-preview splash — shown once per fresh session after the loader, the
+  // way high-tier slots explain themselves before the first spin. Skipped for
+  // replays (the player is reviewing a specific round, not starting a session).
+  // Never allowed to block boot if it throws.
+  if (!isReplayActive) {
+    try { await showIntro(); } catch { /* non-fatal — go straight to the game */ }
+  }
 
   // DEV-only test button (stripped from production builds): replays the entire
   // WILD-collection flow — every body part flying in, each girl completing, the

@@ -277,37 +277,61 @@ export class GalleryView extends Container {
     const card = new Container();
     card.pivot.set(w / 2, h / 2);
 
-    const radius = 12;
+    // Chamfered "collectible plate" silhouette — the same language as the buy
+    // panels, so the deck reads as part of the same HUD instead of a generic
+    // rounded rectangle.
+    const notch = Math.round(Math.min(22, w * 0.09));
+    const plateAt = (pad: number): number[] => [
+      -pad, -pad,
+      w + pad - notch, -pad,
+      w + pad, notch,
+      w + pad, h + pad,
+      notch, h + pad,
+      -pad, h + pad - notch,
+    ];
+    const dim = locked ? 0.18 : 1;
 
-    // ── Outer Neon Edge Glow ─────────────────────────────────────────────
+    // ── Outer neon bloom ─────────────────────────────────────────────────
     const glow = new Graphics();
-    glow.roundRect(-3, -3, w + 6, h + 6, radius + 3)
-      .fill({ color: theme, alpha: locked ? 0.04 : 0.25 });
+    glow.poly(plateAt(4)).fill({ color: theme, alpha: 0.26 * dim });
     card.addChild(glow);
 
-    // ── Pure Black Card Body ──────────────────────────────────────────────
+    // ── Body: smoked plate + accent wash falling off toward the base ─────
     const body = new Graphics();
-    body.roundRect(0, 0, w, h, radius)
-      .fill({ color: 0x0a0a0a })
-      .stroke({ color: theme, width: 2.5, alpha: locked ? 0.2 : 0.9 });
-    body.roundRect(3, 3, w - 6, h - 6, radius - 2)
-      .stroke({ color: theme, width: 0.5, alpha: locked ? 0.04 : 0.15 });
+    body.poly(plateAt(0)).fill({ color: 0x07080d, alpha: 0.96 });
+    const bands = 6;
+    for (let i = 0; i < bands; i++) {
+      body.rect(1, (h / bands) * i, w - 2, h / bands)
+        .fill({ color: theme, alpha: (0.13 - i * 0.021) * dim });
+    }
+    // Neon tube: soft wide pass under a bright hairline.
+    body.poly(plateAt(0)).stroke({ color: theme, width: 3.2, alpha: 0.3 * dim });
+    body.poly(plateAt(0)).stroke({ color: theme, width: 1.3, alpha: 0.95 * dim });
+    // Lit chamfer + specular top edge.
+    body.moveTo(w - notch, 0).lineTo(w, notch).stroke({ color: WHITE, width: 1.4, alpha: 0.5 * dim });
+    body.rect(2, 1, w - notch - 4, 1.3).fill({ color: WHITE, alpha: 0.22 * dim });
     card.addChild(body);
 
-    // ── Card Header (Girl Name) ───────────────────────────────────────────
+    // ── Header: a rule + letterspaced name, not a filled bar ─────────────
     const nameH = 34;
-    const nameBg = new Graphics();
-    nameBg.roundRect(4, 4, w - 8, nameH, 6).fill({ color: theme, alpha: locked ? 0.05 : 0.14 });
-    card.addChild(nameBg);
-
-    const nameText = this.txt(NAMES[idx]!, 18, locked ? 0x555555 : WHITE, IMPACT, 2);
+    const nameText = this.txt(NAMES[idx]!, 19, locked ? 0x4a4a52 : WHITE, IMPACT, 3);
     nameText.anchor.set(0.5, 0.5);
-    nameText.position.set(w / 2, 4 + nameH / 2);
+    nameText.position.set(w / 2, 4 + nameH / 2 - 2);
     card.addChild(nameText);
+
+    const rule = new Graphics();
+    // hairline that fades out toward both ends
+    for (let i = 0; i < 3; i++) {
+      const inset = 14 + i * 26;
+      rule.rect(inset, 4 + nameH - 4, w - inset * 2, 1)
+        .fill({ color: theme, alpha: (0.5 - i * 0.14) * dim });
+    }
+    card.addChild(rule);
 
     // ── Character Art Viewport (CONTAIN FIT — ZERO CLIPPING!) ───────────
     const artPad = 10;
-    const progressZoneH = 66; // reserved for progress bar + badge + reward
+    // segments + status + how-to + "1 WILD = 1 PART" + reward label/value
+    const progressZoneH = 96;
     const artX = artPad;
     const artY = 4 + nameH + 6;
     const artW = w - artPad * 2;
@@ -399,46 +423,66 @@ export class GalleryView extends Container {
 
     card.addChild(artContainer);
 
-    // ── Progress Bar & Parts Badge ───────────────────────────────────────
-    const pY = artY + artH + 10;
-    const barW = w - 28;
-    const barX = 14;
-    const barH = 8;
-
-    // Track
-    const track = new Graphics();
-    track.roundRect(barX, pY, barW, barH, barH / 2).fill({ color: WHITE, alpha: 0.08 });
-    track.roundRect(barX, pY, barW, barH, barH / 2).stroke({ color: WHITE, width: 0.5, alpha: 0.1 });
-    card.addChild(track);
-
-    // Green Fill
+    // ── Segmented progress: one cell PER PART ────────────────────────────
+    // A continuous bar hid the one number that matters — how many WILDs are
+    // still needed. Discrete cells can be counted at a glance.
     const total = PIECES[idx]!;
-    let frac = 0;
-    if (done) frac = 1;
-    else if (active) frac = Math.min(1, prog.pieces / total);
+    const curPieces = done ? total : active ? Math.min(total, prog.pieces) : 0;
 
-    if (frac > 0) {
-      const fillW = Math.max(barH, barW * frac);
-      const fill = new Graphics();
-      fill.roundRect(barX, pY, fillW, barH, barH / 2).fill({ color: GREEN });
-      card.addChild(fill);
+    const pY = artY + artH + 10;
+    const barX = 14;
+    const barW = w - 28;
+    const segGap = 3;
+    const segW = (barW - segGap * (total - 1)) / total;
+    const segH = 7;
+
+    const segs = new Graphics();
+    for (let s = 0; s < total; s++) {
+      const sx = barX + s * (segW + segGap);
+      const litSeg = s < curPieces;
+      segs.roundRect(sx, pY, segW, segH, 2)
+        .fill({ color: litSeg ? (done ? GREEN : theme) : WHITE, alpha: litSeg ? 0.95 : 0.09 });
+      if (litSeg) {
+        // bloom under the lit cell
+        segs.roundRect(sx - 1, pY - 1, segW + 2, segH + 2, 3)
+          .fill({ color: done ? GREEN : theme, alpha: 0.22 });
+      }
     }
+    card.addChild(segs);
 
-    // Status / Pieces Badge
-    const totalPieces = PIECES[idx]!;
-    const curPieces = done ? totalPieces : active ? prog.pieces : 0;
-    const statusStr = done ? "★ UNLOCKED" : locked ? "LOCKED" : `${curPieces} / ${totalPieces} PARTS UNLOCKED`;
-    const statusCol = done ? GREEN : locked ? 0x666666 : WHITE;
-
-    const statusBadge = this.txt(statusStr, 12, statusCol, FONT, 1.5);
+    // ── Status ───────────────────────────────────────────────────────────
+    const statusStr = done ? "★ COMPLETE" : locked ? "LOCKED" : `${curPieces} / ${total} PARTS`;
+    const statusCol = done ? GREEN : locked ? 0x5a5a62 : WHITE;
+    const statusBadge = this.txt(statusStr, 13, statusCol, IMPACT, 2);
     statusBadge.anchor.set(0.5, 0);
-    statusBadge.position.set(w / 2, pY + 14);
+    statusBadge.position.set(w / 2, pY + 15);
     card.addChild(statusBadge);
 
-    // Reward Text
-    const rewardText = this.txt(REWARDS[idx]!, 10, locked ? 0x444444 : theme, FONT, 0.8);
+    // ── What the player actually has to DO ───────────────────────────────
+    // The deck previously showed only a bar and a reward name, never explaining
+    // where parts come from or what completing her grants.
+    const howStr = done ? "REWARD UNLOCKED — KEPT FOREVER"
+                 : locked ? `COMPLETE ${NAMES[idx - 1] ?? "THE PREVIOUS GIRL"} TO UNLOCK`
+                 : `LAND ${total - curPieces} MORE WILD${total - curPieces === 1 ? "" : "S"} TO COMPLETE`;
+    const how = this.txt(howStr, 10, locked ? 0x4a4a52 : 0xc9d3e4, FONT, 0.8);
+    how.anchor.set(0.5, 0);
+    how.position.set(w / 2, pY + 34);
+    card.addChild(how);
+
+    const sub = this.txt(done ? "" : "1 WILD = 1 PART", 9, locked ? 0x3c3c44 : 0x7d8798, FONT, 1.4);
+    sub.anchor.set(0.5, 0);
+    sub.position.set(w / 2, pY + 48);
+    card.addChild(sub);
+
+    // ── Reward, presented as a prize line ────────────────────────────────
+    const rewardLabel = this.txt("REWARD", 8, locked ? 0x3c3c44 : 0x6f7889, FONT, 2);
+    rewardLabel.anchor.set(0.5, 0);
+    rewardLabel.position.set(w / 2, pY + 63);
+    card.addChild(rewardLabel);
+
+    const rewardText = this.txt(REWARDS[idx]!, 11, locked ? 0x44444c : theme, IMPACT, 1);
     rewardText.anchor.set(0.5, 0);
-    rewardText.position.set(w / 2, pY + 32);
+    rewardText.position.set(w / 2, pY + 74);
     card.addChild(rewardText);
 
     return card;
