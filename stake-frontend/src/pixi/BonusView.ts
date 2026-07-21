@@ -43,16 +43,12 @@ const STEEL_DEEP = 0x2a3340;
 const INK = 0x07080c;       // near-black card body
 const CINEMA_BAR = 0x050507; // letterbox bar colour
 
-// The reel window, as fractions of the 2750x1536 truck-layer canvas. Measured
-// from the area the two doors cover in brinks_truck_no_doors.webp — so the reels
-// fill exactly what the doors reveal. All truck layers share this canvas, which
-// is what keeps the frame, the doors and the reels aligned to the pixel.
-//   door coverage: x[908-1972] y[272-1052]  ->  centre (1440,662), size 1064x780
-const TRUCK_OPENING = {
-  cxFrac: 1440 / 2750, cyFrac: 662 / 1536,
-  wFrac: 1064 / 2750, hFrac: 780 / 1536,
-  aspect: 1064 / 780,
-};
+// The reel window, as fractions of the truck-layer canvas — measured from
+// brinks_truck_frame.webp's punched-out window. This is what the grid is sized
+// to, so it must stay matched to the FRAME, never to the door art (basing it on
+// the doors made the grid stop fitting the frame). brinks_truck_no_doors.webp is
+// registered to the same canvas, so one mapping places both.
+const TRUCK_OPENING = { wFrac: 0.3262, hFrac: 0.507, cxFrac: 0.5, cyFrac: 0.4441, aspect: 334 / 290 };
 // Content bounds of each door inside that same canvas, measured from the alpha.
 // The doors are NOT drawn flush to the frame's opening (they cover only ~49% of
 // it and sit 81px off-centre), so they are cropped to these bounds and then
@@ -128,6 +124,11 @@ export class BonusView extends Container {
   /** Hinge containers for the door-open animation (null until built with art). */
   private doorLeft: Container | null = null;
   private doorRight: Container | null = null;
+  /** The sealed truck (no_doors) and the original doors-wide-open frame. The
+   *  reveal cross-fades from the first to the second, so the doors finish swung
+   *  OUT at the truck's sides instead of vanishing into the pillars. */
+  private frameClosed: Sprite | null = null;
+  private frameOpen: Sprite | null = null;
   private doorsOpen = false;
 
   private rect: Rect = { x: 0, y: 0, width: 100, height: 100 };
@@ -1174,27 +1175,35 @@ export class BonusView extends Container {
     this.truckLayer.removeChildren();
     this.doorLayer.removeChildren();
     this.doorLeft = this.doorRight = null;
+    this.frameClosed = this.frameOpen = null;
     this.doorsOpen = false;
 
     const noDoors = getExtraTexture("truck_no_doors");
+    const openTex = getExtraTexture("brinks_truck_frame");
     const dLeft = getExtraTexture("truck_door_left");
     const dRight = getExtraTexture("truck_door_right");
     const truck = new Container();
     const o = this.opening();
     const pad = 6;
 
-    if (noDoors && dLeft && dRight) {
-      // ── 3-layer reveal truck ──────────────────────────────────────────
-      const texW = noDoors.width, texH = noDoors.height;
-      const scale = this.truckScale(texW);
-      const C = this.truckCentre(texW, texH, scale);
+    if (noDoors && openTex && dLeft && dRight) {
+      // ── Reveal truck: sealed frame -> doors swing out -> open frame ────
+      const place = (tex: Texture): Sprite => {
+        const scale = this.truckScale(tex.width);
+        const C = this.truckCentre(tex.width, tex.height, scale);
+        const s = new Sprite(tex);
+        s.anchor.set(0.5);
+        s.scale.set(scale);
+        s.position.set(C.x, C.y);
+        return s;
+      };
 
-      // Frame (with the dark cargo interior) sits BEHIND the reels.
-      const frame = new Sprite(noDoors);
-      frame.anchor.set(0.5);
-      frame.scale.set(scale);
-      frame.position.set(C.x, C.y);
-      truck.addChild(frame);
+      // Sealed truck first; the doors-open frame waits underneath it at alpha 0.
+      // Both are registered to the same canvas, so one mapping aligns them.
+      this.frameOpen = place(openTex);
+      this.frameOpen.alpha = 0;
+      this.frameClosed = place(noDoors);
+      truck.addChild(this.frameOpen, this.frameClosed);
 
       // Reel backdrop, just inside the opening.
       const panel = new Graphics();
@@ -1267,11 +1276,13 @@ export class BonusView extends Container {
     return c;
   }
 
-  /** Doors instantly open (resuming a round already in progress). */
+  /** Doors instantly open (turbo, or resuming a round already in progress). */
   private snapDoorsOpen(): void {
     this.doorsOpen = true;
     if (this.doorLeft) this.doorLeft.visible = false;
     if (this.doorRight) this.doorRight.visible = false;
+    if (this.frameClosed) this.frameClosed.alpha = 0;
+    if (this.frameOpen) this.frameOpen.alpha = 1;
   }
 
   /**
@@ -1305,8 +1316,9 @@ export class BonusView extends Container {
       R.x -= j * 0.4;
     }, linear);
 
-    await tween(620, (p) => {
+    await tween(700, (p) => {
       const e = easeOutCubic(p);
+      // Phase 1 — the closed doors turn edge-on around their outer hinges.
       const s = Math.max(0.02, 1 - e);
       L.scale.x = s;
       R.scale.x = s;
@@ -1315,9 +1327,19 @@ export class BonusView extends Container {
       const tint = (Math.round(0xff * shade) << 16) | (Math.round(0xff * shade) << 8) | Math.round(0xff * shade);
       if (lSpr) lSpr.tint = tint;
       if (rSpr) rSpr.tint = tint;
+
+      // Phase 2 — once they are past halfway (and narrow enough that the swap
+      // is hidden by the motion), bring up the frame that has the doors drawn
+      // swung WIDE OUT at the truck's sides. Without this the doors would just
+      // shrink into the pillars and vanish, which read as opening inwards.
+      const hand = Math.max(0, (e - 0.45) / 0.55);
+      if (this.frameOpen) this.frameOpen.alpha = hand;
+      if (this.frameClosed) this.frameClosed.alpha = 1 - hand;
     }, linear);
 
     L.visible = R.visible = false;
+    if (this.frameOpen) this.frameOpen.alpha = 1;
+    if (this.frameClosed) this.frameClosed.alpha = 0;
   }
 
   private buildDividers(): void {
