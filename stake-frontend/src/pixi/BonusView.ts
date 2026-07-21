@@ -57,16 +57,21 @@ const TRUCK_OPENING = { wFrac: 0.6317, hFrac: 0.6042, cxFrac: 0.4979, cyFrac: 0.
 const TRUCK_OPENING_LEGACY = { wFrac: 0.3262, hFrac: 0.507, cxFrac: 0.5, cyFrac: 0.4441, aspect: 334 / 290 };
 
 /** How far the doors swing before they rest, in degrees.
- *  Just past square: at 63 they still covered ~14% of the grid on each side
- *  (the outer reel columns were hidden). Past 90 the free edge crosses the
- *  hinge and the door comes to rest ON the side pillar, which both clears the
- *  whole grid and makes the doors read as properly hung on the truck. At 92 the
- *  door is 129px wide over a 149px pillar — it lands on the body, not past it. */
-const DOOR_OPEN_DEG = 92;
+ *
+ *  Why so far past 90: at exactly 90 a door is edge-on, so its face has no
+ *  width at all and it reads as a thin sliver. Rotating PAST square turns the
+ *  face back towards the viewer and fattens it up again. Measured against the
+ *  live opening (516px wide), the door's on-screen face is:
+ *      63deg -> 218px but still covering 14% of the grid
+ *      92deg -> 129px, clears the grid but looks skinny (w:h 0.19)
+ *     115deg -> 269px, w:h 0.41 — substantial, and still 1.43x magnified
+ *  115 also sits INSIDE the reference look: it reaches 0.23 of an opening-width
+ *  past the truck body, where the original one-piece art reached 0.35. */
+const DOOR_OPEN_DEG = 115;
 /** Virtual camera distance, in multiples of the opening width. Smaller = more
- *  extreme perspective. 1.65 magnifies the near edge ~45%, so the doors read as
- *  genuinely three-dimensional rather than merely squashed. */
-const DOOR_CAM_DIST = 1.65;
+ *  extreme perspective. 1.55 keeps the near edge ~43% magnified at rest, so the
+ *  doors stay genuinely three-dimensional rather than merely squashed. */
+const DOOR_CAM_DIST = 1.55;
 /** How far past the centre line each door reaches, so the two overlap and no
  *  background shows through the seam where their soft edges meet. */
 const DOOR_SEAM_OVERLAP = 6;
@@ -1272,10 +1277,43 @@ export class BonusView extends Container {
     }
   }
 
+  /**
+   * The widest swing that still leaves the doors on screen.
+   *
+   * Past 90 degrees the doors reach outward beyond the truck, which is what
+   * gives them a substantial face instead of a sliver — but in portrait the
+   * opening is 90% of the screen width, so there is barely any room outside it
+   * and a full swing would fling them off the edge. Walk the angle back until
+   * the outer edge fits, so wide layouts get the full 115 and narrow ones get
+   * the most they can hold.
+   */
+  private restAngle(): number {
+    const o = this.opening();
+    const half = o.width / 2;
+    const cx = o.x + o.width / 2;
+    const span = half + DOOR_SEAM_OVERLAP;
+    const camera = o.width * DOOR_CAM_DIST;
+    const margin = this.rect.width * 0.015;
+
+    // Never wind back below this: at 90 the door is edge-on and reads as a
+    // sliver, which is worse than being cropped by the screen edge. Portrait
+    // (opening = 90% of the width) has no room outside the truck at all, so
+    // there it simply keeps the full swing and lets the edge crop it.
+    const FLOOR = 100;
+    for (let deg = DOOR_OPEN_DEG; deg > FLOOR; deg -= 1) {
+      const rad = (deg * Math.PI) / 180;
+      const depth = span * Math.sin(rad);
+      const mag = camera / Math.max(1, camera - depth);
+      const freeX = cx + (o.x + span * Math.cos(rad) - cx) * mag;
+      if (freeX >= margin) return deg;
+    }
+    return FLOOR;
+  }
+
   /** Doors instantly at rest, open (turbo, or resuming mid-feature). */
   private snapDoorsOpen(): void {
     this.doorsOpen = true;
-    this.setDoorAngle(DOOR_OPEN_DEG);
+    this.setDoorAngle(this.restAngle());
   }
 
   /**
@@ -1286,7 +1324,8 @@ export class BonusView extends Container {
     if (this.doorsOpen || !this.doorL || !this.doorR) return;
     this.doorsOpen = true;
 
-    if (turbo) { this.setDoorAngle(DOOR_OPEN_DEG); return; }
+    const rest = this.restAngle();
+    if (turbo) { this.setDoorAngle(rest); return; }
 
     // Strain against the latch, then give. abs() keeps it OUTWARD only — a
     // negative angle would rotate the door back into the truck, which is both
@@ -1299,9 +1338,9 @@ export class BonusView extends Container {
     await tween(780, (p) => {
       const e = easeOutCubic(p);
       const overshoot = Math.sin(p * Math.PI) * 5 * (1 - p);
-      this.setDoorAngle(DOOR_OPEN_DEG * e + overshoot);
+      this.setDoorAngle(rest * e + overshoot);
     }, linear);
-    this.setDoorAngle(DOOR_OPEN_DEG);
+    this.setDoorAngle(rest);
   }
 
   private buildTruck(): void {
