@@ -167,11 +167,20 @@ def main() -> None:
     right = doors.crop((seam, 0, DW, DH))
     left = left.crop(left.getbbox())
     right = right.crop(right.getbbox())
+
+    # The two doors are drawn slightly different widths (147 vs 162). Each one
+    # gets mapped onto exactly half the opening, so unequal source widths meant
+    # unequal horizontal stretch — the pair visibly did not match. Resampling
+    # both to one size makes them render identically.
+    tw = max(left.width, right.width)
+    th = max(left.height, right.height)
+    left = left.resize((tw, th), Image.LANCZOS)
+    right = right.resize((tw, th), Image.LANCZOS)
+
     left.save(ASSETS / "truck_door_l.webp", "WEBP", quality=95, method=6)
     right.save(ASSETS / "truck_door_r.webp", "WEBP", quality=95, method=6)
     print(f"doors pair {DW}x{DH}, seam at x={seam}")
-    print(f"  truck_door_l.webp {left.size[0]}x{left.size[1]}")
-    print(f"  truck_door_r.webp {right.size[0]}x{right.size[1]}")
+    print(f"  normalised both doors to {tw}x{th}")
 
 
 if __name__ == "__main__":

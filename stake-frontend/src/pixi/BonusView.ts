@@ -56,13 +56,20 @@ const TRUCK_OPENING = { wFrac: 0.6317, hFrac: 0.6042, cxFrac: 0.4979, cyFrac: 0.
 // door-reveal art is missing.
 const TRUCK_OPENING_LEGACY = { wFrac: 0.3262, hFrac: 0.507, cxFrac: 0.5, cyFrac: 0.4441, aspect: 334 / 290 };
 
-/** How far the doors swing before they rest, in degrees. 90 would put them
- *  edge-on and invisible; this stops them part-way so they stay wide, readable
- *  and clearly angled out towards the player. */
-const DOOR_OPEN_DEG = 63;
+/** How far the doors swing before they rest, in degrees.
+ *  Just past square: at 63 they still covered ~14% of the grid on each side
+ *  (the outer reel columns were hidden). Past 90 the free edge crosses the
+ *  hinge and the door comes to rest ON the side pillar, which both clears the
+ *  whole grid and makes the doors read as properly hung on the truck. At 92 the
+ *  door is 129px wide over a 149px pillar — it lands on the body, not past it. */
+const DOOR_OPEN_DEG = 92;
 /** Virtual camera distance, in multiples of the opening width. Smaller = more
- *  extreme perspective. 1.8 gives a believable lens without fisheye. */
-const DOOR_CAM_DIST = 1.8;
+ *  extreme perspective. 1.65 magnifies the near edge ~45%, so the doors read as
+ *  genuinely three-dimensional rather than merely squashed. */
+const DOOR_CAM_DIST = 1.65;
+/** How far past the centre line each door reaches, so the two overlap and no
+ *  background shows through the seam where their soft edges meet. */
+const DOOR_SEAM_OVERLAP = 6;
 
 // Hold & Spin COUNTDOWN: the meter starts here, a lock HOLDS it, and each dead
 // spin spends one — the feature ends after this many dead spins in total. The
@@ -124,6 +131,9 @@ export class BonusView extends Container {
   private readonly doorLayer = new Container();
   private doorL: PerspectiveMesh | null = null;
   private doorR: PerspectiveMesh | null = null;
+  /** Contact shadow cast into the door frame at each hinge — without it the
+   *  doors read as floating in front of the truck rather than hung on it. */
+  private doorShadow: Graphics | null = null;
   private doorsOpen = false;
   private readonly fxLayer = new Container();
   private readonly hudLayer = new Container();
@@ -1184,9 +1194,11 @@ export class BonusView extends Container {
     this.truck = truck;
 
     // Doors start shut: 8 vertices across is plenty for a smooth projective warp.
+    // The hinge shadow goes down first so it sits UNDER both doors.
+    this.doorShadow = new Graphics();
     this.doorL = new PerspectiveMesh({ texture: dl, verticesX: 8, verticesY: 8 });
     this.doorR = new PerspectiveMesh({ texture: dr, verticesX: 8, verticesY: 8 });
-    this.doorLayer.addChild(this.doorL, this.doorR);
+    this.doorLayer.addChild(this.doorShadow, this.doorL, this.doorR);
     this.setDoorAngle(0);
   }
 
@@ -1207,9 +1219,14 @@ export class BonusView extends Container {
     const cy = o.y + o.height / 2;
     const camera = o.width * DOOR_CAM_DIST;
 
+    // Each door reaches a few px PAST the centre line so their inner edges
+    // overlap. Both plates carry a soft alpha margin, and butting them exactly
+    // edge-to-edge let the dark background show through as a seam.
+    const span = half + DOOR_SEAM_OVERLAP;
+
     const rad = (deg * Math.PI) / 180;
-    const reach = half * Math.cos(rad);   // how far the free edge still spans
-    const depth = half * Math.sin(rad);   // how far it has come towards us
+    const reach = span * Math.cos(rad);   // how far the free edge still spans
+    const depth = span * Math.sin(rad);   // how far it has come towards us
     const mag = camera / Math.max(1, camera - depth); // perspective divide
 
     const projY = (y: number): number => cy + (y - cy) * mag;
@@ -1226,10 +1243,33 @@ export class BonusView extends Container {
     this.doorR.setCorners(rFreeX, freeTop, rHingeX, top, rHingeX, bot, rFreeX, freeBot);
 
     // Surfaces turning off-axis catch less light.
-    const shade = 1 - 0.42 * Math.sin(rad);
-    const tint = (Math.round(0xff * shade) << 16) | (Math.round(0xff * shade) << 8) | Math.round(0xff * shade);
+    // CLAMPED: a negative angle makes sin() negative, which pushed the channel
+    // to 256 and produced 0x1010100 — a 25-bit value Pixi rejects outright,
+    // throwing inside the tween and freezing the doors mid-swing.
+    const shade = Math.min(1, Math.max(0, 1 - 0.42 * Math.sin(Math.max(0, rad))));
+    const ch = Math.min(255, Math.max(0, Math.round(0xff * shade)));
+    const tint = (ch << 16) | (ch << 8) | ch;
     this.doorL.tint = tint;
     this.doorR.tint = tint;
+
+    // Contact shadow: as a door swings away it exposes the recess it was
+    // sitting in, so a soft dark band grows along its hinge inside the opening.
+    // This is what stops the doors looking pasted on top of the truck.
+    if (this.doorShadow) {
+      const g = this.doorShadow;
+      g.clear();
+      const open = Math.min(1, Math.abs(Math.sin(rad)));
+      if (open > 0.01) {
+        const band = Math.max(3, o.width * 0.030);
+        for (let i = 0; i < 4; i++) {
+          const t = i / 4;
+          const a = 0.5 * open * (1 - t);
+          const wStep = band * (1 - t * 0.35);
+          g.rect(o.x, o.y, wStep, o.height).fill({ color: 0x000000, alpha: a });
+          g.rect(o.x + o.width - wStep, o.y, wStep, o.height).fill({ color: 0x000000, alpha: a });
+        }
+      }
+    }
   }
 
   /** Doors instantly at rest, open (turbo, or resuming mid-feature). */
@@ -1248,9 +1288,11 @@ export class BonusView extends Container {
 
     if (turbo) { this.setDoorAngle(DOOR_OPEN_DEG); return; }
 
-    // Strain against the latch, then give.
+    // Strain against the latch, then give. abs() keeps it OUTWARD only — a
+    // negative angle would rotate the door back into the truck, which is both
+    // impossible and what was overflowing the shade calculation.
     await tween(200, (p) => {
-      this.setDoorAngle(Math.sin(p * Math.PI * 5) * (1 - p) * 1.6);
+      this.setDoorAngle(Math.abs(Math.sin(p * Math.PI * 5)) * (1 - p) * 1.8);
     }, linear);
 
     // Heavy doors: they accelerate away, then settle back against their stops.
@@ -1266,6 +1308,7 @@ export class BonusView extends Container {
     this.truckLayer.removeChildren();
     this.doorLayer.removeChildren();
     this.doorL = this.doorR = null;
+    this.doorShadow = null;
     this.doorsOpen = false;
 
     const frameTex = getExtraTexture("truck_frame_open");
