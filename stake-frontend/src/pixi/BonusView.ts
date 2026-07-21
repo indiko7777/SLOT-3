@@ -1,4 +1,4 @@
-import { BlurFilter, Container, Graphics, Sprite, Text, TextStyle, Texture, TilingSprite } from "pixi.js";
+import { BlurFilter, Container, Graphics, PerspectiveMesh, Sprite, Text, TextStyle, Texture, TilingSprite } from "pixi.js";
 import { BONUS_START_RESPINS, GRID_COLUMNS, GRID_ROWS, type BonusCell, type Position } from "../domain";
 import { getExtraTexture } from "./assets";
 import { tween, wait, easeOutBack, easeOutCubic, linear, ambientTicker, getTimeScale } from "./tween";
@@ -48,7 +48,21 @@ const CINEMA_BAR = 0x050507; // letterbox bar colour
 // to, so it must stay matched to the FRAME, never to the door art (basing it on
 // the doors made the grid stop fitting the frame). brinks_truck_no_doors.webp is
 // registered to the same canvas, so one mapping places both.
-const TRUCK_OPENING = { wFrac: 0.3262, hFrac: 0.507, cxFrac: 0.5, cyFrac: 0.4441, aspect: 334 / 290 };
+// Cargo opening of truck_frame_open.webp, measured from its alpha by
+// tools/asset-pipeline/prep_truck_doors.py. The opening is transparent in that
+// art, so the reels show straight through it.
+const TRUCK_OPENING = { wFrac: 0.6317, hFrac: 0.6042, cxFrac: 0.4979, cyFrac: 0.4340, aspect: 1.1191 };
+// Legacy one-piece frame (doors already drawn open) — only used if the new
+// door-reveal art is missing.
+const TRUCK_OPENING_LEGACY = { wFrac: 0.3262, hFrac: 0.507, cxFrac: 0.5, cyFrac: 0.4441, aspect: 334 / 290 };
+
+/** How far the doors swing before they rest, in degrees. 90 would put them
+ *  edge-on and invisible; this stops them part-way so they stay wide, readable
+ *  and clearly angled out towards the player. */
+const DOOR_OPEN_DEG = 63;
+/** Virtual camera distance, in multiples of the opening width. Smaller = more
+ *  extreme perspective. 1.8 gives a believable lens without fisheye. */
+const DOOR_CAM_DIST = 1.8;
 
 // Hold & Spin COUNTDOWN: the meter starts here, a lock HOLDS it, and each dead
 // spin spends one — the feature ends after this many dead spins in total. The
@@ -105,6 +119,12 @@ export class BonusView extends Container {
    *  strip's blur filter never bleeds onto or clips them. */
   private readonly lockedLayer = new Container();
   private readonly dividerLayer = new Container();
+  /** The two armored doors, drawn ABOVE the reels so they hide the grid when
+   *  shut and expose it as they swing out towards the player. */
+  private readonly doorLayer = new Container();
+  private doorL: PerspectiveMesh | null = null;
+  private doorR: PerspectiveMesh | null = null;
+  private doorsOpen = false;
   private readonly fxLayer = new Container();
   private readonly hudLayer = new Container();
   private readonly police = new Graphics();
@@ -153,7 +173,7 @@ export class BonusView extends Container {
     this.visible = false;
     // lockedLayer sits between gridLayer (spinning strip) and fxLayer so
     // the sticky gold bars are always drawn on top of any reel blur.
-    this.addChild(this.bgLayer, this.truckLayer, this.gridLayer, this.lockedLayer, this.dividerLayer, this.fxLayer, this.police, this.hudLayer);
+    this.addChild(this.bgLayer, this.truckLayer, this.gridLayer, this.lockedLayer, this.dividerLayer, this.doorLayer, this.fxLayer, this.police, this.hudLayer);
     // Heavy blur turns the police light sources into soft, natural bloom.
     this.police.filters = [new BlurFilter({ strength: 30, quality: 3 })];
   }
@@ -202,7 +222,7 @@ export class BonusView extends Container {
   }
 
   // ── lifecycle ────────────────────────────────────────────────────────
-  async intro(turbo: boolean, onTypewriterStart?: () => void, onTypewriterStop?: () => void): Promise<void> {
+  async intro(turbo: boolean, onTypewriterStart?: () => void, onTypewriterStop?: () => void, onDoorsOpen?: () => void): Promise<void> {
     this.visible = true;
     this.busted = false;
     this.heat = 0;
@@ -218,7 +238,9 @@ export class BonusView extends Container {
     this.startAmbient();
     this.scale.set(1);
 
-    if (turbo) { this.alpha = 1; return; }
+    // Turbo skips the cold-open, so the doors settle straight to open — they
+    // must never be left shut over the reels.
+    if (turbo) { this.alpha = 1; this.snapDoorsOpen(); return; }
 
     const W = this.rect.width;
     const H = this.rect.height;
@@ -383,6 +405,9 @@ export class BonusView extends Container {
     blackout.destroy();
     this.alpha = 1;
 
+    // 6. THE REVEAL — the doors unlatch and swing out onto the reels.
+    onDoorsOpen?.();
+    await this.openDoors(false);
   }
 
   /** Smoothly fade the whole bonus out, then tear it down (used at round end). */
@@ -397,6 +422,8 @@ export class BonusView extends Container {
   showStatic(grid: BonusCell[][]): void {
     this.visible = true;
     if (!this.truck) { this.buildHighway(); this.buildTruck(); this.buildDividers(); this.buildHud(); this.startAmbient(); }
+    // Resuming mid-feature: the doors were opened already, so don't replay it.
+    this.snapDoorsOpen();
     this.gridLayer.removeChildren();
     this.cells.clear();
     const logoTex = getExtraTexture("heat_chase_logo_symbol") ?? getExtraTexture("heat_chase_logo");
@@ -1126,8 +1153,129 @@ export class BonusView extends Container {
     this.highwayProc = null;
   }
 
+  /**
+   * The armored truck with real, openable doors.
+   *
+   * The frame's cargo opening is transparent art, so the reel panel sits behind
+   * it and shows through. Each door is a PerspectiveMesh — a true 4-corner
+   * projective quad — laid exactly over its half of the opening. Shut, the pair
+   * seals the window; `openDoors` then swings them out towards the camera.
+   */
+  private buildRevealTruck(frameTex: Texture, dl: Texture, dr: Texture): void {
+    const o = this.opening();
+    const truck = new Container();
+
+    // Reel backdrop goes down FIRST, behind the frame, so it fills the opening.
+    const pad = 6;
+    const panel = new Graphics();
+    panel.rect(o.x - pad, o.y - pad, o.width + pad * 2, o.height + pad * 2).fill({ color: REEL_BG });
+    truck.addChild(panel);
+
+    const scale = o.width / (TRUCK_OPENING.wFrac * frameTex.width);
+    const sprite = new Sprite(frameTex);
+    sprite.anchor.set(0.5);
+    sprite.scale.set(scale);
+    sprite.position.set(
+      o.x + o.width / 2 - (TRUCK_OPENING.cxFrac - 0.5) * frameTex.width * scale,
+      o.y + o.height / 2 - (TRUCK_OPENING.cyFrac - 0.5) * frameTex.height * scale
+    );
+    truck.addChild(sprite);
+    this.truckLayer.addChild(truck);
+    this.truck = truck;
+
+    // Doors start shut: 8 vertices across is plenty for a smooth projective warp.
+    this.doorL = new PerspectiveMesh({ texture: dl, verticesX: 8, verticesY: 8 });
+    this.doorR = new PerspectiveMesh({ texture: dr, verticesX: 8, verticesY: 8 });
+    this.doorLayer.addChild(this.doorL, this.doorR);
+    this.setDoorAngle(0);
+  }
+
+  /**
+   * Pose both doors at `deg` open, as a genuine 3D rotation about the vertical
+   * hinge line where each door meets the truck's side pillar.
+   *
+   * The hinge edge has z = 0, so it never moves — that is what keeps the doors
+   * looking bolted to the truck. The free (inner) edge swings towards the
+   * camera, so it both narrows horizontally (cos) and, being nearer, projects
+   * LARGER (the perspective divide). That combination is what sells the 3D.
+   */
+  private setDoorAngle(deg: number): void {
+    if (!this.doorL || !this.doorR) return;
+    const o = this.opening();
+    const half = o.width / 2;
+    const cx = o.x + o.width / 2;
+    const cy = o.y + o.height / 2;
+    const camera = o.width * DOOR_CAM_DIST;
+
+    const rad = (deg * Math.PI) / 180;
+    const reach = half * Math.cos(rad);   // how far the free edge still spans
+    const depth = half * Math.sin(rad);   // how far it has come towards us
+    const mag = camera / Math.max(1, camera - depth); // perspective divide
+
+    const projY = (y: number): number => cy + (y - cy) * mag;
+    const top = o.y, bot = o.y + o.height;
+    const freeTop = projY(top), freeBot = projY(bot);
+
+    // Left door: hinged on the opening's left edge, free edge sweeping right.
+    const lFreeX = cx + (o.x + reach - cx) * mag;
+    this.doorL.setCorners(o.x, top, lFreeX, freeTop, lFreeX, freeBot, o.x, bot);
+
+    // Right door: mirrored — hinged on the right edge, free edge sweeping left.
+    const rHingeX = o.x + o.width;
+    const rFreeX = cx + (rHingeX - reach - cx) * mag;
+    this.doorR.setCorners(rFreeX, freeTop, rHingeX, top, rHingeX, bot, rFreeX, freeBot);
+
+    // Surfaces turning off-axis catch less light.
+    const shade = 1 - 0.42 * Math.sin(rad);
+    const tint = (Math.round(0xff * shade) << 16) | (Math.round(0xff * shade) << 8) | Math.round(0xff * shade);
+    this.doorL.tint = tint;
+    this.doorR.tint = tint;
+  }
+
+  /** Doors instantly at rest, open (turbo, or resuming mid-feature). */
+  private snapDoorsOpen(): void {
+    this.doorsOpen = true;
+    this.setDoorAngle(DOOR_OPEN_DEG);
+  }
+
+  /**
+   * THE REVEAL — the doors unlatch and swing out towards the player, stopping
+   * part-way so they stay wide and clearly three-dimensional.
+   */
+  async openDoors(turbo: boolean): Promise<void> {
+    if (this.doorsOpen || !this.doorL || !this.doorR) return;
+    this.doorsOpen = true;
+
+    if (turbo) { this.setDoorAngle(DOOR_OPEN_DEG); return; }
+
+    // Strain against the latch, then give.
+    await tween(200, (p) => {
+      this.setDoorAngle(Math.sin(p * Math.PI * 5) * (1 - p) * 1.6);
+    }, linear);
+
+    // Heavy doors: they accelerate away, then settle back against their stops.
+    await tween(780, (p) => {
+      const e = easeOutCubic(p);
+      const overshoot = Math.sin(p * Math.PI) * 5 * (1 - p);
+      this.setDoorAngle(DOOR_OPEN_DEG * e + overshoot);
+    }, linear);
+    this.setDoorAngle(DOOR_OPEN_DEG);
+  }
+
   private buildTruck(): void {
     this.truckLayer.removeChildren();
+    this.doorLayer.removeChildren();
+    this.doorL = this.doorR = null;
+    this.doorsOpen = false;
+
+    const frameTex = getExtraTexture("truck_frame_open");
+    const dl = getExtraTexture("truck_door_l");
+    const dr = getExtraTexture("truck_door_r");
+    if (frameTex && dl && dr) {
+      this.buildRevealTruck(frameTex, dl, dr);
+      return;
+    }
+
     const tex = getExtraTexture("brinks_truck_frame");
     const truck = new Container();
     const o = this.opening();
@@ -1135,12 +1283,12 @@ export class BonusView extends Container {
       // Scale & place the truck so its door opening lands exactly on opening().
       const sprite = new Sprite(tex);
       sprite.anchor.set(0.5);
-      const scale = o.width / (TRUCK_OPENING.wFrac * tex.width);
+      const scale = o.width / (TRUCK_OPENING_LEGACY.wFrac * tex.width);
       sprite.scale.set(scale);
       const truckH = tex.height * scale;
       sprite.position.set(
         o.x + o.width / 2,
-        o.y + o.height / 2 - (TRUCK_OPENING.cyFrac - 0.5) * truckH
+        o.y + o.height / 2 - (TRUCK_OPENING_LEGACY.cyFrac - 0.5) * truckH
       );
       truck.addChild(sprite);
     } else {

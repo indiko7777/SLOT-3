@@ -110,6 +110,12 @@ const EXTRA_ASSETS: Record<string, string> = {
 const OPTIONAL_ASSETS: Record<string, string> = {
   "highway_loop": "highway_loop.jpg",
   "brinks_truck_frame": "brinks_truck_frame.webp",
+  // Door-reveal set, built by tools/asset-pipeline/prep_truck_doors.py. The
+  // frame's cargo opening is transparent, so the reels show through it, and the
+  // two doors are flat face-on plates that get swung open in 3D over the top.
+  "truck_frame_open": "truck_frame_open.webp",
+  "truck_door_l": "truck_door_l.webp",
+  "truck_door_r": "truck_door_r.webp",
   "gold_bar": "gold_bar.webp",
   "dynamite": "dynamite.webp",
   "heat_chase_logo": "Heat Chase Logo.webp",
