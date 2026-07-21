@@ -110,14 +110,6 @@ const EXTRA_ASSETS: Record<string, string> = {
 const OPTIONAL_ASSETS: Record<string, string> = {
   "highway_loop": "highway_loop.jpg",
   "brinks_truck_frame": "brinks_truck_frame.webp",
-  // 3-layer armored-truck rear for the door-open reveal. All three share one
-  // 2750x1536 coordinate system, so they stack at the same transform. The
-  // no_doors frame sits behind the reels; the two doors sit above them and
-  // swing open on their outer (pillar) hinges. Missing → falls back to the
-  // one-piece already-open brinks_truck_frame above.
-  "truck_no_doors": "brinks_truck_no_doors.webp",
-  "truck_door_left": "brinks_truck_door_left.webp",
-  "truck_door_right": "brinks_truck_door_right.webp",
   "gold_bar": "gold_bar.webp",
   "dynamite": "dynamite.webp",
   "heat_chase_logo": "Heat Chase Logo.webp",
