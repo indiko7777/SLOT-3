@@ -269,68 +269,7 @@ export class BoardView extends Container {
     }
   }
 
-  /* ─── REMOVE: clear winning symbols, then gravity-refill with random ─── */
-  // Self-contained (clear + refill). Used by the debug feature tester only.
-  async remove(positions: Position[], turbo: boolean): Promise<void> {
-    await this.clearWins(positions, turbo);
-    await this.collapseColumns(turbo);
-  }
 
-  private async collapseColumns(turbo: boolean): Promise<void> {
-    const animations: Promise<void>[] = [];
-    const cellStep = this.cellHeight + this.gap;
-
-    for (let col = 0; col < GRID_COLUMNS; col++) {
-      const survivors: SymbolView[] = [];
-      for (let row = 0; row < GRID_ROWS; row++) {
-        const view = this.symbols.get(keyOf([col, row]));
-        if (view) {
-          survivors.push(view);
-          this.symbols.delete(keyOf([col, row]));
-        }
-      }
-
-      const emptyCount = GRID_ROWS - survivors.length;
-
-      // Survivors fall to the bottom of the column
-      for (let i = 0; i < survivors.length; i++) {
-        const view = survivors[i];
-        const newRow = emptyCount + i;
-        const targetY = this.cellY(newRow);
-        const startY = view.y;
-        this.symbols.set(keyOf([col, newRow]), view);
-        if (Math.abs(startY - targetY) > 1) {
-          const fallDist = targetY - startY;
-          const dur = turbo ? 80 : Math.min(280, 100 + fallDist * 0.5);
-          animations.push(
-            tween(dur, (p) => { view.y = startY + fallDist * p; }, easeOutBounce)
-              .then(() => { view.y = targetY; })
-          );
-        }
-      }
-
-      // Fill empty cells at top with new random symbols sliding in from above
-      for (let i = 0; i < emptyCount; i++) {
-        const newRow = i;
-        const id = ALL_SYMBOLS[Math.floor(Math.random() * ALL_SYMBOLS.length)];
-        const view = new SymbolView(id);
-        view.layout(this.cellWidth, this.cellHeight);
-        const startY = -(emptyCount - i) * cellStep;
-        const targetY = this.cellY(newRow);
-        view.x = this.cellX(col);
-        view.y = startY;
-        this.reelContainer.addChild(view);
-        this.symbols.set(keyOf([col, newRow]), view);
-        const fallDist = targetY - startY;
-        const dur = turbo ? 100 : Math.min(350, 140 + fallDist * 0.5);
-        animations.push(
-          tween(dur, (p) => { view.y = startY + fallDist * p; }, easeOutBounce)
-            .then(() => { view.y = targetY; })
-        );
-      }
-    }
-    if (animations.length > 0) await Promise.all(animations);
-  }
 
   /* ─── CASCADE: gravity-drop survivors + slide new symbols from above ─── */
   async tumbleTo(board: Board, turbo: boolean): Promise<void> {

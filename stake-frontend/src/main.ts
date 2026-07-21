@@ -380,15 +380,7 @@ async function boot(): Promise<void> {
     try { await showIntro(); } catch { /* non-fatal — go straight to the game */ }
   }
 
-  // DEV-only test button (stripped from production builds): replays the entire
-  // WILD-collection flow — every body part flying in, each girl completing, the
-  // gold WANTED stars arming, and the crossfade to the next girl — through the
-  // REAL gallery, so it exercises exactly what a run of real spins would.
-  if (import.meta.env.DEV) {
-    (window as any).scene = scene;
-    mountCollectionFlowTest();
-    mountWinTests();
-  }
+
 
   radioWheel = new RadioWheel(
     (stationId) => {
@@ -819,105 +811,7 @@ async function playRound(modeKey: string): Promise<void> {
   scene.renderSnapshot(snapshot);
 }
 
-/** DEV-only: a single floating button that replays the whole collection flow. */
-function mountCollectionFlowTest(): void {
-  const btn = document.createElement("button");
-  btn.textContent = "▶ TEST COLLECTION FLOW";
-  Object.assign(btn.style, {
-    position: "fixed", left: "12px", top: "12px", zIndex: "99999",
-    padding: "10px 14px", font: "700 13px Impact, system-ui, sans-serif",
-    letterSpacing: "1px", color: "#0a0a0a", background: "#9ae64e",
-    border: "2px solid #2ea847", borderRadius: "8px", cursor: "pointer",
-    boxShadow: "0 2px 10px rgba(0,0,0,0.5)"
-  } as Partial<CSSStyleDeclaration>);
-  let running = false;
-  btn.addEventListener("click", async () => {
-    if (running) return;
-    running = true;
-    btn.disabled = true;
-    btn.style.opacity = "0.5";
-    btn.textContent = "RUNNING…";
-    try {
-      await runCollectionFlowTest();
-    } finally {
-      running = false;
-      btn.disabled = false;
-      btn.style.opacity = "1";
-      btn.textContent = "▶ TEST COLLECTION FLOW";
-    }
-  });
-  document.body.appendChild(btn);
-}
 
-function mountWinTests(): void {
-  const container = document.createElement("div");
-  Object.assign(container.style, {
-    position: "fixed", left: "12px", top: "60px", zIndex: "99999",
-    display: "flex", flexDirection: "column", gap: "8px"
-  } as Partial<CSSStyleDeclaration>);
-
-  const testWins = [
-    { name: "NICE WIN", mult: 10 },
-    { name: "BIG WIN", mult: 50 },
-    { name: "MEGA WIN", mult: 200 },
-    { name: "GRAND WIN", mult: 1000 },
-    { name: "MAX WIN", mult: 5000 }
-  ];
-
-  let running = false;
-  for (const w of testWins) {
-    const btn = document.createElement("button");
-    btn.textContent = `▶ TEST ${w.name}`;
-    Object.assign(btn.style, {
-      padding: "10px 14px", font: "700 13px Impact, system-ui, sans-serif",
-      letterSpacing: "1px", color: "#0a0a0a", background: "#f1c40f",
-      border: "2px solid #f39c12", borderRadius: "8px", cursor: "pointer",
-      boxShadow: "0 2px 10px rgba(0,0,0,0.5)"
-    } as Partial<CSSStyleDeclaration>);
-    btn.addEventListener("click", async () => {
-      if (running || isPlaying) return;
-      running = true;
-      btn.disabled = true;
-      btn.style.opacity = "0.5";
-      try {
-        const betAmount = currentBet() || 1;
-        const testSnapshot = { ...snapshot, betAmount };
-        await scene.playEvent({
-          type: "round_end",
-          payoutMultiplier: w.mult,
-          capApplied: false
-        }, testSnapshot);
-      } finally {
-        running = false;
-        btn.disabled = false;
-        btn.style.opacity = "1";
-      }
-    });
-    container.appendChild(btn);
-  }
-  document.body.appendChild(container);
-}
-
-/** Drive every WILD for all three girls through the REAL gallery path — each part
- *  flying in, every girl completing, the gold WANTED stars arming, and the
- *  crossfade to the next silhouette. Resets the gallery first so it always starts
- *  from girl 1 with an empty meter. */
-async function runCollectionFlowTest(): Promise<void> {
-  gallery = emptyGallery();
-  saveGallery(gallery);
-  snapshot = { ...snapshot, collectionCount: 0 };
-  scene.renderSnapshot(snapshot);
-  await delay(450);
-  for (;;) {
-    const { data, gain } = collectWildPiece(gallery);
-    gallery = data;
-    saveGallery(gallery);
-    if (!gain) break; // gallery mastered — nothing left to reveal
-    await scene.playCollectionStep(gain);
-    await delay(350);
-  }
-  scene.renderSnapshot(snapshot);
-}
 
 async function replayRound(record: RoundRecord, active: boolean): Promise<void> {
   for (const event of record.events as GameEvent[]) {
