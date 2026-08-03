@@ -12,6 +12,7 @@ import {
   addPoints,
   consumeHeadStart,
   effectiveTier,
+  grandReset as powerGrandReset,
   recordSpin,
   routeMode,
   NUM_CARDS,
@@ -160,6 +161,18 @@ function onWildCollected(): PieceGain | null {
   if (spinOrganic && spinBet > 0) {
     const { state } = addPoints(power, spinBet);
     power = state;
+    powerStore.save(power);
+  }
+
+  // Mastering the whole piece-gallery (all 3 girls) is the master reset. The
+  // WANTED stars are the SUM of two systems — the girl-completion stars
+  // (gallery.getawayStars, which collectWild already zeroed) PLUS the points-based
+  // Power tier (effectiveTier). Without wiping the Power tier too, the meter kept
+  // 1–3 solid stars after the loop instead of going empty. So Grand-Reset the
+  // Power Level here so completing the gallery truly zeroes the stars, matching
+  // the reset silhouette + cards.
+  if (gain?.galleryComplete) {
+    power = powerGrandReset(power);
     powerStore.save(power);
   }
 
