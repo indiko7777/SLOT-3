@@ -111,7 +111,7 @@ const OPTIONAL_ASSETS: Record<string, string> = {
   // The "driving off" night-highway backdrop for the Getaway bonus — a wide
   // perspective still (vanishing point centred, motion-blur baked in) that
   // BonusView dolly-zooms for a 3D forward-flight feel.
-  "getaway_highway": "Gemini_Generated_Image_7seql27seql27seq.png",
+  "getaway_highway": "getaway_highway.webp",
   "highway_loop": "highway_loop.jpg",
   "brinks_truck_frame": "brinks_truck_frame.webp",
   // Door-reveal set, built by tools/asset-pipeline/prep_truck_doors.py. The

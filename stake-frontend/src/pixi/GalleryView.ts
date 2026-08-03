@@ -153,7 +153,9 @@ export class GalleryView extends Container {
       const done = i < curGirl;
       const active = i === curGirl && !prog.mastered;
       const locked = i > curGirl || (prog.mastered && i >= 3);
-      const theme = locked ? 0x333333 : THEME[i]!;
+      // Locked cards take a muted BRONZE-GOLD accent (not dead grey) so the frame
+      // reads as an exclusive, still-premium item behind glass.
+      const theme = locked ? 0x7a6636 : THEME[i]!;
 
       const card = this.buildCard(cardW, cardH, i, done, active, locked, theme, prog);
       this.cards.push(card);
@@ -321,7 +323,7 @@ export class GalleryView extends Container {
       notch, h + pad,
       -pad, h + pad - notch,
     ];
-    const dim = locked ? 0.18 : 1;
+    const dim = locked ? 0.42 : 1;
 
     // ── Outer neon bloom ─────────────────────────────────────────────────
     const glow = new Graphics();
@@ -346,7 +348,7 @@ export class GalleryView extends Container {
 
     // ── Header: a rule + letterspaced name, not a filled bar ─────────────
     const nameH = 34;
-    const nameText = this.txt(NAMES[idx]!, 19, locked ? 0x4a4a52 : WHITE, IMPACT, 3);
+    const nameText = this.txt(NAMES[idx]!, 19, locked ? 0x9a865a : WHITE, IMPACT, 3);
     nameText.anchor.set(0.5, 0.5);
     nameText.position.set(w / 2, 4 + nameH / 2 - 2);
     card.addChild(nameText);
@@ -382,24 +384,68 @@ export class GalleryView extends Container {
     artContainer.addChild(artBg);
 
     if (locked) {
-      // Frosted Locked Viewport
+      // ── Premium "sealed vault" ──────────────────────────────────────────
+      // A faint teaser of the girl behind frosted glass, a soft diagonal sheen,
+      // and a gold lock medallion — reads as an exclusive item to be unlocked,
+      // not a flat grey box with a stray-lined padlock.
+      const prefix = PREFIX[idx]!;
+      const teaseTex = getExtraTexture(`${prefix}_silhouette`);
+      if (teaseTex) {
+        const tIn = 34;
+        const tScale = Math.min((artW - tIn) / teaseTex.width, (artH - tIn) / teaseTex.height);
+        const ghost = new Sprite(teaseTex);
+        ghost.anchor.set(0.5);
+        ghost.tint = 0x11131b;               // barely-there dark ghost
+        ghost.scale.set(tScale);
+        ghost.position.set(artW / 2, artH / 2);
+        artContainer.addChild(ghost);
+      }
+
+      // Frosted glass — a soft vertical gradient sealing the teaser away.
       const frost = new Graphics();
-      frost.rect(0, 0, artW, artH).fill({ color: 0x0a0a0a, alpha: 0.92 });
+      const bands = 8;
+      for (let b = 0; b < bands; b++) {
+        frost.rect(0, (artH / bands) * b, artW, artH / bands + 1)
+          .fill({ color: 0x060810, alpha: 0.6 + (b / bands) * 0.16 });
+      }
       artContainer.addChild(frost);
 
-      const lx = artW / 2, ly = artH / 2 - 6;
-      const lSize = Math.min(artW, artH) * 0.22;
+      // A single clean diagonal glass sheen (replaces the old stray line).
+      const sheen = new Graphics();
+      sheen.poly([artW * 0.16, 0, artW * 0.34, 0, artW * 0.04, artH, -artW * 0.14, artH])
+        .fill({ color: 0xffffff, alpha: 0.05 });
+      artContainer.addChild(sheen);
+
+      // Gold lock medallion, centred.
+      const mx = artW / 2, my = artH / 2 - 2;
+      const R = Math.min(artW, artH) * 0.16;
+      const med = new Graphics();
+      med.circle(mx, my, R * 1.55).fill({ color: GOLD, alpha: 0.05 });                 // soft glow halo
+      med.circle(mx, my, R).fill({ color: 0x0a0c12, alpha: 0.98 })
+         .stroke({ color: GOLD, width: 1.5, alpha: 0.5 });
+      med.circle(mx, my, R * 0.84).stroke({ color: GOLD, width: 0.75, alpha: 0.22 });   // inner ring
+      artContainer.addChild(med);
+
+      // Clean gold padlock glyph. The shackle path STARTS with moveTo so no stray
+      // connecting line is drawn from the body (the old bug).
       const lock = new Graphics();
-      lock.roundRect(lx - lSize * 0.55, ly + lSize * 0.1, lSize * 1.1, lSize * 0.85, lSize * 0.12)
-        .fill({ color: 0x222222 }).stroke({ color: 0x444444, width: 1.5 });
-      lock.arc(lx, ly + lSize * 0.1, lSize * 0.35, Math.PI, 0)
-        .stroke({ color: 0x444444, width: lSize * 0.12 });
-      lock.circle(lx, ly + lSize * 0.45, lSize * 0.08).fill({ color: 0x555555 });
+      const bw = R * 0.86, bh = R * 0.6;
+      const bx = mx - bw / 2, by = my - bh * 0.06;
+      const sr = bw * 0.3, arcY = by - bh * 0.5;
+      lock.moveTo(mx - sr, by);
+      lock.lineTo(mx - sr, arcY);
+      lock.arc(mx, arcY, sr, Math.PI, 0);   // top semicircle of the shackle
+      lock.lineTo(mx + sr, by);
+      lock.stroke({ color: GOLD, width: Math.max(1.5, R * 0.1), alpha: 0.85 });
+      lock.roundRect(bx, by, bw, bh, R * 0.16).fill({ color: GOLD, alpha: 0.9 });
+      lock.roundRect(bx, by, bw, bh, R * 0.16).stroke({ color: 0xfff1c4, width: 1, alpha: 0.45 });
+      lock.circle(mx, by + bh * 0.5, R * 0.11).fill({ color: 0x0a0c12 });               // keyhole
+      lock.rect(mx - R * 0.05, by + bh * 0.5, R * 0.1, R * 0.24).fill({ color: 0x0a0c12 });
       artContainer.addChild(lock);
 
-      const lockText = this.txt("LOCKED", 11, 0x666666, FONT, 2);
+      const lockText = this.txt("LOCKED", 10, 0xcbb26a, IMPACT, 5);
       lockText.anchor.set(0.5, 0.5);
-      lockText.position.set(artW / 2, ly + lSize * 0.9 + 12);
+      lockText.position.set(mx, my + R + 18);
       artContainer.addChild(lockText);
 
     } else if (done) {
@@ -417,31 +463,44 @@ export class GalleryView extends Container {
       }
 
     } else if (active) {
-      // Active In-Progress Girl Art (Silhouette + Pieces) — CONTAIN FIT!
+      // Active girl: a crisp WHITE-OUTLINED black silhouette (fully visible, never
+      // cropped) with the collected body parts overlaid.
       const prefix = PREFIX[idx]!;
       const silTex = getExtraTexture(`${prefix}_silhouette`);
       if (silTex) {
         const assembly = new Container();
 
+        // Generous inset so the whole silhouette AND its outline clear the mask.
+        const inset = 26;
+        const scale = Math.min((artW - inset) / silTex.width, (artH - inset) / silTex.height);
+        const t = 2.5 / scale;   // outline thickness in local px → ~2.5px on screen
+
+        // White outline = the silhouette stamped in white at 8 offsets UNDER the
+        // black fill. A pure-sprite outline (no filter) — safe inside the masked
+        // container, and it can never blank the canvas the way a filter+mask can.
+        const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]];
+        for (const [dx, dy] of dirs) {
+          const o = new Sprite(silTex);
+          o.anchor.set(0.5);
+          o.tint = 0xffffff;
+          o.position.set(dx! * t, dy! * t);
+          assembly.addChild(o);
+        }
+
+        // Solid black silhouette on top of the white halo.
         const sil = new Sprite(silTex);
-        sil.anchor.set(0.5, 0.5);
-        sil.tint = 0x0a0a0a;
-        sil.alpha = 0.5;
+        sil.anchor.set(0.5);
+        sil.tint = 0x000000;
         assembly.addChild(sil);
 
+        // Collected parts (same canvas as the silhouette → perfect registration).
         const collected = prog.pieces;
         const maxP = PIECES[idx]!;
         for (let p = 1; p <= Math.min(maxP, collected); p++) {
           const pTex = getExtraTexture(`${prefix}_piece_${p}`);
-          if (pTex) {
-            const piece = new Sprite(pTex);
-            piece.anchor.set(0.5, 0.5);
-            assembly.addChild(piece);
-          }
+          if (pTex) { const piece = new Sprite(pTex); piece.anchor.set(0.5); assembly.addChild(piece); }
         }
 
-        // Contain fit scaling so full silhouette & pieces fit inside viewport!
-        const scale = Math.min((artW - 6) / silTex.width, (artH - 6) / silTex.height);
         assembly.scale.set(scale);
         assembly.position.set(artW / 2, artH / 2);
         artContainer.addChild(assembly);

@@ -170,7 +170,7 @@ export function showIntro(): Promise<void> {
     maxWin.innerHTML =
       `<span style="color:#c9d3e4">WIN UP TO</span> ` +
       `<span style="color:${GOLD};font-size:1.5em">${MAX_WIN_MULTIPLIER.toLocaleString()}x</span> ` +
-      `<span style="color:#c9d3e4">YOUR BET</span>`;
+      `<span style="color:#c9d3e4">YOUR PLAY AMOUNT</span>`;
     Object.assign(maxWin.style, {
       fontFamily: IMPACT,
       fontSize: "clamp(13px, 2vw, 19px)",
@@ -245,7 +245,7 @@ export function showIntro(): Promise<void> {
     const buys = document.createElement("div");
     buys.innerHTML =
       `<span style="color:${AMBER}">THE GETAWAY 100x</span>` +
-      `<span style="opacity:.45"> — buy the feature straight away</span>` +
+      `<span style="opacity:.45"> — trigger the feature play instantly</span>` +
       `<span style="opacity:.3"> &nbsp;|&nbsp; </span>` +
       `<span style="color:${MAGENTA}">SUPER GETAWAY 500x</span>` +
       `<span style="opacity:.45"> — richer bars, far more likely to fill</span>`;

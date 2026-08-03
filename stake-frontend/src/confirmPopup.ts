@@ -481,7 +481,7 @@ export function showConfirmPopup(
         </div>
         <div class="hc-buy-actions">
           <button class="hc-buy-btn cancel" id="hc-btn-cancel">Cancel</button>
-          <button class="hc-buy-btn confirm" id="hc-btn-confirm">${isSuper ? "Go All-In" : confirmLabel}</button>
+          <button class="hc-buy-btn confirm" id="hc-btn-confirm">${isSuper ? "Confirm Super" : confirmLabel}</button>
         </div>
       </div>
     `;

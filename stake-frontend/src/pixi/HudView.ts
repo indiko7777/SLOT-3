@@ -135,9 +135,9 @@ export class HudView extends Container {
         }
       }
     }
-    // Update credit display (deduct could happen externally)
+    // Update balance display (deduct could happen externally)
     if (this.creditText) {
-      this.creditText.text = `CREDIT ${this.fmtMoney(this.runtime.getCredit())} ${this.runtime.getCurrency()}`;
+      this.creditText.text = `${this.t().creditLabel} ${this.fmtMoney(this.runtime.getCredit())} ${this.runtime.getCurrency()}`;
     }
   }
 
@@ -564,7 +564,7 @@ export class HudView extends Container {
 
       // Left: Stacked Balances (Credit & Bet)
       this.creditText = new Text({
-        text: isReplay ? "" : `CREDIT ${this.fmtMoney(credit)} ${currency}`,
+        text: isReplay ? "" : `${this.t().creditLabel} ${this.fmtMoney(credit)} ${currency}`,
         style: new TextStyle({
           fill: 0xffffff,
           fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
@@ -635,7 +635,7 @@ export class HudView extends Container {
     this.smallButton(rect.x + 114, rect.y + rect.height / 2 - 20, 40, "i", "info");
 
     this.creditText = new Text({
-      text: isReplay ? "" : `CREDIT ${this.fmtMoney(credit)} ${currency}`,
+      text: isReplay ? "" : `${this.t().creditLabel} ${this.fmtMoney(credit)} ${currency}`,
       style: new TextStyle({
         fill: 0xffffff,
         fontFamily: "Impact, 'Arial Black', Arial, sans-serif",

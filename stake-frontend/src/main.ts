@@ -184,7 +184,13 @@ function activeStars(): number {
 /** Project the 1:1 gallery state onto the HUD/gallery's view. */
 function galleryProgress(): GalleryProgress {
   const { currentGirl: girlIdx, pieces, prestige = 0 } = gallery;
-  const mastered = prestige > 0 || girlIdx >= GIRLS.length;
+  // "mastered" is ONLY the transient all-three-done state before collectWild loops
+  // back to girl 1. It must NOT include `prestige > 0` — once you've completed the
+  // gallery once, prestige stays > 0 forever, which latched `mastered` permanently
+  // true and made the deck/HUD never reset to the first girl's black silhouette on
+  // the next loop (the "active girl" render is gated on `!mastered`). The prestige
+  // badge/hint conveys "completed N times" separately.
+  const mastered = girlIdx >= GIRLS.length;
   const idx = Math.min(girlIdx >= GIRLS.length ? 0 : girlIdx, GIRLS.length - 1);
   const girl = GIRLS[idx] ?? GIRLS[0]!;
   const completedGirls = gallery.completed.length;

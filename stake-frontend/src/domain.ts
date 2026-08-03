@@ -156,15 +156,15 @@ export const SYMBOLS: Record<SymbolId, SymbolDefinition> = {
 export const TEXT = {
   title: "Heat Chase",
   subtitle: "Grand Escape",
-  maxWin: "Win up to 5,000x your bet",
+  maxWin: "Win up to 5,000x your play amount",
   buy: "The Getaway",
   superBuy: "Super Getaway",
   ante: "Ante",
   anteHelp: "Scatter chance increased",
   spin: "Spin",
   auto: "Auto",
-  credit: "CREDIT",
-  bet: "Bet",
+  credit: "BALANCE",
+  bet: "Play",
   turboHint: "Hold space for turbo",
   normalWin: "Cluster Win",
   bust: "Bust the Stash",
@@ -280,6 +280,7 @@ export const BONUS_CELLS = 20;
  */
 export interface UiStrings {
   betLabel: string;         // "Bet"  → "Play"
+  creditLabel: string;      // "CREDIT" → "BALANCE"
   idlePrompt: string;       // "PLACE YOUR BET" → social-safe prompt
   featureKicker: string;    // "BUY" panel kicker → "FEATURE"
   costWord: string;         // "COST" → "CAN BE PLAYED FOR"
@@ -298,6 +299,7 @@ export function uiStrings(social: boolean): UiStrings {
   return social
     ? {
         betLabel: "Play",
+        creditLabel: "BALANCE",
         idlePrompt: "PRESS SPIN TO PLAY",
         featureKicker: "FEATURE",
         costWord: "CAN BE PLAYED FOR",
@@ -313,6 +315,7 @@ export function uiStrings(social: boolean): UiStrings {
       }
     : {
         betLabel: "Bet",
+        creditLabel: "BALANCE",
         idlePrompt: "PLACE YOUR BET",
         featureKicker: "BUY",
         costWord: "COST",
