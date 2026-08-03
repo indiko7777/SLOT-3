@@ -8,14 +8,8 @@ import { showIntro } from "./intro";
 import { applyEvent, INITIAL_SNAPSHOT, type PlaybackSnapshot } from "./playback";
 import { GIRLS, type PieceGain, collectWild as collectWildPiece, consumeGetawayStars, sanitize as sanitizeGallery, emptyGallery, type GalleryData } from "./meta/collection";
 import {
-  activeTier,
   addPoints,
-  consumeHeadStart,
-  effectiveTier,
-  grandReset as powerGrandReset,
   recordSpin,
-  routeMode,
-  NUM_CARDS,
   type PowerState
 } from "./meta/powerLevel";
 import { createPlayerStateStore } from "./meta/PlayerStateStore";
@@ -164,18 +158,6 @@ function onWildCollected(): PieceGain | null {
     powerStore.save(power);
   }
 
-  // Mastering the whole piece-gallery (all 3 girls) is the master reset. The
-  // WANTED stars are the SUM of two systems — the girl-completion stars
-  // (gallery.getawayStars, which collectWild already zeroed) PLUS the points-based
-  // Power tier (effectiveTier). Without wiping the Power tier too, the meter kept
-  // 1–3 solid stars after the loop instead of going empty. So Grand-Reset the
-  // Power Level here so completing the gallery truly zeroes the stars, matching
-  // the reset silhouette + cards.
-  if (gain?.galleryComplete) {
-    power = powerGrandReset(power);
-    powerStore.save(power);
-  }
-
   return gain; // null only when the entire gallery is already mastered
 }
 
@@ -184,14 +166,16 @@ function onWildCollected(): PieceGain | null {
 function galleryStars(): number {
   return Math.max(0, Math.min(5, gallery.getawayStars ?? 0));
 }
-/** Solid-gold head-start stars in effect for the CURRENT bet: the points-based
- *  power tier (bet-locked) PLUS the unconditional girl-completion stars. */
+/** Solid-gold head-start stars — now a SINGLE unified system: the girl-completion
+ *  stars (getawayStars). These both fill the WANTED meter AND route base spins to
+ *  the matching base_tierN table. (The old points-based power tier no longer feeds
+ *  the meter, so the two systems can never desync.) */
 function headStartStars(): number {
-  return Math.min(5, effectiveTier(power, currentBet()) + galleryStars());
+  return galleryStars();
 }
-/** All armed stars including the points tier that the current bet currently dims. */
+/** All armed head-start stars — same single girl-completion source now. */
 function activeStars(): number {
-  return Math.min(5, activeTier(power) + galleryStars());
+  return galleryStars();
 }
 
 /** Project the 1:1 gallery state onto the HUD/gallery's view. */
@@ -685,13 +669,14 @@ async function handleAction(action: string): Promise<void> {
  *  collection-routed base table (base / base_tierN). */
 function spinModeForUser(): string {
   if (anteEnabled && betModes.ante) return "ante";
-  // Combine the points-based head-start (bet-locked) with the unconditional
-  // girl-completion stars, then route to the highest certified table available.
-  const tier = Math.min(3, effectiveTier(power, currentBet()) + galleryStars());
+  // ONE unified head-start: the girl-completion stars (getawayStars) route the
+  // spin to the matching certified table. Every base_tierN verifies to 96%, so
+  // this is variance reshaping, not EV. Falls back to base when no girl is done.
+  const tier = Math.min(3, galleryStars());
   for (let t = tier; t >= 1; t--) {
     if (betModes[`base_tier${t}`]) return `base_tier${t}`;
   }
-  return routeMode(power, currentBet());
+  return "base";
 }
 
 /** True when animations should run at turbo speed (persistent mode or held space). */
@@ -755,11 +740,6 @@ async function playRound(modeKey: string): Promise<void> {
   spinBet = betAmount;
   const effTier = modeKey.startsWith("base_tier") ? Number(modeKey.slice(-1)) || 0 : 0;
   spinOrganic = modeKey === "base" || modeKey === "ante" || effTier > 0;
-  // The points-based head-start the bet actually unlocked (the table tier may be
-  // HIGHER because girl-completion stars also contribute to routing — those are
-  // consumed separately, so never feed the gallery stars into this).
-  const powerEffTier = effectiveTier(power, betAmount);
-
   isPlaying = true;
   activeModeKey = modeKey;
   snapshot = {
@@ -812,24 +792,14 @@ async function playRound(modeKey: string): Promise<void> {
   // Consume head-starts when the Getaway triggers. The bonus has just settled
   // (/wallet/end-round, inside replayRound).
   if (record.events.some((e) => e.type === "bonus_trigger")) {
-    // Points-based head-start: spend only the tier the bet actually unlocked.
-    // Spending the Tier 3 head-start wipes the entire gallery (the Grand Reset).
-    if (powerEffTier > 0) {
-      const { state, grandReset, consumedTier } = consumeHeadStart(power, powerEffTier);
-      power = state;
-      powerStore.save(power);
-      snapshot = {
-        ...snapshot,
-        lastMessage: grandReset
-          ? "GRAND ESCAPE — gallery reset to zero!"
-          : `Tier ${consumedTier} head-start used`
-      };
-    }
-    // Girl-completion gold stars: a NATURAL Getaway (an organic spin whose live
-    // wanted level reached 5★) burns ALL of them. A bought bonus never does.
+    // Unified head-start: a NATURAL Getaway (an organic spin whose live wanted
+    // level reached 5★) spends ALL the girl-completion stars — that IS the
+    // head-start being consumed. A bought bonus never burns them.
     if (spinOrganic && (gallery.getawayStars ?? 0) > 0) {
+      const spent = gallery.getawayStars ?? 0;
       gallery = consumeGetawayStars(gallery);
       saveGallery(gallery);
+      snapshot = { ...snapshot, lastMessage: `${spent}★ head-start used` };
     }
   }
 
