@@ -23,7 +23,11 @@ function injectStyle(): void {
     font-family:${FONT};color:#fff;user-select:none;-webkit-user-select:none;}
   .hc-modal-overlay.show{opacity:1;}
   
-  .gta-modal-head{padding:clamp(12px,3.5vh,30px) var(--gx) 10px;flex-shrink:0;}
+  .gta-modal-head{padding:clamp(12px,3.5vh,30px) var(--gx) 10px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;}
+  .gta-modal-close-btn{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.3);border-radius:6px;
+    color:#fff;font-family:${FONT};font-size:clamp(12px,2.4vw,15px);font-weight:700;letter-spacing:1px;
+    padding:6px 14px;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all .15s ease-out;outline:none;}
+  .gta-modal-close-btn:hover, .gta-modal-close-btn:active{background:#fff;color:#000;border-color:#fff;}
   .gta-modal-title{font-size:clamp(28px,5.5vw,46px);font-weight:700;line-height:1;
     text-transform:uppercase;letter-spacing:.5px;text-shadow:0 2px 10px rgba(0,0,0,.8);}
   
@@ -64,9 +68,13 @@ function injectStyle(): void {
   
   .gta-modal-hints{display:flex;justify-content:flex-end;gap:20px;padding:8px var(--gx) 12px;flex-shrink:0;
     font-size:clamp(11px,2.2vw,12.5px);letter-spacing:1px;color:rgba(255,255,255,.6);text-transform:uppercase;
-    flex-wrap:wrap;}
+    flex-wrap:wrap;align-items:center;}
   .gta-key{display:inline-block;border:1px solid rgba(255,255,255,.55);border-radius:3px;
     padding:1px 6px;margin-right:6px;font-size:11px;color:#fff;}
+  .gta-modal-esc-btn{cursor:pointer;display:inline-flex;align-items:center;padding:3px 10px;border-radius:5px;
+    background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;transition:all .15s ease-out;}
+  .gta-modal-esc-btn:hover, .gta-modal-esc-btn:active{background:#fff;color:#000;border-color:#fff;}
+  .gta-modal-esc-btn:hover .gta-key, .gta-modal-esc-btn:active .gta-key{border-color:#000;color:#000;}
   
   .hc-toast{position:fixed;left:50%;bottom:118px;transform:translateX(-50%) translateY(16px);
     z-index:100003;background:rgba(0,0,0,.96);border:2px solid #ff5252;border-radius:0;
@@ -137,13 +145,31 @@ export function showChoiceModal(spec: ModalSpec, playClick?: () => void): Promis
     const overlay = document.createElement("div");
     overlay.className = "hc-modal-overlay";
 
-    // 1) Top GTA Head & Title
+    const cancelKey = spec.buttons.find(b => !b.primary)?.key ?? spec.buttons[0]?.key ?? "cancel";
+
+    const finish = (key: string): void => {
+      openModals = Math.max(0, openModals - 1);
+      overlay.classList.remove("show");
+      window.setTimeout(() => overlay.remove(), 160);
+      resolve(key);
+    };
+
+    // 1) Top GTA Head & Title with Close Button
     const head = document.createElement("div");
     head.className = "gta-modal-head";
     const title = document.createElement("div");
     title.className = "gta-modal-title";
     title.textContent = "Heat Chase";
-    head.appendChild(title);
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "gta-modal-close-btn";
+    closeBtn.innerHTML = `<span class="gta-key" style="margin:0">Esc</span> Back ✕`;
+    closeBtn.addEventListener("click", () => {
+      playClick?.();
+      finish(cancelKey);
+    });
+
+    head.append(title, closeBtn);
     overlay.appendChild(head);
 
     // 2) Top accent underline bar
@@ -191,13 +217,6 @@ export function showChoiceModal(spec: ModalSpec, playClick?: () => void): Promis
     const actions = document.createElement("div");
     actions.className = "gta-modal-actions";
 
-    const finish = (key: string): void => {
-      openModals = Math.max(0, openModals - 1);
-      overlay.classList.remove("show");
-      window.setTimeout(() => overlay.remove(), 160);
-      resolve(key);
-    };
-
     for (const btn of spec.buttons) {
       const b = document.createElement("button");
       b.className = `hc-modal-btn${btn.primary ? " primary" : ""}`;
@@ -210,10 +229,14 @@ export function showChoiceModal(spec: ModalSpec, playClick?: () => void): Promis
     }
     overlay.appendChild(actions);
 
-    // 6) Keyboard hints footer
+    // 6) Keyboard hints footer (interactive Esc Back button)
     const hints = document.createElement("div");
     hints.className = "gta-modal-hints";
-    hints.innerHTML = `<span><span class="gta-key">Esc</span>Back</span>`;
+    hints.innerHTML = `<span class="gta-modal-esc-btn" id="hc-modal-esc"><span class="gta-key">Esc</span>Back</span>`;
+    hints.querySelector("#hc-modal-esc")?.addEventListener("click", () => {
+      playClick?.();
+      finish(cancelKey);
+    });
     overlay.appendChild(hints);
 
     document.body.appendChild(overlay);

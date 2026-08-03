@@ -639,7 +639,7 @@ export class HudView extends Container {
     this.smallButton(rect.x + 114, rect.y + rect.height / 2 - 20, 40, "i", "info");
 
     this.creditText = new Text({
-      text: isReplay ? "" : `Credit ${this.fmtMoney(credit)} ${currency}`,
+      text: isReplay ? "" : `CREDIT ${this.fmtMoney(credit)} ${currency}`,
       style: new TextStyle({
         fill: 0xffffff,
         fontFamily: "Impact, 'Arial Black', Arial, sans-serif",

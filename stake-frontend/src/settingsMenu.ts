@@ -144,53 +144,20 @@ function injectStyle(): void {
     opacity:0;transition:opacity .15s ease-out;
     font-family:${FONT};color:#fff;user-select:none;-webkit-user-select:none;}
   #settings-overlay.show{opacity:1;}
-  .gta-head{padding:clamp(12px,3.5vh,30px) var(--gx) 10px;flex-shrink:0;}
-  .gta-title{font-size:clamp(28px,5.5vw,46px);font-weight:700;line-height:1;
-    text-transform:uppercase;letter-spacing:.5px;text-shadow:0 2px 10px rgba(0,0,0,.8);}
-  .gta-tabs{display:flex;gap:clamp(16px,3.5vw,30px);border-bottom:2px solid rgba(255,255,255,.95);
-    padding:0 var(--gx);flex-shrink:0;overflow-x:auto;scrollbar-width:none;white-space:nowrap;}
-  .gta-tabs::-webkit-scrollbar{display:none;}
-  .gta-tab{font-size:clamp(13px,2.6vw,15px);letter-spacing:2.5px;text-transform:uppercase;font-weight:600;
-    padding:8px 2px 9px;color:rgba(255,255,255,.42);position:relative;cursor:pointer;flex-shrink:0;
-    transition:color .12s ease-out;}
-  .gta-tab:hover{color:rgba(255,255,255,.75);}
-  .gta-tab.active{color:#fff;}
-  .gta-tab.active::after{content:"";position:absolute;left:0;right:0;bottom:-2px;height:4px;background:#fff;}
-  .gta-scroll{flex:1;overflow-y:auto;overflow-x:hidden;padding:14px 0 24px;
-    scrollbar-width:none;min-height:0;}
-  .gta-scroll::-webkit-scrollbar{display:none;}
-  .gta-scroll.anim{animation:gtaTabIn .18s ease-out;}
-  @keyframes gtaTabIn{from{opacity:0;transform:translateX(-10px);}to{opacity:1;transform:none;}}
-  .gta-sep{font-size:clamp(11.5px,2.4vw,13px);letter-spacing:2.5px;text-transform:uppercase;font-weight:600;
-    color:rgba(255,255,255,.6);background:rgba(0,0,0,.72);padding:8px var(--gx);margin-top:22px;}
-  .gta-scroll > .gta-sep:first-child{margin-top:0;}
-  .gta-block{margin-top:12px;}
-  .gta-block:first-of-type{margin-top:0;}
-  .gta-row{display:flex;align-items:center;justify-content:space-between;gap:16px;
-    background:rgba(0,0,0,.52);padding:12px var(--gx);margin-top:2px;cursor:pointer;
-    font-size:clamp(15px,3vw,17.5px);font-weight:500;color:#e6e6e6;letter-spacing:.2px;}
-  .gta-row.sel{background:#f2f2f2;color:#000;}
-  .gta-row.disabled{color:rgba(255,255,255,.32);cursor:default;}
-  .gta-row.disabled.sel{background:rgba(242,242,242,.8);color:rgba(0,0,0,.38);}
-  .gta-row.danger{color:#ff5252;}
-  .gta-row.danger.sel{color:#a80f0f;}
-  .gta-row.static{cursor:default;}
-  .gta-val{display:flex;align-items:center;gap:10px;font-weight:600;flex-shrink:0;}
-  .gta-val-text{min-width:clamp(72px,18vw,96px);text-align:center;}
-  .gta-arr{font-size:11px;opacity:.7;padding:4px 3px;cursor:pointer;}
-  .gta-row.sel .gta-arr{opacity:.95;}
-  .gta-row.disabled .gta-arr{visibility:hidden;}
-  .gta-stat{font-size:clamp(12px,2.4vw,14px);font-weight:600;color:#ffdf65;text-align:right;flex-shrink:0;}
-  .gta-body{background:rgba(0,0,0,.38);padding:11px var(--gx);margin-top:2px;
-    font-size:clamp(12.5px,2.6vw,14px);line-height:1.6;color:#bcbcbc;letter-spacing:.2px;}
-  .gta-desc{background:rgba(0,0,0,.66);border-top:2px solid rgba(255,255,255,.9);
-    padding:11px var(--gx);font-size:clamp(12.5px,2.6vw,14px);line-height:1.5;color:#bcbcbc;
-    min-height:46px;letter-spacing:.2px;flex-shrink:0;}
+  .gta-head{padding:clamp(12px,3.5vh,30px) var(--gx) 10px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;}
+  .gta-close-btn{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.3);border-radius:6px;
+    color:#fff;font-family:${FONT};font-size:clamp(12px,2.4vw,15px);font-weight:700;letter-spacing:1px;
+    padding:6px 14px;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all .15s ease-out;outline:none;}
+  .gta-close-btn:hover, .gta-close-btn:active{background:#fff;color:#000;border-color:#fff;}
   .gta-hints{display:flex;justify-content:flex-end;gap:20px;padding:8px var(--gx) 12px;flex-shrink:0;
     font-size:clamp(11px,2.2vw,12.5px);letter-spacing:1px;color:rgba(255,255,255,.6);text-transform:uppercase;
-    flex-wrap:wrap;}
+    flex-wrap:wrap;align-items:center;}
   .gta-key{display:inline-block;border:1px solid rgba(255,255,255,.55);border-radius:3px;
     padding:1px 6px;margin-right:6px;font-size:11px;color:#fff;}
+  .gta-esc-btn{cursor:pointer;display:inline-flex;align-items:center;padding:3px 10px;border-radius:5px;
+    background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;transition:all .15s ease-out;}
+  .gta-esc-btn:hover, .gta-esc-btn:active{background:#fff;color:#000;border-color:#fff;}
+  .gta-esc-btn:hover .gta-key, .gta-esc-btn:active .gta-key{border-color:#000;color:#000;}
   /* ── info tabs ── */
   .gta-payhead,.gta-symrow{display:grid;align-items:center;
     grid-template-columns:minmax(clamp(110px,30vw,220px),1.6fr) repeat(5,1fr);
@@ -278,7 +245,16 @@ export class SettingsMenu {
     const title = document.createElement("div");
     title.className = "gta-title";
     title.textContent = "Heat Chase";
-    head.appendChild(title);
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "gta-close-btn";
+    closeBtn.innerHTML = `<span class="gta-key" style="margin:0">Esc</span> Back ✕`;
+    closeBtn.addEventListener("click", () => {
+      this.hooks.playClick?.();
+      this.close();
+    });
+
+    head.append(title, closeBtn);
     overlay.appendChild(head);
 
     const tabs = document.createElement("div");
@@ -384,6 +360,8 @@ export class SettingsMenu {
         break;
     }
 
+    const escMarkup = `<span class="gta-esc-btn" id="gta-esc-hint"><span class="gta-key">Esc</span>Back</span>`;
+
     // Selection + description box only exist on the interactive GAME tab.
     if (this.tab === "game") {
       this.descEl.style.display = "";
@@ -391,15 +369,21 @@ export class SettingsMenu {
         `<span><span class="gta-key">◄ ►</span>Change</span>` +
         `<span><span class="gta-key">⏎</span>Select</span>` +
         `<span><span class="gta-key">Q / E</span>Tab</span>` +
-        `<span><span class="gta-key">Esc</span>Back</span>`;
+        escMarkup;
       this.updateSelection();
     } else {
       this.descEl.style.display = "none";
       this.hintsEl.innerHTML =
         `<span><span class="gta-key">▲ ▼</span>Scroll</span>` +
         `<span><span class="gta-key">Q / E</span>Tab</span>` +
-        `<span><span class="gta-key">Esc</span>Back</span>`;
+        escMarkup;
     }
+
+    const escBtn = this.hintsEl.querySelector("#gta-esc-hint");
+    escBtn?.addEventListener("click", () => {
+      this.hooks.playClick?.();
+      this.close();
+    });
 
     // Retrigger the slide-in so switching tabs feels like GTA's page flip.
     this.scrollEl.classList.remove("anim");

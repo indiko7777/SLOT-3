@@ -364,6 +364,37 @@ function injectStyles(): void {
       box-shadow: 0 10px 30px rgba(255, 90, 20, 0.55), 0 0 0 1px rgba(255,255,255,0.2) inset;
     }
 
+    .hc-buy-close {
+      position: absolute;
+      top: 14px;
+      right: 16px;
+      z-index: 10;
+      background: rgba(0, 0, 0, 0.45);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 8px;
+      color: #ffffff;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 6px 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      outline: none;
+    }
+    .hc-buy-close:hover, .hc-buy-close:active {
+      background: rgba(255, 255, 255, 0.25);
+      border-color: #ffffff;
+    }
+    .hc-buy-esc-tag {
+      font-size: 10px;
+      border: 1px solid rgba(255,255,255,0.4);
+      border-radius: 3px;
+      padding: 1px 5px;
+    }
+
     @media (max-width: 540px) {
       .hc-buy-content { max-width: 84%; padding: 24px 24px 20px; }
       .hc-buy-actions { max-width: 100%; padding: 0 24px 24px; }
@@ -430,6 +461,7 @@ export function showConfirmPopup(
 
     overlay.innerHTML = `
       <div class="${cardClass}">
+        <button class="hc-buy-close" id="hc-btn-close" aria-label="Close"><span class="hc-buy-esc-tag">Esc</span> ✕</button>
         <div class="hc-buy-bg"></div>
         <div class="hc-buy-rim"></div>
         <img class="hc-buy-art" src="/assets/getaway_car_scene.webp" alt="" draggable="false" />
@@ -479,6 +511,13 @@ export function showConfirmPopup(
       window.removeEventListener("keydown", handleKeyDown);
     };
 
+    overlay.addEventListener("pointerdown", (e) => {
+      if (e.target === overlay) {
+        playAudio();
+        cleanup(false);
+      }
+    });
+
     const handleKeyDown = (e: KeyboardEvent): void => {
       if (e.key === "Escape") {
         playAudio();
@@ -491,8 +530,14 @@ export function showConfirmPopup(
 
     window.addEventListener("keydown", handleKeyDown);
 
+    const btnClose = overlay.querySelector("#hc-btn-close") as HTMLButtonElement | null;
     const btnCancel = overlay.querySelector("#hc-btn-cancel") as HTMLButtonElement;
     const btnConfirm = overlay.querySelector("#hc-btn-confirm") as HTMLButtonElement;
+
+    btnClose?.addEventListener("click", () => {
+      playAudio();
+      cleanup(false);
+    });
 
     btnCancel.addEventListener("click", () => {
       playAudio();

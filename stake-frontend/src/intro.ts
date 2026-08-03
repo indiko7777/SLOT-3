@@ -296,6 +296,27 @@ export function showIntro(): Promise<void> {
     });
     stack.appendChild(foot);
 
+    const closeBtn = document.createElement("button");
+    closeBtn.innerHTML = `<span style="border:1px solid rgba(255,255,255,0.4);border-radius:3px;padding:1px 5px;font-size:10px;">Esc</span> ✕`;
+    Object.assign(closeBtn.style, {
+      position: "absolute",
+      top: "16px",
+      right: "16px",
+      zIndex: "10",
+      background: "rgba(0,0,0,0.6)",
+      border: "1px solid rgba(255,255,255,0.3)",
+      borderRadius: "8px",
+      color: "#ffffff",
+      fontSize: "13px",
+      fontWeight: "bold",
+      padding: "6px 12px",
+      cursor: "pointer",
+      display: "flex",
+      alignItems: "center",
+      gap: "6px",
+    });
+    root.appendChild(closeBtn);
+
     document.body.appendChild(root);
     requestAnimationFrame(() => { root.style.opacity = "1"; });
 
@@ -307,6 +328,7 @@ export function showIntro(): Promise<void> {
       root.style.opacity = "0";
       window.setTimeout(() => { root.remove(); resolve(); }, 320);
     };
+    closeBtn.addEventListener("click", close);
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === "Enter" || e.key === " " || e.key === "Escape") close();
     };

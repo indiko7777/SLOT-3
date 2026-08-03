@@ -163,7 +163,7 @@ export const TEXT = {
   anteHelp: "Scatter chance increased",
   spin: "Spin",
   auto: "Auto",
-  credit: "Credit",
+  credit: "CREDIT",
   bet: "Bet",
   turboHint: "Hold space for turbo",
   normalWin: "Cluster Win",

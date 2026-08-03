@@ -66,6 +66,11 @@ function injectStyle(): void {
   .radio-eq i:nth-child(4){animation-delay:.45s}.radio-eq i:nth-child(5){animation-delay:.1s}
   @keyframes radioEq{0%,100%{height:3px}50%{height:14px}}
   .radio-eq.off i{animation:none;height:3px;background:#5a6680;}
+  .radio-close-btn{position:absolute;top:20px;right:20px;background:rgba(0,0,0,0.6);
+    border:1px solid rgba(255,255,255,0.3);border-radius:8px;color:#fff;
+    font-size:13px;font-weight:700;padding:6px 12px;cursor:pointer;
+    display:flex;align-items:center;gap:6px;transition:all .15s ease;z-index:10;}
+  .radio-close-btn:hover, .radio-close-btn:active{background:rgba(255,255,255,0.25);border-color:#fff;}
   `;
   document.head.appendChild(s);
 }
@@ -143,6 +148,15 @@ export class RadioWheel {
     });
 
     wheel.appendChild(this.buildHub());
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "radio-close-btn";
+    closeBtn.innerHTML = `<span style="border:1px solid rgba(255,255,255,0.4);border-radius:3px;padding:1px 5px;font-size:10px;">Esc</span> ✕`;
+    closeBtn.addEventListener("click", () => {
+      this.playClick?.();
+      this.close();
+    });
+    overlay.appendChild(closeBtn);
 
     overlay.appendChild(wheel);
     document.body.appendChild(overlay);
