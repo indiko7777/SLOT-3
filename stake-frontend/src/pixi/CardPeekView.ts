@@ -3,6 +3,7 @@ import type { LayoutMetrics, Rect } from "./types";
 import { getExtraTexture } from "./assets";
 import { makeText } from "./text";
 import { ambientTicker } from "./tween";
+import { toRomanNumeral } from "../meta/collection";
 
 export class CardPeekView extends Container {
   private cards: Container[] = [];
@@ -40,28 +41,18 @@ export class CardPeekView extends Container {
   }
 
   private getCollapsedX(index: number, parentWidth: number, isPortrait: boolean): number {
-    // We want the bottom-left corner of the card to be off-screen by a safe margin.
-    // That means x_bottom_left >= parentWidth + bottomOffset.
     const bottomOffset = isPortrait ? 15 : 5;
     const tilt = this.tilts[index]!;
     const cosT = Math.cos(tilt);
     const sinT = Math.sin(tilt);
-    // Derived from bottom-left corner position:
-    // x_bottom_left = X_c - (W/2)*cos(theta) - (H/2)*sin(theta) = parentWidth + bottomOffset
-    // X_c = parentWidth + bottomOffset + (W/2)*cos(theta) + (H/2)*sin(theta)
     return parentWidth + bottomOffset + (this.cardWidth / 2) * cosT + (this.cardHeight / 2) * sinT;
   }
 
   private getExpandedX(index: number, parentWidth: number, isPortrait: boolean): number {
-    // When hovered, the card slides out to the left to show the card contents.
-    // We want the rightmost point of the tilted card (the bottom-right corner) to align close to the screen edge.
     const margin = isPortrait ? 12 : 8;
     const tilt = this.tilts[index]!;
     const cosT = Math.cos(tilt);
     const sinT = Math.sin(tilt);
-    // Derived from bottom-right corner position:
-    // x_bottom_right = X_c + (W/2)*cos(theta) - (H/2)*sin(theta) = parentWidth - margin
-    // X_c = parentWidth - margin - (W/2)*cos(theta) + (H/2)*sin(theta)
     return parentWidth - margin - (this.cardWidth / 2) * cosT + (this.cardHeight / 2) * sinT;
   }
 
@@ -71,16 +62,13 @@ export class CardPeekView extends Container {
       card.eventMode = "static";
       card.cursor = "pointer";
       
-      // Keep track of positions
       this.currentXPositions.push(0);
       this.targetXPositions.push(0);
 
-      // Card Background with rounded corners
       const bg = new Graphics();
       card.addChild(bg);
       this.cardBgs.push(bg);
 
-      // Mouse/touch events for slide out
       card.on("pointerover", () => {
         this.setCardFocused(i, true);
       });
@@ -103,14 +91,10 @@ export class CardPeekView extends Container {
     const isPortrait = parentWidth < 980;
 
     if (focused) {
-      // Slide out to the left to show most of the card
       this.targetXPositions[index] = this.getExpandedX(index, parentWidth, isPortrait);
-      // Slight scale pop
       this.cards[index]!.scale.set(1.08);
-      // Bring card to front
       this.addChild(this.cards[index]!);
     } else {
-      // Collapse back to screen edge
       this.targetXPositions[index] = this.getCollapsedX(index, parentWidth, isPortrait);
       this.cards[index]!.scale.set(1.0);
     }
@@ -120,7 +104,6 @@ export class CardPeekView extends Container {
     for (let i = 0; i < this.cards.length; i++) {
       const card = this.cards[i]!;
       const targetX = this.targetXPositions[i]!;
-      // Smooth interpolation (lerp)
       this.currentXPositions[i] += (targetX - this.currentXPositions[i]!) * 0.15;
       card.x = this.currentXPositions[i]!;
     }
@@ -130,10 +113,9 @@ export class CardPeekView extends Container {
   layout(layout: LayoutMetrics): void {
     this.screenWidth = layout.width;
     const prog = this.runtime.getGalleryProgress();
-    const currentGirlIdx = prog.completedGirls; // 0, 1, 2...
+    const currentGirlIdx = prog.completedGirls;
     const isPortrait = layout.portrait;
 
-    // Calculate vertical layout
     const centerY = layout.height / 2;
     const cardStep = this.cardHeight + this.gap;
 
@@ -141,10 +123,8 @@ export class CardPeekView extends Container {
       const card = this.cards[i]!;
       const bg = this.cardBgs[i]!;
 
-      // Position Y
       card.y = centerY + (i - 1) * cardStep;
 
-      // Update target and current X positions based on state
       const collapsedX = this.getCollapsedX(i, layout.width, isPortrait);
       const expandedX = this.getExpandedX(i, layout.width, isPortrait);
       const targetX = this.hoveredStates[i] ? expandedX : collapsedX;
@@ -155,26 +135,23 @@ export class CardPeekView extends Container {
         card.x = targetX;
       }
 
-      // Slightly tilt the card
       card.rotation = this.tilts[i]!;
 
-      // Clear card container children except the background
       while (card.children.length > 1) {
         const child = card.children[1]!;
         card.removeChild(child);
         child.destroy({ children: true });
       }
 
-      // Redraw background based on state
       bg.clear();
       
-      let borderGlowColor = 0x2b3b5e; // Muted grey for locked
+      let borderGlowColor = 0x2b3b5e;
       let fillAlpha = 0.88;
       let borderWidth = 2.5;
 
-      const isCompleted = i < currentGirlIdx;
-      const isActive = i === currentGirlIdx && !prog.mastered;
-      const isLocked = i > currentGirlIdx || (prog.mastered && i >= 3); // Vega completed handles finished state
+      const isCompleted = prog.prestige > 0 || i < currentGirlIdx;
+      const isActive = i === prog.girlId;
+      const isLocked = !isCompleted && !isActive;
 
       if (isCompleted || isActive) {
         borderGlowColor = this.themeColors[i]!;
@@ -182,20 +159,16 @@ export class CardPeekView extends Container {
         borderWidth = 3;
       }
 
-      // Shadow glow path
       bg.roundRect(-this.cardWidth / 2 - 2, -this.cardHeight / 2 - 2, this.cardWidth + 4, this.cardHeight + 4, 8)
         .fill({ color: borderGlowColor, alpha: 0.18 });
 
-      // Main Card base
       bg.roundRect(-this.cardWidth / 2, -this.cardHeight / 2, this.cardWidth, this.cardHeight, 6)
         .fill({ color: 0x070c1e, alpha: fillAlpha })
         .stroke({ color: borderGlowColor, width: borderWidth });
 
-      // Inner elegant glass border
       bg.roundRect(-this.cardWidth / 2 + 3, -this.cardHeight / 2 + 3, this.cardWidth - 6, this.cardHeight - 6, 4)
         .stroke({ color: borderGlowColor, width: 1, alpha: 0.25 });
 
-      // Draw names
       const nameStr = i === 0 ? "SAPPHIRE" : i === 1 ? "ROXY" : "VEGA";
       const nameText = new Text({
         text: nameStr,
@@ -210,6 +183,26 @@ export class CardPeekView extends Container {
       nameText.anchor.set(0.5, 0);
       nameText.position.set(0, -this.cardHeight / 2 + 8);
       card.addChild(nameText);
+
+      // Render Prestige Badge if prestige > 0
+      if (prog.prestige > 0) {
+        const pBadge = new Graphics();
+        pBadge.roundRect(-24, -this.cardHeight / 2 - 10, 48, 14, 3)
+          .fill(0x1a1403)
+          .stroke({ color: 0xffdf65, width: 1 });
+        const pTxt = new Text({
+          text: `★ ${toRomanNumeral(prog.prestige)}`,
+          style: new TextStyle({
+            fill: 0xffdf65,
+            fontFamily: "Impact, sans-serif",
+            fontSize: 9,
+            letterSpacing: 0.5
+          })
+        });
+        pTxt.anchor.set(0.5, 0.5);
+        pTxt.position.set(0, -this.cardHeight / 2 - 3);
+        card.addChild(pBadge, pTxt);
+      }
 
       // Card Artwork / Placeholders
       if (isLocked) {

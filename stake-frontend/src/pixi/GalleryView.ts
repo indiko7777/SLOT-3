@@ -1,6 +1,7 @@
 import { Container, Graphics, Sprite, Text, TextStyle } from "pixi.js";
 import { getExtraTexture } from "./assets";
 import { tween } from "./tween";
+import { getPrestigeTitle } from "../meta/collection";
 
 // ── Theme palette ────────────────────────────────────────────────────────────
 const WHITE  = 0xffffff;
@@ -115,14 +116,37 @@ export class GalleryView extends Container {
     closeBtn.on("pointertap", (e) => { e.stopPropagation(); this.hide(); });
     this.ct.addChild(closeBtn);
 
-    // ── Header Prompt ────────────────────────────────────────────────────
+    const prog = this.runtime.getGalleryProgress();
+
+    // ── Header Prompt & Prestige Rank Badge ──────────────────────────────
+    const headerY = deckCenterY - cardH / 2 - (isP ? 34 : 44);
     const headerText = this.txt("BEACH GIRL DECK", isP ? 20 : 26, WHITE, IMPACT, 3);
     headerText.anchor.set(0.5, 0.5);
-    headerText.position.set(W / 2, deckCenterY - cardH / 2 - (isP ? 26 : 34));
+    headerText.position.set(W / 2, headerY);
     this.ct.addChild(headerText);
 
+    // Glowing Prestige Badge if prestige > 0
+    if (prog.prestige > 0) {
+      const pTitle = getPrestigeTitle(prog.prestige);
+      const badge = new Container();
+      const bW = isP ? 140 : 170;
+      const bH = isP ? 24 : 28;
+      const bGfx = new Graphics();
+      bGfx.roundRect(-bW / 2 - 2, -bH / 2 - 2, bW + 4, bH + 4, 8).stroke({ color: GOLD, width: 1, alpha: 0.35 });
+      bGfx.roundRect(-bW / 2, -bH / 2, bW, bH, 6)
+        .fill({ color: 0x181203, alpha: 0.95 })
+        .stroke({ color: GOLD, width: 2, alpha: 0.9 });
+      badge.addChild(bGfx);
+
+      const pTxt = this.txt(`★  ${pTitle}  ★`, isP ? 11 : 13, GOLD, IMPACT, 1.5);
+      pTxt.anchor.set(0.5, 0.5);
+      badge.addChild(pTxt);
+
+      badge.position.set(W / 2, headerY - (isP ? 26 : 32));
+      this.ct.addChild(badge);
+    }
+
     // ── Create 3 Stacked Cards (Exact Same Size & 1:1.4 Ratio) ────────────
-    const prog = this.runtime.getGalleryProgress();
     const curGirl = prog.completedGirls;
 
     for (let i = 0; i < 3; i++) {
@@ -157,7 +181,15 @@ export class GalleryView extends Container {
     const paginationY = deckCenterY + cardH / 2 + 24;
     this.renderPagination(deckCenterX, paginationY);
 
-    if (prog.mastered) {
+    if (prog.prestige > 0) {
+      const pTitle = getPrestigeTitle(prog.prestige);
+      const nName = NAMES[prog.girlId] ?? "SAPPHIRE";
+      const rem = (PIECES[prog.girlId] ?? 8) - prog.pieces;
+      const hint = this.txt(`${pTitle} · NEXT: ${nName} (${rem} WILDS NEEDED)`, isP ? 11 : 12, GOLD, IMPACT, 1);
+      hint.anchor.set(0.5, 0.5);
+      hint.position.set(deckCenterX, paginationY + 22);
+      this.ct.addChild(hint);
+    } else if (prog.mastered) {
       const masterLabel = this.txt("★  GALLERY MASTERED  ★", isP ? 11 : 13, GREEN, IMPACT, 1.5);
       masterLabel.anchor.set(0.5, 0.5);
       masterLabel.position.set(deckCenterX, paginationY + 22);

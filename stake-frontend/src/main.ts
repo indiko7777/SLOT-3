@@ -183,20 +183,21 @@ function activeStars(): number {
 
 /** Project the 1:1 gallery state onto the HUD/gallery's view. */
 function galleryProgress(): GalleryProgress {
-  const { currentGirl: girlIdx, pieces } = gallery;
-  const mastered = girlIdx >= GIRLS.length;
-  const idx = Math.min(girlIdx, GIRLS.length - 1);
-  const girl = GIRLS[idx] ?? GIRLS[GIRLS.length - 1]!;
+  const { currentGirl: girlIdx, pieces, prestige = 0 } = gallery;
+  const mastered = prestige > 0 || girlIdx >= GIRLS.length;
+  const idx = Math.min(girlIdx >= GIRLS.length ? 0 : girlIdx, GIRLS.length - 1);
+  const girl = GIRLS[idx] ?? GIRLS[0]!;
   const completedGirls = gallery.completed.length;
   return {
     girlId: girl.id,
     girlName: girl.name,
     artPrefix: girl.artPrefix,
-    pieces: mastered ? girl.pieces : Math.min(pieces, girl.pieces),
+    pieces: Math.min(pieces, girl.pieces),
     totalPieces: girl.pieces,
     completedGirls,
     totalGirls: GIRLS.length,
-    mastered
+    mastered,
+    prestige
   };
 }
 
@@ -453,7 +454,12 @@ async function boot(): Promise<void> {
     }
     if (!turboDisabled()) {
       turboHeld = true;
-      scene.renderSnapshot(snapshot);
+      // Never re-render the base snapshot on top of a LIVE bonus cinematic — that
+      // path rebuilds/tears down the bonus view mid-animation and crashes the game.
+      // Turbo still applies to the bonus: it's read live per-event via isTurbo(),
+      // so holding space still fast-forwards it. (renderSnapshot is also guarded
+      // internally, but skipping the work entirely is cleaner.)
+      if (!scene.isBonusActive()) scene.renderSnapshot(snapshot);
     }
   });
   window.addEventListener("keyup", (event) => {

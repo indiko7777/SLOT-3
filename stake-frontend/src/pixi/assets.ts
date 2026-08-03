@@ -108,6 +108,10 @@ const EXTRA_ASSETS: Record<string, string> = {
 /** Optional images — loaded per-file so a missing one never blocks the game.
  *  The Getaway (POV chase) bonus renders procedural fallbacks until these exist. */
 const OPTIONAL_ASSETS: Record<string, string> = {
+  // The "driving off" night-highway backdrop for the Getaway bonus — a wide
+  // perspective still (vanishing point centred, motion-blur baked in) that
+  // BonusView dolly-zooms for a 3D forward-flight feel.
+  "getaway_highway": "Gemini_Generated_Image_7seql27seql27seq.png",
   "highway_loop": "highway_loop.jpg",
   "brinks_truck_frame": "brinks_truck_frame.webp",
   // Door-reveal set, built by tools/asset-pipeline/prep_truck_doors.py. The

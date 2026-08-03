@@ -7,6 +7,7 @@ import { ambientTicker, tween, wait, easeOutBack, linear } from "./tween";
 import type { LayoutMetrics, Rect, SceneRuntime } from "./types";
 import { formatBalance, formatWin } from "../rgs/client";
 import { OutlineFilter, DropShadowFilter } from "pixi-filters";
+import { getPrestigeTitle } from "../meta/collection";
 
 const IDLE_MESSAGES = [
   "PRESS SPACE TO SPIN!",
@@ -153,7 +154,6 @@ export class HudView extends Container {
   private animateWinTo(target: number): void {
     if (!this.winText) return;
     this.targetWin = target;
-    // If already animating, just update the target — the loop will catch up
     if (this.winAnimFrame) return;
 
     const startVal = this.displayedWin;
@@ -163,14 +163,12 @@ export class HudView extends Container {
 
     const tick = (now: number) => {
       const raw = Math.min(1, (now - startTime) / duration);
-      // ease out quad
       const t = 1 - (1 - raw) * (1 - raw);
       const current = startVal + (this.targetWin - startVal) * t;
       this.displayedWin = current;
         if (this.winText) {
           this.winText.text = `WIN ${this.fmtWinMoney(current)} ${currency}`;
           this.winText.style.fill = 0xffdf65;
-          // Pulse the text size slightly during counting
           const pulse = 1 + Math.sin(raw * Math.PI) * 0.15;
           this.winText.scale.set(pulse);
         }
@@ -188,17 +186,14 @@ export class HudView extends Container {
     this.winAnimFrame = requestAnimationFrame(tick);
   }
 
-  /** RGS-sourced cost multiplier for a bet mode (getaway/super_getaway/ante). */
   private costX(mode: string): number {
     return this.runtime.getCostMultiplier?.(mode) ?? 1;
   }
 
-  /** Social-aware UI strings (bet→play etc. on Stake.US). */
   private t() {
     return this.runtime.getUiStrings();
   }
 
-  /** Controls are locked during a round, autoplay and replay. */
   private controlsLocked(): boolean {
     return (
       this.runtime.isPlaying() ||
@@ -214,6 +209,7 @@ export class HudView extends Container {
     const prog = this.runtime.getGalleryProgress();
     if (tier > 0 && active) return `POWER LEVEL ${tier} ACTIVE · ${tier}★ HEAD-START`;
     if (tier > 0 && !active) return `LOWER BET TO ARM YOUR TIER ${tier} HEAD-START`;
+    if (prog.prestige > 0) return `${getPrestigeTitle(prog.prestige)} ACTIVE · COLLECT WILDS FOR ${prog.girlName.toUpperCase()}`;
     if (prog.mastered) return "GALLERY MASTERED · COLLECT TO RESET";
     return `COLLECT WILDS TO UNLOCK ${prog.girlName.toUpperCase()}`;
   }

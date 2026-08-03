@@ -1,4 +1,4 @@
-import { BlurFilter, Container, Graphics, PerspectiveMesh, Sprite, Text, TextStyle, Texture, TilingSprite } from "pixi.js";
+import { BlurFilter, Container, Graphics, PerspectiveMesh, Sprite, Text, TextStyle, Texture } from "pixi.js";
 import { BONUS_START_RESPINS, GRID_COLUMNS, GRID_ROWS, type BonusCell, type Position } from "../domain";
 import { getExtraTexture } from "./assets";
 import { tween, wait, easeOutBack, easeOutCubic, linear, ambientTicker, getTimeScale } from "./tween";
@@ -82,11 +82,39 @@ const DOOR_SEAM_OVERLAP = 6;
 // hold its own copy that silently disagreed with domain.ts.
 const START_RESPINS = BONUS_START_RESPINS;
 
-// Uniform dark-grey reel background. EVERY bonus symbol fills its cell with this
+// Uniform dark reel background. EVERY bonus symbol fills its cell with this
 // exact colour and the reel panel is the same flat colour, so the symbols'
 // backgrounds are invisible — during a spin you only ever see the symbol art
-// move, never a background box.
+// move, never a background box. The moving highway is the BACKDROP only: it
+// rushes past AROUND the truck, never behind the grid symbols.
 const REEL_BG = 0x0c0c0f;
+
+// ── The "driving off" highway backdrop ───────────────────────────────────
+// The night-highway still (perspective + motion-blur baked into the art) is
+// flown FORWARD with a radial dolly-zoom that RADIATES from the vanishing point,
+// so the road, walls and city rush outward past the camera. Two things make it
+// read as continuously ACCELERATING down a freeway instead of a sickening
+// in-out throb:
+//   • EXPONENTIAL zoom → a CONSTANT optical-flow speed. A linear zoom actually
+//     reads as fast-then-slow within every pass; exponential is the standard
+//     "infinite forward motion" curve, and its loop seam is velocity-continuous
+//     (both copies share the same flow speed), so there is NO speed dip at the
+//     reset — the motion never stutters fast→slow→fast.
+//   • an ACCELERATION ramp → the flow launches slow and builds to a fast cruise
+//     over the first few seconds of the feature, then each spin surges on top:
+//     slow, fast, faster, faster.
+// Two copies cross-dissolve half a cycle apart (triangle alpha → a clean single
+// image twice per cycle); the small zoom RANGE keeps the crossfade double subtle
+// (it reads as zoom-blur, not a ghost).
+const HW_ZOOM_MIN = 1.0;      // fully-out framing (whole scene visible)
+const HW_ZOOM_MAX = 1.6;      // pushed-in framing; small range keeps the seam subtle
+const HW_RATE_START = 0.16;   // dolly cycles / sec at launch (slow roll-out)
+const HW_RATE_CRUISE = 0.9;   // dolly cycles / sec once up to speed (fast)
+const HW_RAMP_SECS = 7;       // seconds of continuous acceleration to reach cruise
+const HW_RATE_SURGE = 0.5;    // extra cycles / sec while the reels spin — flooring it
+const HW_HEAT = 0.05;         // extra cycles / sec per heat level (the chase tightening)
+const HW_COVER_MARGIN = 1.2;  // over-scale so the pivot offset + lane weave never gap
+const HW_VP_FRAC_Y = 0.4;     // art's vanishing point: horizontal centre, ~40% down
 
 // Reel spin motion profile: a quick ramp to full speed, a long stretch of
 // CONSTANT fast spin (so it reads as continuous, looping motion), then a smooth
@@ -147,8 +175,14 @@ export class BonusView extends Container {
   private rect: Rect = { x: 0, y: 0, width: 100, height: 100 };
   private ambientCb: ((dt: number, elapsed: number) => void) | null = null;
 
-  private highwayTile: TilingSprite | null = null;
-  private highwayProc: Graphics | null = null;
+  // The two cross-dissolving highway sprites + the dolly-zoom loop state.
+  private highwayA: Sprite | null = null;
+  private highwayB: Sprite | null = null;
+  private highwayBase = 1;              // cover scale at zoom = 1
+  private highwayPhase = 0;             // 0..1 dolly-loop phase
+  private highwaySpeed = 0;             // eased phase-advance (cycles/sec)
+  private highwayAge = 0;               // seconds since this feature's highway was built (drives the accel ramp)
+  private highwayVP = { x: 0, y: 0 };   // vanishing-point pivot, screen coords
   private truck: Container | null = null;
   private stars: Graphics | null = null;
   private collectedText: Text | null = null;
@@ -1150,7 +1184,7 @@ export class BonusView extends Container {
     this.truckLayer.removeChildren();
     this.bgLayer.removeChildren();
     this.cells.clear();
-    this.highwayTile = this.highwayProc = null;
+    this.highwayA = this.highwayB = null;
     this.truck = this.stars = null;
     this.collectedText = this.collectedUsdText = this.spinsLabel = this.spinsText = null;
     this.spinsBox = null;
@@ -1160,12 +1194,87 @@ export class BonusView extends Container {
   // ── layer builders ───────────────────────────────────────────────────
   private buildHighway(): void {
     this.bgLayer.removeChildren();
-    // Static near-black backdrop (covered by the truck + reel panel anyway).
-    const g = new Graphics();
-    g.rect(0, 0, this.rect.width, this.rect.height).fill(0x03040a);
-    this.bgLayer.addChild(g);
-    this.highwayTile = null;
-    this.highwayProc = null;
+    this.highwayA = this.highwayB = null;
+    this.highwayPhase = 0;
+    this.highwaySpeed = 0;
+    this.highwayAge = 0;   // each getaway launches from the slow roll-out and accelerates
+    const W = this.rect.width;
+    const H = this.rect.height;
+
+    const tex = getExtraTexture("getaway_highway");
+    if (!tex) {
+      // No art: fall back to the old near-black backdrop with a faint centre
+      // glow so it still reads as a distant night skyline, not a dead void.
+      const g = new Graphics();
+      g.rect(0, 0, W, H).fill(0x03040a);
+      g.ellipse(W / 2, H * HW_VP_FRAC_Y, W * 0.32, H * 0.16).fill({ color: 0x101a2e, alpha: 0.7 });
+      g.filters = null;
+      this.bgLayer.addChild(g);
+      return;
+    }
+
+    // Pin the art's vanishing point to the horizon line on screen and scale the
+    // sprites to COVER the whole view at zoom = 1 (they only ever zoom IN from
+    // there, so no gap can ever open at the edges).
+    this.highwayVP = { x: W / 2, y: H * HW_VP_FRAC_Y };
+    this.highwayBase = Math.max(W / tex.width, H / tex.height) * HW_COVER_MARGIN;
+    const mk = (): Sprite => {
+      const s = new Sprite(tex);
+      s.anchor.set(0.5, HW_VP_FRAC_Y);          // pivot on the vanishing point
+      s.position.set(this.highwayVP.x, this.highwayVP.y);
+      return s;
+    };
+    this.highwayA = mk();
+    this.highwayB = mk();
+    this.bgLayer.addChild(this.highwayA, this.highwayB);
+
+    // Depth + seating: darken the extreme edges and the very bottom so the HUD
+    // text and the truck sit INTO the scene rather than on a hard photo crop.
+    // Plain Graphics (no filter) — bgLayer must stay filter-free.
+    const grad = new Graphics();
+    grad.rect(0, 0, W, H).fill({ color: 0x000000, alpha: 0.18 });          // overall knock-down
+    grad.rect(0, H * 0.82, W, H * 0.18).fill({ color: 0x02030a, alpha: 0.55 }); // road foreground
+    grad.rect(0, 0, W, H * 0.10).fill({ color: 0x02030a, alpha: 0.5 });    // top, under the title
+    this.bgLayer.addChild(grad);
+
+    // Set the opening transforms so the first painted frame is already correct.
+    this.updateHighway(0, 0);
+  }
+
+  /**
+   * Advance the dolly-zoom flight. Called every ambient frame.
+   *
+   * Speed CONTINUOUSLY ACCELERATES: it eases toward a cruise target that itself
+   * ramps up over the feature's first few seconds (a launch), with spins and
+   * heat surging on top. The zoom is EXPONENTIAL, so the perceived forward speed
+   * is constant for a given rate (never the sickening fast→slow→fast of a linear
+   * zoom) and the loop seam carries no speed dip.
+   */
+  private updateHighway(dt: number, elapsed: number): void {
+    if (!this.highwayA || !this.highwayB) return;
+
+    this.highwayAge += dt;
+    const ramp = Math.min(1, this.highwayAge / HW_RAMP_SECS);           // 0→1 launch ramp
+    const cruise = HW_RATE_START + (HW_RATE_CRUISE - HW_RATE_START) * ramp;
+    const target = cruise + this.shakeBoost * HW_RATE_SURGE + this.heat * HW_HEAT;
+    this.highwaySpeed += (target - this.highwaySpeed) * Math.min(1, dt * 2);
+    this.highwayPhase = (this.highwayPhase + dt * this.highwaySpeed) % 1;
+
+    // A slow lane-weave so the camera drifts across the road rather than sitting
+    // dead-centre — kept gentle so it never adds to any motion discomfort.
+    const weave = Math.sin(elapsed * 0.47) * (this.rect.width * 0.010)
+                + Math.sin(elapsed * 1.13) * (this.rect.width * 0.004);
+
+    const ratio = HW_ZOOM_MAX / HW_ZOOM_MIN;
+    const apply = (s: Sprite, phase: number): void => {
+      s.alpha = 1 - Math.abs(phase * 2 - 1);                  // triangle: clean single image at phase 0 and 0.5
+      const z = HW_ZOOM_MIN * Math.pow(ratio, phase);         // EXPONENTIAL → constant flow speed, no seam dip
+      s.scale.set(this.highwayBase * z);
+      s.x = this.highwayVP.x + weave * (0.5 + phase * 0.7);   // nearer frame weaves a touch more
+      s.y = this.highwayVP.y;
+    };
+    apply(this.highwayA, this.highwayPhase);
+    apply(this.highwayB, (this.highwayPhase + 0.5) % 1);
   }
 
   /**
@@ -1181,6 +1290,8 @@ export class BonusView extends Container {
     const truck = new Container();
 
     // Reel backdrop goes down FIRST, behind the frame, so it fills the opening.
+    // Flat black — the same colour every symbol uses for its cell, so the grid
+    // reads on a clean dark panel and the highway stays a BACKDROP around the truck.
     const pad = 6;
     const panel = new Graphics();
     panel.rect(o.x - pad, o.y - pad, o.width + pad * 2, o.height + pad * 2).fill({ color: REEL_BG });
@@ -1378,9 +1489,9 @@ export class BonusView extends Container {
     }
 
     // ONE flat, uniform reel surface inside the opening (overscanned a few px to
-    // cover any truck-interior bleed). No vignette bands, no grid separators — it
-    // is the exact same colour every symbol uses for its cell background, so the
-    // backgrounds vanish and only the symbol art is ever seen scrolling.
+    // cover any truck-interior bleed). It is the exact same colour every symbol
+    // uses for its cell background, so the backgrounds vanish and only the symbol
+    // art is ever seen scrolling.
     const pad = 6;
     const panel = new Graphics();
     panel.rect(o.x - pad, o.y - pad, o.width + pad * 2, o.height + pad * 2).fill({ color: REEL_BG });
@@ -1633,9 +1744,10 @@ export class BonusView extends Container {
     const r = this.cellRect(col, row);
     const c = new Container();
 
-    // Solid cell background so no transparent gaps appear at edges when locked
+    // Solid black cell background so no transparent gaps appear at edges when
+    // locked — exactly the panel colour, so the background is invisible.
     const cellBg = new Graphics();
-    cellBg.rect(-r.w / 2, -r.h / 2, r.w, r.h).fill(REEL_BG);   // full cell, exactly the panel colour → invisible
+    cellBg.rect(-r.w / 2, -r.h / 2, r.w, r.h).fill(REEL_BG);
     c.addChild(cellBg);
 
     const tex = getExtraTexture("gold_bar");
@@ -1679,7 +1791,7 @@ export class BonusView extends Container {
   private buildDynamite(col: number, row: number): Container {
     const r = this.cellRect(col, row);
     const c = new Container();
-    // Full-cell background matching the panel so only the dynamite art is seen.
+    // Full-cell black background matching the panel so only the dynamite art is seen.
     const cellBg = new Graphics();
     cellBg.rect(-r.w / 2, -r.h / 2, r.w, r.h).fill(REEL_BG);
     c.addChild(cellBg);
@@ -1704,10 +1816,10 @@ export class BonusView extends Container {
   }
 
   /**
-   * The "blank" reel symbol: the Heat Chase logo on the SAME full-cell background
-   * every other symbol uses. It is a real, visible symbol, so no cell is ever
-   * empty while spinning — but it's clearly the logo, not a gold/dynamite win. Its
-   * background is the exact panel colour, so only the logo art is seen scrolling.
+   * The "blank" reel symbol: the Heat Chase logo on the SAME full-cell black
+   * background every other symbol uses. It is a real, visible symbol, so no cell
+   * is ever empty while spinning — but it's clearly the logo, not a gold/dynamite
+   * win. Its background is the exact panel colour, so only the logo art is seen.
    */
   private buildEmptyFace(col: number, row: number, logoTex: Texture | null): Container {
     const r = this.cellRect(col, row);
@@ -2021,6 +2133,7 @@ export class BonusView extends Container {
     this.fxLayer.position.set(0, 0);
     this.shakeBoost = 0;
     this.ambientCb = (dt, elapsed) => {
+      this.updateHighway(dt, elapsed);
       this.drawStars(elapsed);
       this.drawPolice(elapsed);
       this.driveShake(dt, elapsed);

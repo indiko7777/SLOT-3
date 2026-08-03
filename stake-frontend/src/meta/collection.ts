@@ -43,22 +43,24 @@ export const GALLERY_MASTER_UNLOCK = "gallery_master";
 
 export interface GalleryData {
   version: number;
-  /** Index into GIRLS; === GIRLS.length once the gallery is mastered. */
+  /** Index into GIRLS (0..GIRLS.length - 1). Loops back to 0 on prestige rank up. */
   currentGirl: number;
   /** Body parts revealed for the current girl (0..girl.pieces). */
   pieces: number;
-  /** Completed girl ids (persistent, never cleared). */
+  /** Completed girl ids in the current loop. */
   completed: number[];
-  /** Cosmetic unlock ids earned (RTP-neutral). */
+  /** Cosmetic unlock ids earned (RTP-neutral, persistent across prestiges). */
   unlocks: string[];
   /**
    * Gold WANTED-LEVEL stars armed by completing girls (1st girl → 1 star, 2nd →
-   * 2, 3rd → 3). Each is a persistent, unconditional head-start that pre-lights
-   * the meter and routes the spin to the matching certified `base_tierN` table.
-   * Reset to 0 ONLY when the player triggers the Getaway naturally (live wanted
-   * level reaches 5★ on an organic spin). Capped at 5. See docs/MATH_DESIGN.md.
+   * 2, 3rd → 3). Reset to 0 ONLY when the player triggers the Getaway naturally.
    */
   getawayStars: number;
+  /**
+   * Prestige level (0 = initial run, 1 = Prestige I, 2 = Prestige II, etc.).
+   * Increments each time the entire gallery of 3 girls is mastered.
+   */
+  prestige: number;
 }
 
 export interface PieceGain {
@@ -67,12 +69,14 @@ export interface PieceGain {
   totalPieces: number;
   artPrefix: string;
   completedGirl: boolean; // this WILD finished the girl
-  galleryComplete: boolean; // this WILD finished the whole gallery
+  galleryComplete: boolean; // this WILD finished the whole gallery loop
   unlockId: string | null; // cosmetic unlock granted by this WILD
+  prestige: number; // current prestige rank after this gain
+  prestigeAdvanced: boolean; // true if this gain completed the gallery and ranked up prestige
 }
 
 export function emptyGallery(): GalleryData {
-  return { version: SCHEMA_VERSION, currentGirl: 0, pieces: 0, completed: [], unlocks: [], getawayStars: 0 };
+  return { version: SCHEMA_VERSION, currentGirl: 0, pieces: 0, completed: [], unlocks: [], getawayStars: 0, prestige: 0 };
 }
 
 /** Reset the gold WANTED stars — called once when the Getaway triggers naturally. */
@@ -86,50 +90,85 @@ export function isGalleryComplete(data: GalleryData): boolean {
 }
 
 export function currentGirl(data: GalleryData): GirlConfig | null {
-  return GIRLS[data.currentGirl] ?? null;
+  const idx = data.currentGirl >= GIRLS.length ? 0 : data.currentGirl;
+  return GIRLS[idx] ?? GIRLS[0]!;
 }
 
-/** Pieces shown for whatever the gallery is currently on (full if mastered). */
+/** Pieces shown for whatever the gallery is currently on. */
 export function displayedPieces(data: GalleryData): number {
   const girl = currentGirl(data);
-  if (!girl) return GIRLS[GIRLS.length - 1]?.pieces ?? 0; // mastered: show full
+  if (!girl) return 0;
   return Math.min(girl.pieces, Math.max(0, data.pieces));
+}
+
+/** Convert a integer (1..3999) to a Roman numeral. */
+export function toRomanNumeral(num: number): string {
+  if (num <= 0) return "";
+  const val = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1];
+  const syb = ["M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I"];
+  let roman = "";
+  let n = Math.min(3999, Math.max(1, Math.floor(num)));
+  for (let i = 0; i < val.length; i++) {
+    while (n >= val[i]!) {
+      roman += syb[i]!;
+      n -= val[i]!;
+    }
+  }
+  return roman || "I";
+}
+
+/** Formatted title for prestige rank (e.g. "PRESTIGE I", "PRESTIGE II"). */
+export function getPrestigeTitle(prestige: number): string {
+  if (prestige <= 0) return "";
+  return `PRESTIGE ${toRomanNumeral(prestige)}`;
 }
 
 /**
  * Reveal ONE body part — called once per rare WILD that lands (1 WILD = 1 part).
- * Returns the new (immutable) gallery and the gain to animate, or a null gain if
- * there's nothing left to collect (gallery already mastered). Pure — the caller
- * persists the returned data.
+ * Returns the new (immutable) gallery and the gain to animate.
+ * Automatically loops back to Girl 1 and ranks up Prestige when all 3 girls are finished!
  */
 export function collectWild(data: GalleryData): { data: GalleryData; gain: PieceGain | null } {
-  if (data.currentGirl >= GIRLS.length) return { data, gain: null };
-  const girl = GIRLS[data.currentGirl]!;
+  let activeGirlIdx = data.currentGirl;
+  let activePrestige = data.prestige ?? 0;
+  if (activeGirlIdx >= GIRLS.length) {
+    activeGirlIdx = 0;
+    activePrestige += 1;
+  }
+
+  const girl = GIRLS[activeGirlIdx]!;
   const next: GalleryData = {
     version: SCHEMA_VERSION,
-    currentGirl: data.currentGirl,
+    currentGirl: activeGirlIdx,
     pieces: data.pieces + 1,
     completed: [...data.completed],
     unlocks: [...data.unlocks],
-    getawayStars: data.getawayStars ?? 0
+    getawayStars: data.getawayStars ?? 0,
+    prestige: activePrestige
   };
 
   const pieceIndex = next.pieces; // 1-based
   const completedGirl = next.pieces >= girl.pieces;
   let galleryComplete = false;
+  let prestigeAdvanced = false;
   let unlockId: string | null = null;
 
   if (completedGirl) {
-    next.completed.push(girl.id);
+    if (!next.completed.includes(girl.id)) next.completed.push(girl.id);
     if (!next.unlocks.includes(girl.unlockId)) next.unlocks.push(girl.unlockId);
     unlockId = girl.unlockId;
-    // Arm one more gold WANTED star (the head-start). Persistent until a natural
-    // Getaway consumes them; capped at the 5-star meter.
     next.getawayStars = Math.min(5, next.getawayStars + 1);
     next.currentGirl += 1;
     next.pieces = 0;
+
+    // When the entire gallery loop is completed: RANK UP PRESTIGE and LOOP BACK!
     if (next.currentGirl >= GIRLS.length) {
       galleryComplete = true;
+      prestigeAdvanced = true;
+      next.prestige += 1;
+      next.currentGirl = 0; // Loop back to Girl 0 (Sapphire)
+      next.completed = []; // Reset completed for the next loop
+      next.getawayStars = 0; // Reset gold head-start stars back to 0 for fresh Prestige loop
       if (!next.unlocks.includes(GALLERY_MASTER_UNLOCK)) next.unlocks.push(GALLERY_MASTER_UNLOCK);
     }
   }
@@ -141,7 +180,9 @@ export function collectWild(data: GalleryData): { data: GalleryData; gain: Piece
     artPrefix: girl.artPrefix,
     completedGirl,
     galleryComplete,
-    unlockId
+    unlockId,
+    prestige: next.prestige,
+    prestigeAdvanced
   };
   return { data: next, gain };
 }
@@ -163,7 +204,12 @@ export function addWilds(data: GalleryData, count: number): { data: GalleryData;
 /** Clamp/repair any loaded gallery so bad storage never crashes the game. */
 export function sanitize(data: Partial<GalleryData> | null | undefined): GalleryData {
   if (!data || typeof data !== "object") return emptyGallery();
-  const currentGirlIdx = clampInt(data.currentGirl, 0, GIRLS.length);
+  let currentGirlIdx = clampInt(data.currentGirl, 0, GIRLS.length);
+  let prestige = clampInt(data.prestige, 0, 9999);
+  if (currentGirlIdx >= GIRLS.length) {
+    currentGirlIdx = 0;
+    prestige = Math.max(1, prestige);
+  }
   const girl = GIRLS[currentGirlIdx];
   const maxPieces = girl ? girl.pieces : 0;
   const completed = Array.isArray(data.completed)
@@ -176,7 +222,8 @@ export function sanitize(data: Partial<GalleryData> | null | undefined): Gallery
     pieces: clampInt(data.pieces, 0, maxPieces),
     completed,
     unlocks,
-    getawayStars: clampInt(data.getawayStars, 0, 5)
+    getawayStars: clampInt(data.getawayStars, 0, 5),
+    prestige
   };
 }
 
@@ -185,3 +232,4 @@ function clampInt(v: unknown, lo: number, hi: number): number {
   if (!Number.isFinite(n)) return lo;
   return Math.max(lo, Math.min(hi, n));
 }
+

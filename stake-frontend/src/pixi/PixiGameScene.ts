@@ -3,6 +3,7 @@ import { GRID_COLUMNS, GRID_ROWS, type Board, type GameEvent, type Position, typ
 import type { PlaybackSnapshot } from "../playback";
 import type { PieceGain } from "../meta/collection";
 import { rewardFor } from "../meta/rewards";
+import { getPrestigeTitle } from "../meta/collection";
 import { BoardView } from "./BoardView";
 import { BonusView } from "./BonusView";
 import { EffectsLayer } from "./EffectsLayer";
@@ -160,6 +161,13 @@ export class PixiGameScene {
     this.hud.draw(this.layout, snapshot);
   }
 
+  /** True while a Getaway bonus is live on screen (intro → spins → result). The
+   *  spacebar-turbo path checks this so it never re-renders the base snapshot on
+   *  top of a running bonus cinematic. */
+  isBonusActive(): boolean {
+    return this.bonusActive;
+  }
+
   renderSnapshot(snapshot: PlaybackSnapshot): void {
     this.currentSnapshot = snapshot;
     snapshot.collectionCount = this.runtime.getCollectionCount();
@@ -193,8 +201,15 @@ export class PixiGameScene {
       this.board.setInstant(board);
       this.hasBoard = true;
     }
-    // Only re-show the bonus when resuming an ACTIVE bonus round (not after it ends).
-    if (snapshot.bonusGrid && snapshot.state.startsWith("bonus")) {
+    // Re-show the bonus ONLY when resuming an interrupted round we did NOT animate
+    // ourselves. During LIVE bonus playback (bonusActive) the async animation
+    // methods (intro / playSpin / crack / finish) own the view — calling
+    // showStatic or hide here (e.g. from a spacebar-turbo re-render, or a resize,
+    // fired mid-intro) rebuilds/tears down the containers mid-tween and crashes
+    // the whole game. So while a bonus is live, never touch its structure here.
+    if (this.bonusActive) {
+      if (snapshot.bonusGrid) this.bonus.setMoneyContext(snapshot.betAmount, this.runtime.getCurrency());
+    } else if (snapshot.bonusGrid && snapshot.state.startsWith("bonus")) {
       this.bonus.setMoneyContext(snapshot.betAmount, this.runtime.getCurrency());
       this.bonus.showStatic(snapshot.bonusGrid);
     } else {
@@ -655,7 +670,10 @@ export class PixiGameScene {
 
     // Reward moment (RTP-neutral, cosmetic). Mastering the whole gallery is the
     // grand banner; a single girl grants her cosmetic unlock.
-    if (gain.galleryComplete) {
+    if (gain.prestigeAdvanced) {
+      const pTitle = getPrestigeTitle(gain.prestige);
+      await this.effects.banner("PRESTIGE RANK UP!", pTitle || "PRESTIGE I", this.layout.board, turbo, "grand");
+    } else if (gain.galleryComplete) {
       const master = rewardFor("gallery_master");
       await this.effects.banner("GALLERY MASTERED", master?.name ?? "VIP", this.layout.board, turbo, "grand");
     } else if (completed) {

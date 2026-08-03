@@ -12,6 +12,7 @@ export interface GalleryProgress {
   completedGirls: number;
   totalGirls: number;
   mastered: boolean;
+  prestige: number;
 }
 
 export interface SceneRuntime {
