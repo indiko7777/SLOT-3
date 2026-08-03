@@ -91,7 +91,7 @@
       "tables": [
         {
           "file": "lookUpTable_super_getaway_0.csv",
-          "sha256": "00702366d7f09b9148c9f16efcef92631d4b7d0b19f06d0ad601856ec64a4f49"
+          "sha256": "48eba39012ae5670550fadf5bb15a0ffb72f1d315d2acfaec5ec223fd9abfdd1"
         }
       ],
       "cost": 500,
@@ -103,7 +103,7 @@
       "maxWin": 5000,
       "booksFile": {
         "file": "books_super_getaway.jsonl.zst",
-        "sha256": "eea2429b19556f5d1667409c5e04b08e85e629c0310290aa60731853c7779e4b"
+        "sha256": "6618aa565ee41da6cbe9746bf2ca549f025565e5e722f81a80ca626913a97d14"
       },
       "forceFile": {
         "file": "force.json",

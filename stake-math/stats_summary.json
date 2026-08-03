@@ -62,8 +62,8 @@
       "totalWeight": "1000000000003",
       "hitRate": 1,
       "bonusHitRate": 1,
-      "maxWinRate": 0.07519,
-      "stdDev": 2.605,
+      "maxWinRate": 0.004728,
+      "stdDev": 0.685,
       "volatilityVsTarget": 0,
       "maxPayoutX": 5000,
       "booksMatch": true
@@ -114,5 +114,5 @@
       "booksMatch": true
     }
   ],
-  "generatedAt": "2026-07-20T11:16:54.370Z"
+  "generatedAt": "2026-08-03T17:29:37.628Z"
 }

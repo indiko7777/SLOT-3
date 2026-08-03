@@ -181,7 +181,13 @@ export const MODES: Record<BetMode, ModeConfig> = {
     sims: 25_000,
     criteria: { zero: 0, basegame: 0, basebig: 0, freegame: 0.80, wincap: 0.20 },
     reelWeights: baseReels(),
-    safeValues: safeTable(1.45)
+    // super_getaway uses a TIGHT, richer bar table (not the fat-tailed safeTable):
+    // at cost 500 the mode must mean ~480x, and against the shared 5000x cap a
+    // fat tail forced the 5000x max win to hit 7.5% of books (Stake rejects a max
+    // win that frequent). A tight table pays a typical bonus ~445x WITHOUT
+    // overflowing, so the optimizer's solved wincap probability drops to <1% while
+    // RTP stays exactly 96%. (Retuned 2026-08-03 for Stake compliance.)
+    safeValues: superGetawaySafe()
   },
   // ---- Collection Power-Level head-start tables (RTP-neutral, 1x cost) -------
   // base.freegame is 0.62; each tier shifts mass out of `basegame` (frequent
@@ -296,6 +302,29 @@ function baseReels(): Record<SymbolId, number> {
 function anteReels(): Record<SymbolId, number> {
   // Ante also fills the collection a bit faster (WILD 3 -> 5) as a perk.
   return { ...baseReels(), PHONE_SCATTER: 5, CAR_WILD: 18, WILD: 5 };
+}
+
+/**
+ * SUPER_GETAWAY bar table — deliberately TIGHT (medium, consistent bars; no
+ * 750x monster tail). Cost 500 needs a ~480x mean, but the max win is capped at
+ * 5000x for every mode; a fat tail made a handful of books overflow to the cap
+ * so the optimizer had to publish the 5000x max win at 7.5% (1 in 13), which
+ * Stake flags as not a genuine rare jackpot. With this table a typical bonus
+ * totals ~445x and essentially never overflows, so the solved max-win rate falls
+ * under 1% (near the compliant 100x getaway) while RTP stays exactly 96%.
+ * Mean bar ≈ 23.5x; the ~19 bars a normal super_getaway bonus locks → ~445x.
+ */
+function superGetawaySafe(): { value: number; weight: number }[] {
+  return [
+    { value: 11, weight: 130 },
+    { value: 16, weight: 230 },
+    { value: 22, weight: 255 },
+    { value: 30, weight: 175 },
+    { value: 41, weight: 85 },
+    { value: 55, weight: 38 },
+    { value: 77, weight: 13 },
+    { value: 110, weight: 4 }
+  ];
 }
 
 function safeTable(scale: number): { value: number; weight: number }[] {
