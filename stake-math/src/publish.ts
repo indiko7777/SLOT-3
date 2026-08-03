@@ -103,10 +103,21 @@ export async function writeManifest(
   modes: IndexMode[],
   shelf: unknown[]
 ): Promise<void> {
-  await ensureInit();
+  const rootIndexContent = JSON.stringify({ modes }, null, 2) + "\n";
   await writeFile(
     path.join(root, "index.json"),
-    JSON.stringify({ modes }, null, 2) + "\n",
+    rootIndexContent,
+    "utf8"
+  );
+  const mathRootDir = path.resolve(".");
+  const mathRootModes = modes.map((m) => ({
+    ...m,
+    events: `publish_files/${m.events}`,
+    weights: `publish_files/${m.weights}`
+  }));
+  await writeFile(
+    path.join(mathRootDir, "index.json"),
+    JSON.stringify({ modes: mathRootModes }, null, 2) + "\n",
     "utf8"
   );
   const force = "{}\n";

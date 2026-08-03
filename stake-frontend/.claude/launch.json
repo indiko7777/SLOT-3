@@ -4,7 +4,7 @@
     {
       "name": "heat-chase",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": ["run", "dev:local"],
       "port": 5176
     }
   ]

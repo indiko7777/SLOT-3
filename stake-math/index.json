@@ -1,0 +1,46 @@
+{
+  "modes": [
+    {
+      "name": "base",
+      "cost": 1,
+      "events": "publish_files/books_base.jsonl.zst",
+      "weights": "publish_files/lookUpTable_base_0.csv"
+    },
+    {
+      "name": "ante",
+      "cost": 1.5,
+      "events": "publish_files/books_ante.jsonl.zst",
+      "weights": "publish_files/lookUpTable_ante_0.csv"
+    },
+    {
+      "name": "getaway",
+      "cost": 100,
+      "events": "publish_files/books_getaway.jsonl.zst",
+      "weights": "publish_files/lookUpTable_getaway_0.csv"
+    },
+    {
+      "name": "super_getaway",
+      "cost": 500,
+      "events": "publish_files/books_super_getaway.jsonl.zst",
+      "weights": "publish_files/lookUpTable_super_getaway_0.csv"
+    },
+    {
+      "name": "base_tier1",
+      "cost": 1,
+      "events": "publish_files/books_base_tier1.jsonl.zst",
+      "weights": "publish_files/lookUpTable_base_tier1_0.csv"
+    },
+    {
+      "name": "base_tier2",
+      "cost": 1,
+      "events": "publish_files/books_base_tier2.jsonl.zst",
+      "weights": "publish_files/lookUpTable_base_tier2_0.csv"
+    },
+    {
+      "name": "base_tier3",
+      "cost": 1,
+      "events": "publish_files/books_base_tier3.jsonl.zst",
+      "weights": "publish_files/lookUpTable_base_tier3_0.csv"
+    }
+  ]
+}
