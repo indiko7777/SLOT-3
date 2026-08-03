@@ -464,12 +464,12 @@ export function showConfirmPopup(
         <button class="hc-buy-close" id="hc-btn-close" aria-label="Close"><span class="hc-buy-esc-tag">Esc</span> ✕</button>
         <div class="hc-buy-bg"></div>
         <div class="hc-buy-rim"></div>
-        <img class="hc-buy-art" src="/assets/getaway_car_scene.webp" alt="" draggable="false" />
+        <img class="hc-buy-art" src="assets/getaway_car_scene.webp" alt="" draggable="false" />
         <div class="hc-buy-scrim"></div>
         <div class="hc-buy-glare"></div>
         <div class="hc-buy-siren"></div>
         <div class="hc-buy-content">
-          <img class="hc-buy-logo" src="/assets/Heat%20Chase%20Logo.webp" alt="Heat Chase" draggable="false" />
+          <img class="hc-buy-logo" src="assets/Heat%20Chase%20Logo.webp" alt="Heat Chase" draggable="false" />
           <div class="hc-buy-kicker">${kicker}</div>
           <h2 class="hc-buy-title"><span class="lead">${titleLead}</span>${titleMain}</h2>
           <div class="hc-buy-stars">${starsHtml}</div>
