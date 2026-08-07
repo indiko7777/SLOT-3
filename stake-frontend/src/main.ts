@@ -47,6 +47,16 @@ let betIndex = 0;
 let betModes: Record<string, BetModeObject> = {};
 let jurisdiction: Jurisdiction | null = null;
 
+/** Fixed cost multipliers for the feature/ante modes, mirroring the math bundle
+ *  (stake-math MODES) and the mock RGS. Used only as a fallback when the live
+ *  RGS config omits a mode, so the always-visible buy/ante buttons never become
+ *  dead controls. See the synthesis step in boot(). */
+const FEATURE_MODE_COSTS: Record<string, number> = {
+  ante: 1.5,
+  getaway: 100,
+  super_getaway: 500,
+};
+
 let pixi: Application;
 let scene: PixiGameScene;
 let radioWheel: RadioWheel;
@@ -222,7 +232,11 @@ async function boot(): Promise<void> {
   pixi.canvas.style.display = "block";
   mount.appendChild(pixi.canvas);
 
-  await Promise.all([loadSymbolTextures(), audioBus.prefetch()]);
+  // Boot gates ONLY on the symbol textures. The ~6 MB of background music used
+  // to be awaited here, freezing the loader on slow connections; it now streams
+  // in the background and unlock() waits on it before the first sound plays.
+  await loadSymbolTextures();
+  void audioBus.prefetch();
   updateLoader(0.55);
 
   let resume: RoundRecord | null = null;
@@ -262,6 +276,18 @@ async function boot(): Promise<void> {
       currency = auth.balance.currency;
       balance = toDisplay(auth.balance.amount);
       betModes = auth.config.betModes ?? {};
+      // ROBUSTNESS — the BUY GETAWAY / SUPER / ANTE buttons are drawn
+      // unconditionally, so their bet modes MUST exist or a click silently does
+      // nothing (reads as "bonus modes do not work"). If the live RGS omitted a
+      // known feature mode from its config, synthesize it from its fixed cost so
+      // the play request is still sent. The RGS stays the authority: if it truly
+      // doesn't support the mode it rejects the play and the player sees a toast,
+      // instead of pressing a dead button. On a correct bundle this is a no-op.
+      for (const [mode, costMultiplier] of Object.entries(FEATURE_MODE_COSTS)) {
+        if (!betModes[mode]) {
+          betModes[mode] = { mode, costMultiplier, feature: mode !== "base" };
+        }
+      }
       jurisdiction = auth.config.jurisdiction ?? null;
       betLevels = (auth.config.betLevels ?? []).map(toDisplay);
       if (betLevels.length === 0)

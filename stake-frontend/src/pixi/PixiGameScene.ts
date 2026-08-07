@@ -11,7 +11,7 @@ import { HudView } from "./HudView";
 import { PaytableView } from "./PaytableView";
 import { SymbolView, WIN_ACCENT, DEFAULT_ACCENT } from "./SymbolView";
 import { computeLayout } from "./layout";
-import { getExtraTexture } from "./assets";
+import { getExtraTexture, silhouetteOffset } from "./assets";
 import { tween, wait, easeInCubic, easeInOutCubic, easeOutBack, easeOutCubic } from "./tween";
 import type { LayoutMetrics, SceneRuntime } from "./types";
 import { OutlineFilter } from "pixi-filters";
@@ -866,8 +866,11 @@ export class PixiGameScene {
     const charContainer = new Container();
     const silSprite = new Sprite(silTex);
     silSprite.anchor.set(0.5);
-    silSprite.x = prefix === "char" ? 57.5 : 0; // align shadow with the pieces
-    silSprite.y = prefix === "char" ? 27.5 : 0;
+    // Register the silhouette with the pieces (girl 1's is drawn off-centre).
+    // Canvas-fraction based so it scales at any size — see silhouetteOffset().
+    const silOff = silhouetteOffset(prefix, silTex);
+    silSprite.x = silOff.x;
+    silSprite.y = silOff.y;
     silSprite.tint = 0x000000;
     const outline = new OutlineFilter({ thickness: 2, color: 0xffffff, quality: 1.0 });
     outline.resolution = window.devicePixelRatio || 1;

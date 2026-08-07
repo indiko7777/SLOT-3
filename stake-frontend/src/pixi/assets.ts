@@ -105,6 +105,32 @@ const EXTRA_ASSETS: Record<string, string> = {
   "char3_full": "charachter3 body/full body and head.webp",
 };
 
+/**
+ * Per-character silhouette registration fix. Every layer of a character (the
+ * silhouette, each body piece, the full image) shares ONE canvas, but girl 1's
+ * silhouette art was drawn up-and-LEFT of her body pieces within that canvas —
+ * measured: the pieces sit +36px x / +17.5px y from the silhouette on the
+ * 952×1706 canvas, i.e. +3.78% / +1.03% of the canvas. Girls 2 & 3 are already
+ * registered (offset ≈ 0). It is stored as a FRACTION of the canvas so the
+ * correction scales EXACTLY with the silhouette at any screen size — the old
+ * fix hard-coded 57.5px, which overshot and drifted worse the larger the panel
+ * grew (pieces spilling outside the outline). Callers add this to the SILHOUETTE
+ * sprite's position; the pieces stay at (0,0) since they are the real art.
+ */
+const SILHOUETTE_REG: Record<string, { fx: number; fy: number }> = {
+  char: { fx: 0.0378, fy: 0.0103 },
+};
+
+/** Pixel offset to add to a silhouette sprite so it registers with its pieces,
+ *  for the given character prefix and its (shared-canvas) texture size. */
+export function silhouetteOffset(
+  prefix: string,
+  tex: { width: number; height: number }
+): { x: number; y: number } {
+  const r = SILHOUETTE_REG[prefix];
+  return r ? { x: r.fx * tex.width, y: r.fy * tex.height } : { x: 0, y: 0 };
+}
+
 /** Optional images — loaded per-file so a missing one never blocks the game.
  *  The Getaway (POV chase) bonus renders procedural fallbacks until these exist. */
 const OPTIONAL_ASSETS: Record<string, string> = {

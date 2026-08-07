@@ -1228,13 +1228,12 @@ export class BonusView extends Container {
     this.highwayB = mk();
     this.bgLayer.addChild(this.highwayA, this.highwayB);
 
-    // Depth + seating: darken the extreme edges and the very bottom so the HUD
-    // text and the truck sit INTO the scene rather than on a hard photo crop.
-    // Plain Graphics (no filter) — bgLayer must stay filter-free.
+    // A single, uniform knock-down over the whole backdrop so the highway is not
+    // photo-bright behind the truck. The old top (H*0.10) and bottom (H*0.18)
+    // dark bands were removed — the player read them as "transparent black
+    // margins" framing the screen. No top/bottom banding now.
     const grad = new Graphics();
-    grad.rect(0, 0, W, H).fill({ color: 0x000000, alpha: 0.18 });          // overall knock-down
-    grad.rect(0, H * 0.82, W, H * 0.18).fill({ color: 0x02030a, alpha: 0.55 }); // road foreground
-    grad.rect(0, 0, W, H * 0.10).fill({ color: 0x02030a, alpha: 0.5 });    // top, under the title
+    grad.rect(0, 0, W, H).fill({ color: 0x000000, alpha: 0.18 });
     this.bgLayer.addChild(grad);
 
     // Set the opening transforms so the first painted frame is already correct.

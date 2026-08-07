@@ -1,7 +1,7 @@
 import { Container, Graphics, Sprite, Text, TextStyle } from "pixi.js";
 import { TEXT, type Position } from "../domain";
 import type { PlaybackSnapshot } from "../playback";
-import { getExtraTexture } from "./assets";
+import { getExtraTexture, silhouetteOffset } from "./assets";
 import { makeText } from "./text";
 import { ambientTicker, tween, wait, easeOutBack, linear } from "./tween";
 import type { LayoutMetrics, Rect, SceneRuntime } from "./types";
@@ -44,6 +44,19 @@ const TUMBLE_MESSAGES = [
   "BUILDING THE MULTIPLIER!",
   "READY FOR ESCAPE!"
 ];
+
+/** Control-bar neon palette. The bet bar used off-palette lime green
+ *  (0x9ae64e) + OS emoji icons, which read as cheap and clashed with the
+ *  game's gold/amber/cyan signage — the "poor bet UI bar" note. These unify
+ *  the spin / stepper / utility controls with the rest of the HUD. */
+const BAR = {
+  gold: 0xffdf65,
+  amber: 0xffb000,
+  amberDim: 0x6b4a12,
+  icon: 0xffe6a3,
+  glass: 0x0a0e18,
+  hot: 0xff7676,
+} as const;
 
 export class HudView extends Container {
   private ambientCbs: Array<(dt: number, elapsed: number) => void> = [];
@@ -514,9 +527,9 @@ export class HudView extends Container {
   private drawBoardFrame(rect: Rect): void {
     const frame = new Graphics();
     frame.roundRect(rect.x - 2, rect.y - 2, rect.width + 4, rect.height + 4, 12)
-      .stroke({ color: 0x9ae64e, width: 2, alpha: 0.45 });
+      .stroke({ color: BAR.amber, width: 2, alpha: 0.45 });
     frame.roundRect(rect.x, rect.y, rect.width, rect.height, 10)
-      .stroke({ color: 0x9ae64e, width: 1, alpha: 0.25 });
+      .stroke({ color: BAR.gold, width: 1, alpha: 0.25 });
     this.underParticlesContainer.addChild(frame);
   }
 
@@ -894,8 +907,14 @@ export class HudView extends Container {
     const assembly = new Container();
     const silSprite = new Sprite(silTex);
     silSprite.anchor.set(0.5);
-    silSprite.x = prog.artPrefix === "char" ? 57.5 : 0;
-    silSprite.y = prog.artPrefix === "char" ? 27.5 : 0;
+    // BULLETPROOF ALIGNMENT: silhouette + every piece + the full image share ONE
+    // canvas per character. Pieces are the real art (placed at 0,0); the
+    // silhouette gets a per-character registration offset (canvas-fraction based,
+    // so it scales exactly at ANY panel size) because girl 1's silhouette was
+    // authored off-centre from her pieces. See silhouetteOffset() in assets.ts.
+    const silOff = silhouetteOffset(prog.artPrefix, silTex);
+    silSprite.x = silOff.x;
+    silSprite.y = silOff.y;
     silSprite.tint = 0x000000;
     const outline = new OutlineFilter({ thickness: 2, color: 0xffffff, quality: 1.0 });
     outline.resolution = window.devicePixelRatio || 1;
@@ -948,38 +967,106 @@ export class HudView extends Container {
     return (rr << 16) | (rg << 8) | rb;
   }
 
-  private smallButton(x: number, y: number, size: number, label: string, action: string): void {
+  /** Points along an arc for an OPEN polyline (`poly(pts, false)`). ALWAYS use
+   *  this for curved strokes on the control bar — never `g.arc()`, which appends
+   *  to the running path and trails a stray line from the shape drawn before it
+   *  (that was the "weird lines" on the buttons). */
+  private arcPts(cx: number, cy: number, radius: number, a0: number, a1: number, steps = 10): number[] {
+    const pts: number[] = [];
+    for (let i = 0; i <= steps; i++) {
+      const a = a0 + (a1 - a0) * (i / steps);
+      pts.push(cx + radius * Math.cos(a), cy + radius * Math.sin(a));
+    }
+    return pts;
+  }
+
+  /** Crisp vector icons for the utility buttons, replacing the old OS emoji
+   *  (☰ 📻 ⓘ) that rendered differently on every platform and read as cheap.
+   *  Sized to the button radius so they stay sharp at any DPI. */
+  private drawUtilityIcon(g: Graphics, action: string, r: number): void {
+    const c = BAR.icon;
+    const s = r / 19; // icons authored for r≈19, scaled to the actual button
+    const cx = r, cy = r;
+    if (action === "menu") {
+      for (let i = -1; i <= 1; i++) {
+        g.roundRect(cx - 8 * s, cy + i * 6 * s - 1.4 * s, 16 * s, 2.8 * s, 1.4 * s).fill(c);
+      }
+    } else if (action === "info") {
+      g.circle(cx, cy, 12 * s).stroke({ color: c, width: 1.6 * s, alpha: 0.85 });
+      g.circle(cx, cy - 5 * s, 1.9 * s).fill(c);
+      g.roundRect(cx - 1.6 * s, cy - 1.5 * s, 3.2 * s, 8.5 * s, 1.6 * s).fill(c);
+    } else {
+      // radio / sound — a speaker cone; waves when on, an X when muted. Every
+      // stroke below is an OPEN polyline (poly(pts,false)); we must NOT use
+      // g.arc() or bare moveTo/lineTo here — those append to the running path and
+      // trailed a stray diagonal line from the cone across the button.
+      const muted = this.runtime.isMuted();
+      g.poly([
+        cx - 9 * s, cy - 3.4 * s, cx - 4.5 * s, cy - 3.4 * s, cx - 0.5 * s, cy - 7.5 * s,
+        cx - 0.5 * s, cy + 7.5 * s, cx - 4.5 * s, cy + 3.4 * s, cx - 9 * s, cy + 3.4 * s,
+      ]).fill(c);
+      if (muted) {
+        g.poly([cx + 2.5 * s, cy - 4.5 * s, cx + 8.5 * s, cy + 4.5 * s], false).stroke({ color: c, width: 2 * s });
+        g.poly([cx + 8.5 * s, cy - 4.5 * s, cx + 2.5 * s, cy + 4.5 * s], false).stroke({ color: c, width: 2 * s });
+      } else {
+        const wave = (radius: number): number[] => {
+          const pts: number[] = [];
+          for (let a = -Math.PI / 3; a <= Math.PI / 3 + 1e-3; a += Math.PI / 14) {
+            pts.push(cx - 1 * s + radius * Math.cos(a), cy + radius * Math.sin(a));
+          }
+          return pts;
+        };
+        g.poly(wave(5.5 * s), false).stroke({ color: c, width: 1.8 * s });
+        g.poly(wave(9 * s), false).stroke({ color: c, width: 1.8 * s });
+      }
+    }
+  }
+
+  private smallButton(x: number, y: number, size: number, _label: string, action: string): void {
     const button = new Container();
-    const g = new Graphics();
-    g.circle(size / 2, size / 2, size / 2).fill({ color: 0x000000, alpha: 0.5 }).stroke({ color: 0x6d9154, width: 1.5 });
-    button.addChild(g);
-    button.addChild(makeText(label, Math.min(18, size * 0.42), 0x8a9ab8, size / 2, size * 0.24, "center"));
+    const r = size / 2;
+    const accent = BAR.amber;
+    const disc = new Graphics();
+    disc.circle(r, r, r).fill({ color: BAR.glass, alpha: 0.55 });
+    disc.circle(r, r, r).stroke({ color: accent, width: 2.6, alpha: 0.24 });
+    disc.circle(r, r, r - 0.5).stroke({ color: accent, width: 1.2, alpha: 0.82 });
+    // top specular highlight — an OPEN polyline (never g.arc(); see arcPts()).
+    disc.poly(this.arcPts(r, r, r - 1.6, Math.PI * 1.15, Math.PI * 1.85), false).stroke({ color: 0xffffff, width: 1.1, alpha: 0.28 });
+    button.addChild(disc);
+
+    const icon = new Graphics();
+    this.drawUtilityIcon(icon, action, r);
+    button.addChild(icon);
+
     button.position.set(x, y);
     button.eventMode = "static";
     button.cursor = "pointer";
-    button.on("pointerover", () => { button.scale.set(1.1); g.tint = 0xccddff; });
-    button.on("pointerout", () => { button.scale.set(1); g.tint = 0xffffff; });
+    button.on("pointerover", () => { button.scale.set(1.1); disc.tint = 0xfff0c8; });
+    button.on("pointerout", () => { button.scale.set(1); disc.tint = 0xffffff; });
     button.on("pointertap", () => void this.runtime.onAction(action));
     this.addChild(button);
   }
 
-  private betButton(x: number, y: number, size: number, label: string, action: string): void {
+  private betButton(x: number, y: number, size: number, _label: string, action: string): void {
     const button = new Container();
+    const r = size / 2;
+    const accent = BAR.amber;
     const g = new Graphics();
-    g.circle(size / 2, size / 2, size / 2).fill({ color: 0x000000, alpha: 0.5 }).stroke({ color: 0x9ae64e, width: 2, alpha: 0.6 });
+    g.circle(r, r, r).fill({ color: BAR.glass, alpha: 0.55 });
+    g.circle(r, r, r).stroke({ color: accent, width: 2.8, alpha: 0.3 });
+    g.circle(r, r, r - 0.5).stroke({ color: accent, width: 1.3, alpha: 0.9 });
+    g.poly(this.arcPts(r, r, r - 1.8, Math.PI * 1.15, Math.PI * 1.85), false).stroke({ color: 0xffffff, width: 1.1, alpha: 0.3 });
     button.addChild(g);
-    const txt = new Text({
-      text: label,
-      style: new TextStyle({
-        fill: 0x9ae64e,
-        fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
-        fontSize: 22,
-        fontWeight: "900"
-      })
-    });
-    txt.anchor.set(0.5, 0.5);
-    txt.position.set(size / 2, size / 2);
-    button.addChild(txt);
+
+    // Crisp drawn +/- glyph (was chunky Impact text). Horizontal bar for both;
+    // the vertical bar is added for "plus".
+    const sym = new Graphics();
+    const barW = r * 0.66;
+    const th = Math.max(2.8, r * 0.17);
+    sym.roundRect(r - barW / 2, r - th / 2, barW, th, th / 2).fill(BAR.gold);
+    if (action === "plus") sym.roundRect(r - th / 2, r - barW / 2, th, barW, th / 2).fill(BAR.gold);
+    button.addChild(sym);
+
     button.position.set(x, y);
     button.eventMode = "static";
 
@@ -987,9 +1074,9 @@ export class HudView extends Container {
     button.cursor = disabled ? "default" : "pointer";
     if (disabled) button.alpha = 0.5;
 
-    button.on("pointerover", () => { if(!disabled) { button.scale.set(1.12); g.tint = 0xccddff; }});
-    button.on("pointerout", () => { if(!disabled) { button.scale.set(1); g.tint = 0xffffff; }});
-    button.on("pointertap", () => { if(!this.controlsLocked()) void this.runtime.onAction(action); });
+    button.on("pointerover", () => { if (!disabled) { button.scale.set(1.12); g.tint = 0xfff0c8; } });
+    button.on("pointerout", () => { if (!disabled) { button.scale.set(1); g.tint = 0xffffff; } });
+    button.on("pointertap", () => { if (!this.controlsLocked()) void this.runtime.onAction(action); });
     this.addChild(button);
   }
 
@@ -1002,18 +1089,22 @@ export class HudView extends Container {
 
     const visual = new Container();
 
+    const ring = isPlaying ? BAR.amberDim : BAR.gold;
+
     const halo = new Graphics();
-    halo.circle(R, R, R + 10).fill({ color: 0x9ae64e, alpha: isPlaying ? 0 : 0.08 });
+    halo.circle(R, R, R + 10).fill({ color: BAR.amber, alpha: isPlaying ? 0 : 0.09 });
     visual.addChild(halo);
 
     const outer = new Graphics();
-    outer.circle(R, R, R).fill({ color: 0x000000, alpha: 0.5 });
-    outer.circle(R, R, R).stroke({ color: isPlaying ? 0x5d7d49 : 0x9ae64e, width: 4 });
+    outer.circle(R, R, R).fill({ color: BAR.glass, alpha: 0.55 });
+    // Neon tube: soft wide pass under a bright hairline, like the buy panels.
+    outer.circle(R, R, R).stroke({ color: ring, width: 4.2, alpha: 0.32 });
+    outer.circle(R, R, R).stroke({ color: ring, width: 2, alpha: 0.95 });
     visual.addChild(outer);
 
     const inner = new Graphics();
-    inner.circle(R, R, R - 8).fill({ color: 0x000000, alpha: 0.5 });
-    inner.circle(R, R, R - 8).stroke({ color: isPlaying ? 0x4d6639 : 0x9ae64e, width: 1.5, alpha: 0.4 });
+    inner.circle(R, R, R - 8).fill({ color: BAR.glass, alpha: 0.5 });
+    inner.circle(R, R, R - 8).stroke({ color: ring, width: 1.5, alpha: 0.4 });
     visual.addChild(inner);
 
     const spinLabel = isAuto
@@ -1029,7 +1120,7 @@ export class HudView extends Container {
         letterSpacing: 1,
         padding: 12,
         align: "center",
-        dropShadow: isPlaying && !isAuto ? undefined : { color: isAuto ? 0xff5555 : 0x9ae64e, alpha: 0.4, blur: 6, distance: 0 }
+        dropShadow: isPlaying && !isAuto ? undefined : { color: isAuto ? 0xff5555 : BAR.amber, alpha: 0.45, blur: 7, distance: 0 }
       })
     });
     spinText.anchor.set(0.5, 0.5);

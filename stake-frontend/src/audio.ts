@@ -187,6 +187,9 @@ export class EventAudioBus {
   private buffers = new Map<TrackName, AudioBuffer>();    // decoded
   private fetched = false;
   private decoded = false;
+  /** In-flight prefetch, so boot can fire it without awaiting (keeps the ~6 MB
+   *  of music off the startup critical path) while unlock() still waits on it. */
+  private fetchPromise: Promise<void> | null = null;
 
   /* active loop slots — bg, spin, counter can each have one */
   private bgLoop: ActiveLoop | null = null;
@@ -224,10 +227,10 @@ export class EventAudioBus {
    * Pre-fetch all mp3 files during boot (no user gesture needed).
    * Call this from main.ts alongside texture loading.
    */
-  async prefetch(): Promise<void> {
-    if (this.fetched) return;
+  prefetch(): Promise<void> {
+    if (this.fetchPromise) return this.fetchPromise;
     this.fetched = true;
-    await Promise.all(
+    this.fetchPromise = Promise.all(
       ALL_TRACKS.map(async (t) => {
         try {
           const rawPath = TRACK_PATHS[t] ?? `${AUDIO_BASE}${t}.mp3`;
@@ -237,7 +240,8 @@ export class EventAudioBus {
           this.rawData.set(t, await r.arrayBuffer());
         } catch { /* missing file — synth fallback */ }
       })
-    );
+    ).then(() => undefined);
+    return this.fetchPromise;
   }
 
   /**
@@ -247,6 +251,11 @@ export class EventAudioBus {
   async unlock(): Promise<void> {
     if (!this.ctx) this.ctx = new AudioContext();
     if (this.ctx.state === "suspended") await this.ctx.resume();
+
+    // Boot no longer blocks on the audio download; make sure it has finished
+    // (or kick it off) before decoding. unlock() always follows a user gesture,
+    // so the fetch has had the whole intro/first-interaction to stream in.
+    if (this.fetchPromise) await this.fetchPromise;
 
     if (!this.decoded && this.fetched) {
       this.decoded = true;

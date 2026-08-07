@@ -1,6 +1,6 @@
 import { Container, Graphics, Sprite, Text, TextStyle } from "pixi.js";
 import type { LayoutMetrics, Rect } from "./types";
-import { getExtraTexture } from "./assets";
+import { getExtraTexture, silhouetteOffset } from "./assets";
 import { makeText } from "./text";
 import { ambientTicker } from "./tween";
 import { toRomanNumeral } from "../meta/collection";
@@ -269,8 +269,11 @@ export class CardPeekView extends Container {
           if (silTex) {
             const silSprite = new Sprite(silTex);
             silSprite.anchor.set(0.5);
-            silSprite.x = 10;
-            silSprite.y = 5;
+            // Per-character registration offset so pieces land inside the outline
+            // at any size (girl 1's silhouette is off-centre from her pieces).
+            const silOff = silhouetteOffset("char", silTex);
+            silSprite.x = silOff.x;
+            silSprite.y = silOff.y;
             silSprite.tint = 0x000000;
             silSprite.alpha = 0.8;
             assembly.addChild(silSprite);

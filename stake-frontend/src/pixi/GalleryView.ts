@@ -1,5 +1,5 @@
 import { Container, Graphics, Sprite, Text, TextStyle } from "pixi.js";
-import { getExtraTexture } from "./assets";
+import { getExtraTexture, silhouetteOffset } from "./assets";
 import { tween } from "./tween";
 import { getPrestigeTitle } from "../meta/collection";
 
@@ -478,18 +478,23 @@ export class GalleryView extends Container {
         // White outline = the silhouette stamped in white at 8 offsets UNDER the
         // black fill. A pure-sprite outline (no filter) — safe inside the masked
         // container, and it can never blank the canvas the way a filter+mask can.
+        // Per-character registration offset so the collected pieces (real art at
+        // 0,0) sit inside the outline — girl 1's silhouette is off-centre from
+        // her pieces. Applied to the black silhouette AND its white halo copies.
+        const silOff = silhouetteOffset(prefix, silTex);
         const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]];
         for (const [dx, dy] of dirs) {
           const o = new Sprite(silTex);
           o.anchor.set(0.5);
           o.tint = 0xffffff;
-          o.position.set(dx! * t, dy! * t);
+          o.position.set(silOff.x + dx! * t, silOff.y + dy! * t);
           assembly.addChild(o);
         }
 
         // Solid black silhouette on top of the white halo.
         const sil = new Sprite(silTex);
         sil.anchor.set(0.5);
+        sil.position.set(silOff.x, silOff.y);
         sil.tint = 0x000000;
         assembly.addChild(sil);
 
