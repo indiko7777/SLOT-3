@@ -84,8 +84,13 @@ export function simulateRound(
   // to climb to Heat 5 so the book genuinely triggers via the stars. BUY modes
   // are a purchased Getaway: straight to the bonus, no Wanted climb / base run.
   const isCash = !cfg.isBuyBonus;
-  const forceScatter = forceBonus && isCash;
-  const forceDeep = false;
+  // Split forced cash-mode bonuses between the rare 3-scatter surprise and the
+  // default WANTED path (a deep cascade forced to climb to triggerHeat, so the
+  // stars filling to 5 genuinely launches the Getaway). Restored after commit
+  // 4125162 ("idk") accidentally hard-disabled forceDeep, which made the Wanted
+  // stars cosmetic — they filled to 5 but nothing ever triggered.
+  const forceScatter = forceBonus && isCash && rng.bool(SCATTER_TRIGGER_SHARE);
+  const forceDeep = forceBonus && isCash && !forceScatter;
 
   // Wanted-progress shaping. `climbTo` is the heat a book is forced to reach by
   // planting a fresh small cluster each tumble (reads on screen as a lucky
@@ -263,11 +268,15 @@ export function simulateRound(
   const reachedMaxHeat = heat >= triggerHeat;
   const finalScatters = findSymbol(board, SCATTER);
   const scatterTriggered = finalScatters.length >= SCATTER_TRIGGER_COUNT;
-  const triggered = forceBonus || scatterTriggered;
+  const triggered = forceBonus || reachedMaxHeat || scatterTriggered;
 
   if (triggered) {
     const bonusMode = mode === "super_getaway" ? "super_getaway" : "getaway";
-    const viaScatter = scatterTriggered;
+    // The WANTED path (a chain reaching max heat) takes precedence. Only a
+    // genuine 3+ scatter land with NO max-heat chain reads as a scatter trigger;
+    // the Wanted path carries no scatter positions so the client themes it as an
+    // earned, stars-filled trigger rather than a random scatter drop.
+    const viaScatter = scatterTriggered && !reachedMaxHeat;
     const trigPositions = viaScatter ? finalScatters.slice(0, SCATTER_TRIGGER_COUNT) : [];
     events.push({
       type: "bonus_trigger",
