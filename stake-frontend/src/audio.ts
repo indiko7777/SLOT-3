@@ -484,6 +484,16 @@ export class EventAudioBus {
     this.radioOverride = true;
     void this.unlock().then(() => {
       this.stopSynthRadio();
+      if (id === "off") {
+        this.fadeOut("bg");
+        return;
+      }
+      if (this.inBonus) {
+        // During bonus spins (natural or paid), music cannot be changed to base radio stations.
+        // It stays locked to the exact bonus audio (bg_bonus).
+        this.startBonusBg();
+        return;
+      }
       this.fadeOut("bg");
       const cfg = STATION_AUDIO[id];
       if (!cfg || cfg.kind === "off") return;
@@ -664,7 +674,7 @@ export class EventAudioBus {
       case "bonus_trigger":
         this.fire("getaway_intro", vol, 1.25); // 25% faster so it ends sooner
         this.inBonus = true;
-        this.crossfadeBg("bg_bonus");
+        this.startBonusBg();
         break;
 
       case "bonus_spin":
@@ -683,7 +693,7 @@ export class EventAudioBus {
       case "bonus_end":
         this.inBonus = false;
         this.fire("getaway_end", vol);
-        this.crossfadeBg("bg_base");
+        this.restoreBaseBg();
         break;
 
       /* ── round end (just cleanup) ──────────── */
@@ -1324,13 +1334,41 @@ export class EventAudioBus {
     this.fire("money_counter_end");
   }
 
+  /** Switch to the exact bonus background music (bg_bonus), shutting off any active base or synth radio music. */
+  private startBonusBg(): void {
+    this.stopSynthRadio();
+    if (this.bgLoop && this.bgLoop.track !== "bg_bonus") {
+      this.fadeAndStop(this.bgLoop);
+      this.bgLoop = null;
+    }
+    this.startLoop("bg_bonus", "bg");
+  }
+
+  /** Restore background music after bonus ends to the selected radio station or default base music. */
+  private restoreBaseBg(): void {
+    this.fadeOut("bg");
+    if (this.radioStation === "off") return;
+    const cfg = STATION_AUDIO[this.radioStation];
+    if (!cfg || cfg.kind === "off") return;
+    if (cfg.kind === "track") {
+      this.startLoop(cfg.track, "bg");
+    } else if (cfg.kind === "synth") {
+      this.startSynthRadio(cfg.wave, cfg.base, cfg.tempo, cfg.scale);
+    } else if (cfg.kind === "scanner") {
+      this.startScannerRadio();
+    }
+  }
+
   /** Start a looping track in a named slot */
   private startLoop(track: TrackName, slot: "bg" | "spin" | "counter"): void {
     if (!this.ctx) return;
     const existing = slot === "bg" ? this.bgLoop : slot === "spin" ? this.spinLoop : this.counterLoop;
     if (existing?.track === track) return;          // already playing this track
 
-    const buf = this.buffers.get(track);
+    let buf = this.buffers.get(track);
+    if (!buf && track === "bg_bonus" && this.buffers.has("police_sound_loop")) {
+      buf = this.buffers.get("police_sound_loop");
+    }
     if (!buf) return;
 
     // fade out whatever was in this slot
@@ -1344,7 +1382,7 @@ export class EventAudioBus {
     const now = this.ctx.currentTime;
     const fade = slot === "spin" ? 0.05 : FADE;
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(VOLUME[track], now + fade);
+    gain.gain.exponentialRampToValueAtTime(VOLUME[track] ?? 0.5, now + fade);
 
     source.connect(gain).connect(this.ctx.destination);
     source.start();
@@ -1367,6 +1405,10 @@ export class EventAudioBus {
 
   /** Crossfade background music to a new track */
   private crossfadeBg(to: TrackName): void {
+    if (to === "bg_bonus" || this.inBonus) {
+      this.startBonusBg();
+      return;
+    }
     if (this.radioOverride) return; // the player is controlling the radio
     this.fadeOut("bg");
     this.startLoop(to, "bg");
@@ -1374,9 +1416,16 @@ export class EventAudioBus {
 
   /** Make sure background music is running (restart after mute) */
   private ensureBg(): void {
+    if (this.inBonus) {
+      if (this.radioStation === "off") return;
+      if (!this.bgLoop || this.bgLoop.track !== "bg_bonus") {
+        this.startBonusBg();
+      }
+      return;
+    }
     if (this.radioOverride) return; // the chosen station persists; don't auto-restart
     if (this.bgLoop) return;
-    this.startLoop(this.inBonus ? "bg_bonus" : "bg_base", "bg");
+    this.startLoop("bg_base", "bg");
   }
 
   /** Gracefully fade a loop to silence then stop it */
