@@ -1032,8 +1032,26 @@ export class BonusView extends Container {
 
     audio?.start();
     let skipped = false;
-    const onSkip = (): void => { skipped = true; };
+    let audioEnded = false;
+    const stopAudioNow = (): void => {
+      if (audioEnded) return;
+      audioEnded = true;
+      audio?.end();
+    };
+    const onSkip = (e?: Event): void => {
+      if (e && e.type === "keydown") {
+        const k = (e as KeyboardEvent).code;
+        if (k !== "Space" && k !== "Enter") return;
+        e.preventDefault();
+      }
+      if (skipped) return;
+      skipped = true;
+      // Stop the loop sound immediately when the player skips — don't wait
+      // for the next rAF frame + promise resolution to call audio.end().
+      stopAudioNow();
+    };
     window.addEventListener("pointerdown", onSkip);
+    window.addEventListener("keydown", onSkip);
 
     await new Promise<void>((resolve) => {
       const t0 = performance.now();
@@ -1056,7 +1074,9 @@ export class BonusView extends Container {
     });
 
     window.removeEventListener("pointerdown", onSkip);
-    audio?.end();
+    window.removeEventListener("keydown", onSkip);
+    // Only call end() here if skip never fired (normal completion path).
+    stopAudioNow();
     finish();
     // The payoff: the win sting lands on the same frame as the final number.
     audio?.impact();

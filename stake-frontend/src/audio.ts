@@ -1330,8 +1330,28 @@ export class EventAudioBus {
 
   /** Resolve the roller: a quick upward flourish, then a clean fade-and-stop. */
   stopWinCounter(): void {
-    this.fadeOut("counter");
+    this.stopCounterLoop();
     this.fire("money_counter_end");
+  }
+
+  private stopCounterLoop(): void {
+    if (!this.counterLoop || !this.ctx) return;
+    const loop = this.counterLoop;
+    this.counterLoop = null;
+    const now = this.ctx.currentTime;
+    try {
+      // Cancel any pending gain ramps (e.g. the fade-in that may still be running)
+      loop.gain.gain.cancelScheduledValues(now);
+      // Anchor the gain at its current actual value right now, so the ramp starts from here
+      const currentGain = Math.max(loop.gain.gain.value, 0.0001);
+      loop.gain.gain.setValueAtTime(currentGain, now);
+      // Snap to silence in 10ms
+      loop.gain.gain.linearRampToValueAtTime(0.0001, now + 0.010);
+      // Hard-stop the source node right after
+      loop.source.stop(now + 0.015);
+    } catch {
+      /* already stopped — ignore */
+    }
   }
 
   /** Switch to the exact bonus background music (bg_bonus), shutting off any active base or synth radio music. */
@@ -1380,7 +1400,7 @@ export class EventAudioBus {
 
     const gain = this.ctx.createGain();
     const now = this.ctx.currentTime;
-    const fade = slot === "spin" ? 0.05 : FADE;
+    const fade = (slot === "spin" || slot === "counter") ? 0.04 : FADE;
     gain.gain.setValueAtTime(0.0001, now);
     gain.gain.exponentialRampToValueAtTime(VOLUME[track] ?? 0.5, now + fade);
 
@@ -1432,7 +1452,12 @@ export class EventAudioBus {
   private fadeAndStop(loop: ActiveLoop): void {
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
-    const fade = (loop.track === "spin_loop" || loop.track === "reel_stop" || loop.track === "reel_loop") ? 0.05 : FADE;
+    const isFastLoop =
+      loop.track === "spin_loop" ||
+      loop.track === "reel_stop" ||
+      loop.track === "reel_loop" ||
+      loop.track === "money_counter_loop";
+    const fade = isFastLoop ? 0.03 : FADE;
     try {
       loop.gain.gain.cancelScheduledValues(now);
       loop.gain.gain.setValueAtTime(

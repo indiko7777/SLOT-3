@@ -829,8 +829,20 @@ export class EffectsLayer extends Container {
     group.addChild(interactionBlock);
 
     let slammed = false;
+    let doubleClicked = false;
+    let counterStopped = false;
+    const stopCounter = () => {
+      if (counterStopped) return;
+      counterStopped = true;
+      this.emit("win_counter_end");
+    };
     const onTap = () => {
-      slammed = true;
+      if (slammed) {
+        doubleClicked = true;
+      } else {
+        slammed = true;
+        stopCounter();
+      }
     };
     interactionBlock.on("pointerdown", onTap);
 
@@ -838,7 +850,12 @@ export class EffectsLayer extends Container {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code === "Space" || e.code === "Enter") {
         e.preventDefault();
-        slammed = true;
+        if (slammed) {
+          doubleClicked = true;
+        } else {
+          slammed = true;
+          stopCounter();
+        }
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -1065,7 +1082,9 @@ export class EffectsLayer extends Container {
     // reassigned inside the rAF closure; widen to string so TS doesn't narrow it
     // back to its "none" initializer here.)
     const finalTier = lastTier as string;
-    this.emit("win_counter_end");
+    // Idempotent — if the player already slammed, the counter was stopped immediately
+    // on that tap. This ensures it also fires for normal (uninterrupted) completions.
+    stopCounter();
 
     // Climax jingle triggers
     this.emit("win_climax", lastTier);
@@ -1111,8 +1130,12 @@ export class EffectsLayer extends Container {
       interactionBlock.off("pointerdown", onDismissTap);
       window.removeEventListener("keydown", onDismissKeyDown);
     } else {
-      // Normal win hold - wait for normal hold duration
-      await wait(slammed ? 750 : turbo ? 300 : 1200);
+      // Normal win hold - wait for hold duration or 2nd click to dismiss immediately
+      const holdStart = performance.now();
+      const holdMax = slammed ? 750 : turbo ? 300 : 1200;
+      while (!doubleClicked && performance.now() - holdStart < holdMax) {
+        await wait(30);
+      }
 
       // Cleanup listeners
       window.removeEventListener("keydown", onKeyDown);
