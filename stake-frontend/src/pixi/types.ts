@@ -71,6 +71,14 @@ export interface SceneRuntime {
   /** 3+ scatters triggered The Getaway — the trucks are revving and tearing off
    *  the board. Fires once, at the start of the drive-off beat. */
   onTruckDriveOff?: () => void;
+  /** The Wanted meter filled to 5★ on a paid spin — the stars themselves ignite
+   *  and detonate straight into the Getaway. This is the STAR-path trigger,
+   *  visually distinct from the truck drive-off, so the player reads the filled
+   *  stars (not any single symbol) as the cause. Fires once, before the burst. */
+  onWantedIgnite?: () => void;
+  /** Fired for each Wanted star as the meter detonates: i = 0..4 as they charge
+   *  in sequence, then i = 5 on the unified final burst — drives a rising sting. */
+  onWantedStarBeat?: (i: number) => void;
   /** The armored truck's rear doors unlatch and swing open on the bonus reels. */
   onTruckDoors?: () => void;
   /** Fired on a Getaway dead spin (nothing landed), in sync with the visual

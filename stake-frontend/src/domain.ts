@@ -117,9 +117,12 @@ export const SYMBOLS: Record<SymbolId, SymbolDefinition> = {
     baseClusterPay: 2.1
   },
   CAR_WILD: {
+    // Legacy id/filename ("CAR_WILD" / cyan_car_wild.webp) kept because the math
+    // books reference the id string; the artwork is body armor, so the
+    // player-facing label matches the art.
     id: "CAR_WILD",
-    label: "Cyan Sports Car",
-    shortLabel: "W",
+    label: "Body Armor",
+    shortLabel: "AR",
     tier: "special",
     role: "Wild substitute and Heat 4 mega-wild"
   },

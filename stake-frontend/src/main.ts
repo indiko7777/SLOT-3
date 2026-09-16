@@ -1,6 +1,6 @@
 import { Application } from "pixi.js";
 import { EventAudioBus } from "./audio";
-import { displayCurrency, uiStrings, type GameEvent, type RoundRecord } from "./domain";
+import { displayCurrency, uiStrings, type Board, type GameEvent, type RoundRecord, type SymbolId } from "./domain";
 import { isModalOpen, showChoiceModal, showToast } from "./modals";
 import { formatWin } from "./rgs/client";
 import { hideLoader, showLoader, updateLoader } from "./loader";
@@ -376,6 +376,17 @@ async function boot(): Promise<void> {
     onTruckDoors: () => {
       if (!muted) audioBus.truckDoors();
     },
+    onWantedIgnite: () => {
+      // A short rising sting under the star charge — the heat boiling over.
+      if (!muted) audioBus.fire("heat_rise", 1.0, 1.1);
+    },
+    onWantedStarBeat: (i) => {
+      if (muted) return;
+      // i = 0..4: ascending pitched ticks as each star locks (reusing the
+      // gold-bar lock tone, which pitches up by index). i = 5: the detonation.
+      if (i >= 5) audioBus.bannerImpact("grand");
+      else audioBus.fireSafeLand(i, 5);
+    },
     onDeadSpin: (heat) => {
       if (!muted) audioBus.deadSpin(heat);
     },
@@ -401,6 +412,41 @@ async function boot(): Promise<void> {
   scene.resize();
   scene.renderSnapshot(snapshot);
   hideLoader();
+
+  // DEV-only: preview either Getaway trigger beat on demand (stripped from prod).
+  //   __trigger("stars")  → the five Wanted stars fill, ignite and detonate into
+  //                         the bonus (the natural star-path trigger).
+  //   __trigger("trucks") → three armored trucks drive off into the bonus.
+  // Lets us (and the player) verify the trigger is unmistakably the STARS, not a
+  // reel symbol. Reload to reset afterwards.
+  if (import.meta.env.DEV) {
+    const filler = (): Board =>
+      Array.from({ length: 5 }, () => ["BRASS", "KNIFE", "PISTOL", "AMMO"] as SymbolId[]);
+    (window as unknown as { __trigger: (via?: "stars" | "trucks") => Promise<void> }).__trigger =
+      async (via: "stars" | "trucks" = "stars") => {
+        if (isPlaying) return;
+        const rec: RoundRecord = { id: 0, payoutMultiplier: 0, events: [] };
+        const play = async (ev: GameEvent) => {
+          snapshot = applyEvent(snapshot, ev, rec);
+          await scene.playEvent(ev, snapshot);
+        };
+        snapshot = { ...INITIAL_SNAPSHOT, betAmount: betLevels[betIndex] ?? 1 };
+        await play({ type: "round_start", mode: "base", boardSeedLabel: "dev", turboProfile: "normal" });
+        await play({ type: "board_settle", board: filler() });
+        if (via === "trucks") {
+          await play({ type: "bonus_trigger", mode: "getaway", scatterPositions: [[0, 0], [2, 1], [4, 2]] });
+        } else {
+          for (let to = 1; to <= 5; to++) {
+            await play({ type: "heat_advance", from: to - 1, to, reason: "win_tumble" });
+          }
+          await play({ type: "bonus_trigger", mode: "getaway", scatterPositions: [] });
+        }
+      };
+    // Slow-motion for inspecting fast beats (1 = normal). __slow(0.2) = 5x slower.
+    (window as unknown as { __slow: (s?: number) => void }).__slow = (s = 0.2) => setTimeScale(s);
+    // eslint-disable-next-line no-console
+    console.info("[dev] __trigger('stars'|'trucks'), __slow(0.2) — preview/inspect trigger beats");
+  }
 
   // Feature-preview splash — shown once per fresh session after the loader, the
   // way high-tier slots explain themselves before the first spin. Skipped for

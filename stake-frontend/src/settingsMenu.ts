@@ -625,7 +625,7 @@ export class SettingsMenu {
 
     parent.appendChild(this.sep("Special Symbols"));
     parent.appendChild(
-      this.specialRow("CAR_WILD", "Cyan Sports Car", "WILD — substitutes for every paying symbol. At 3★/4★ Wanted Level it lands as a 2x2 mega wild."),
+      this.specialRow("CAR_WILD", "Body Armor", "WILD — substitutes for every paying symbol (it does not trigger the bonus). At 3★/4★ Wanted Level it lands as a 2x2 mega wild."),
     );
     parent.appendChild(
       this.specialRow("WILD", "Beach Girl Wild", "WILD — substitutes for every paying symbol AND reveals one Collection gallery piece each time it lands."),

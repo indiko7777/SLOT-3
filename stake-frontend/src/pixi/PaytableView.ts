@@ -305,7 +305,7 @@ export class PaytableView extends Container {
 
     // ════ 6. SPECIAL SYMBOLS ════
     y = this.section("SPECIAL SYMBOLS", CYAN, y);
-    y = this.specialRow("CAR_WILD", "Cyan Sports Car", "WILD — substitutes for every paying symbol. At 3★/4★ Wanted Level it lands as a 2x2 mega wild.", innerW, y);
+    y = this.specialRow("CAR_WILD", "Body Armor", "WILD — substitutes for every paying symbol (it does not trigger the bonus). At 3★/4★ Wanted Level it lands as a 2x2 mega wild.", innerW, y);
     y = this.specialRow("WILD", "Beach Girl Wild", "WILD — substitutes for every paying symbol AND reveals one Collection gallery piece each time it lands.", innerW, y);
     y = this.specialRow("PHONE_SCATTER", "Armored Truck", "SCATTER — pays no prize of its own; 3 or more on one paid spin trigger The Getaway.", innerW, y);
     y = this.body(

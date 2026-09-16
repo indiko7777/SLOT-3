@@ -48,9 +48,9 @@ function features(): Feature[] {
       accent: AMBER,
       title: "WANTED LEVEL",
       lines: [
-        "Every win in a row raises your wanted level.",
-        "The hotter it gets, the stronger the grid turns —",
-        "low symbols upgrade and multipliers climb.",
+        "Every win in a row lights a Wanted star.",
+        "Fill all 5 and The Getaway begins.",
+        "As heat climbs the grid upgrades too.",
       ],
     },
     {
@@ -58,7 +58,7 @@ function features(): Feature[] {
       accent: CYAN,
       title: "THE GETAWAY",
       lines: [
-        "3 or more armored trucks trigger the feature.",
+        "Fill 5 Wanted stars OR land 3+ armored trucks.",
         `You get ${BONUS_START_RESPINS} spins. Every gold bar that sticks`,
         "HOLDS your spins — only an empty spin costs one.",
         "Fill all 20 slots for the Grand Escape.",

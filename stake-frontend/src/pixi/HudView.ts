@@ -3,7 +3,7 @@ import { TEXT, type Position } from "../domain";
 import type { PlaybackSnapshot } from "../playback";
 import { getExtraTexture, silhouetteOffset } from "./assets";
 import { makeText } from "./text";
-import { ambientTicker, tween, wait, easeOutBack, linear } from "./tween";
+import { ambientTicker, tween, wait, easeOutBack, easeOutCubic, linear } from "./tween";
 import type { LayoutMetrics, Rect, SceneRuntime } from "./types";
 import { formatBalance, formatWin } from "../rgs/client";
 import { OutlineFilter, DropShadowFilter } from "pixi-filters";
@@ -820,6 +820,106 @@ export class HudView extends Container {
     await wait(100);
     await tween(150, (p) => { starGfx.alpha = 1 - p; }, linear);
     starGfx.destroy();
+  }
+
+  /**
+   * The Wanted meter has filled to 5★ on a paid spin: ignite the five stars
+   * themselves so it is unmistakable that FILLING THE STARS — not any single
+   * symbol on the reels — is what triggers the Getaway. The stars charge in
+   * sequence, then detonate together with a shockwave and spark shower. The
+   * caller covers the tail with a white-out and cross-fades the bonus intro in,
+   * so the stars visibly *become* the chase. Text-free by design.
+   *
+   * Aligns to the live star geometry cached by drawWantedStars, so it lands in
+   * the right place in both the landscape art panel and the portrait stars bar.
+   */
+  async igniteWantedStars(onBeat?: (i: number) => void, turbo = false): Promise<void> {
+    const rect = this.starDrawRect;
+    if (!rect) { await wait(turbo ? 120 : 300); return; }
+
+    const starR = this.starRadius;
+    const starIR = starR * 0.42;
+    const gap = starR * 0.55;
+    const totalW = starR * 2 * 5 + gap * 4;
+    const startX = rect.x + (rect.width - totalW) / 2 + starR;
+    const labelSize = Math.min(13, rect.width * 0.04);
+    const cy = rect.y + rect.height / 2 + labelSize * 0.5 + 2;
+    const centerX = rect.x + rect.width / 2;
+
+    const fx = new Container();
+    this.underParticlesContainer.addChild(fx);
+
+    const stars: Graphics[] = [];
+    for (let i = 0; i < 5; i++) {
+      const cx = startX + i * (starR * 2 + gap);
+      const g = new Graphics();
+      const pts = this.starPoints(0, 0, starR, starIR);
+      g.poly(pts).fill(0xffe07a);
+      g.poly(pts).stroke({ color: 0xffffff, width: 2, alpha: 0.9 });
+      g.position.set(cx, cy);
+      g.alpha = 0;
+      fx.addChild(g);
+      stars.push(g);
+    }
+
+    // Phase 1 — sequential charge: each star flares gold-white and pops with an
+    // expanding ring, left to right, so the eye is led across the full meter.
+    const step = turbo ? 55 : 110;
+    for (let i = 0; i < 5; i++) {
+      onBeat?.(i);
+      const g = stars[i]!;
+      const ring = new Graphics();
+      ring.position.set(g.x, g.y);
+      fx.addChildAt(ring, 0);
+      void tween(turbo ? 240 : 420, (p) => {
+        const e = easeOutBack(Math.min(1, p * 1.3));
+        g.alpha = Math.min(1, p * 3);
+        g.scale.set(0.6 + e * 0.6);
+        const rr = 1 + p * 1.6;
+        ring.clear();
+        ring.poly(this.starPoints(0, 0, starR * rr, starIR * rr))
+          .stroke({ color: 0xffd95c, width: 3 * (1 - p), alpha: 0.85 * (1 - p) });
+      }, linear).then(() => { g.scale.set(1); ring.destroy(); });
+      await wait(step);
+    }
+
+    // Phase 2 — unified detonation: all five pulse white-hot together while a
+    // shockwave ring and a radial spark shower blow out from the meter's centre.
+    await wait(turbo ? 40 : 90);
+    onBeat?.(5);
+    const shock = new Graphics();
+    shock.position.set(centerX, cy);
+    fx.addChild(shock);
+
+    const sparkN = turbo ? 10 : 18;
+    const sparks: Graphics[] = [];
+    const angles: number[] = [];
+    for (let s = 0; s < sparkN; s++) {
+      const sp = new Graphics();
+      sp.circle(0, 0, starR * 0.16).fill(0xfff4d6);
+      sp.position.set(centerX, cy);
+      fx.addChild(sp);
+      sparks.push(sp);
+      angles.push((s / sparkN) * Math.PI * 2 + Math.random() * 0.35);
+    }
+    const reach = starR * (turbo ? 5 : 8);
+
+    await tween(turbo ? 300 : 520, (p) => {
+      const e = easeOutCubic(p);
+      const pulse = 1 + Math.sin(Math.min(1, p * 1.5) * Math.PI) * 0.7;
+      for (const g of stars) g.scale.set(pulse);
+      const sr = 1 + e * 7;
+      shock.clear();
+      shock.poly(this.starPoints(0, 0, starR * sr, starIR * sr))
+        .stroke({ color: 0xffffff, width: 6 * (1 - p), alpha: 0.9 * (1 - p) });
+      sparks.forEach((sp, s) => {
+        sp.position.set(centerX + Math.cos(angles[s]!) * reach * e, cy + Math.sin(angles[s]!) * reach * e);
+        sp.alpha = 1 - p;
+        sp.scale.set(1 - p * 0.5);
+      });
+    }, linear);
+
+    fx.destroy({ children: true });
   }
 
   private drawWantedStars(rect: Rect): void {

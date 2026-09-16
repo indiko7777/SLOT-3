@@ -17,38 +17,38 @@
   {
    "name": "glow",
    "parent": "symbol_anchor",
-   "x": -0.5,
-   "y": 3.0
+   "x": 0.0,
+   "y": -1.5
   },
   {
    "name": "body",
    "parent": "symbol_anchor",
-   "x": -0.5,
+   "x": 0.0,
    "y": 0.0
   },
   {
    "name": "shine",
    "parent": "symbol_anchor",
-   "x": 0.0,
-   "y": -2.0
+   "x": -0.5,
+   "y": 1.5
   },
   {
    "name": "sparkle_l",
    "parent": "symbol_anchor",
-   "x": -50.0,
-   "y": -32.0
+   "x": -56.0,
+   "y": -36.0
   },
   {
    "name": "sparkle_r",
    "parent": "symbol_anchor",
-   "x": 58.0,
-   "y": 13.0
+   "x": 67.0,
+   "y": 14.0
   },
   {
    "name": "sparkle_top",
    "parent": "symbol_anchor",
-   "x": 4.0,
-   "y": 71.0
+   "x": 5.0,
+   "y": 78.0
   }
  ],
  "slots": [
@@ -89,48 +89,48 @@
     "glow": {
      "x": 0.0,
      "y": 0.0,
-     "width": 271,
-     "height": 230
+     "width": 366,
+     "height": 301
     }
    },
    "body": {
     "body": {
      "x": 0.0,
      "y": 0.0,
-     "width": 247,
-     "height": 206
+     "width": 280,
+     "height": 228
     }
    },
    "shine": {
     "shine": {
      "x": 0.0,
      "y": 0.0,
-     "width": 216,
-     "height": 172
+     "width": 275,
+     "height": 221
     }
    },
    "sparkle_l": {
     "sparkle_l": {
      "x": 0.0,
      "y": 0.0,
-     "width": 38,
-     "height": 38
+     "width": 46,
+     "height": 46
     }
    },
    "sparkle_r": {
     "sparkle_r": {
      "x": 0.0,
      "y": 0.0,
-     "width": 32,
-     "height": 34
+     "width": 40,
+     "height": 38
     }
    },
    "sparkle_top": {
     "sparkle_top": {
      "x": 0.0,
      "y": 0.0,
-     "width": 46,
-     "height": 48
+     "width": 54,
+     "height": 54
     }
    }
   }

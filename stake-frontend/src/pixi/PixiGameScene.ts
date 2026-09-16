@@ -12,7 +12,7 @@ import { PaytableView } from "./PaytableView";
 import { SymbolView, WIN_ACCENT, DEFAULT_ACCENT } from "./SymbolView";
 import { computeLayout } from "./layout";
 import { getExtraTexture, silhouetteOffset } from "./assets";
-import { tween, wait, easeInCubic, easeInOutCubic, easeOutBack, easeOutCubic } from "./tween";
+import { tween, wait, linear, easeInCubic, easeInOutCubic, easeOutBack, easeOutCubic } from "./tween";
 import type { LayoutMetrics, SceneRuntime } from "./types";
 import { OutlineFilter } from "pixi-filters";
 import { CardPeekView } from "./CardPeekView";
@@ -256,6 +256,23 @@ export class PixiGameScene {
     );
   }
 
+  /** Full-screen warm white-out used to bridge the Wanted-star detonation into
+   *  the Getaway intro. Added at the top of the scene so it sits over the HUD
+   *  and the bonus; it snaps to near-opaque, then bleeds off while the intro
+   *  cross-fades in beneath it — the chase emerges out of the flash. Fire and
+   *  forget: it destroys itself. */
+  private triggerWhiteout(turbo: boolean): void {
+    const g = new Graphics();
+    g.rect(0, 0, this.app.screen.width, this.app.screen.height).fill(0xfff4d6);
+    g.alpha = 0;
+    this.root.addChild(g);
+    const dur = turbo ? 420 : 780;
+    void tween(dur, (p) => {
+      // Fast rise over the first 12%, long ease-out fall for the rest.
+      g.alpha = p < 0.12 ? (p / 0.12) * 0.95 : 0.95 * (1 - (p - 0.12) / 0.88);
+    }, linear).then(() => g.destroy());
+  }
+
   /** Play one collection reveal for an already-applied gain — used by the DEV
    *  "Test Collection Flow" button to replay the full flow via the real gallery. */
   async playCollectionStep(gain: PieceGain): Promise<void> {
@@ -364,31 +381,55 @@ export class PixiGameScene {
       case "global_multiplier_apply":
         this.hud.draw(this.layout, snapshot);
         return;
-      case "bonus_trigger":
+      case "bonus_trigger": {
         this.bonusDeadSpins = 0;
         this.bonusActive = true;
         // Gold bars / meter / result show REAL money for this bet, not bare multipliers.
         this.bonus.setMoneyContext(snapshot.betAmount, this.runtime.getCurrency());
         this.cardPeek.visible = false;
-        // THE dopamine beat: before anything else, the armored trucks that
-        // triggered the feature rev up and tear off the board — engine audio,
-        // exhaust, speed lines, and a screen shake as they launch. Only then
-        // does the cinematic intro take over.
-        this.runtime.onTruckDriveOff?.();
-        await Promise.all([
-          this.board.truckDriveOff(event.scatterPositions, turbo),
-          this.effects.screenShake(this.root, turbo),
-        ]);
-        // Hide the entire HUD (character, wanted stars, left buttons, bet panel)
-        // so the bonus board has the full screen to itself.
-        this.hud.visible = false;
-        await this.bonus.intro(
-          turbo,
-          this.runtime.onTypewriterStart,
-          this.runtime.onTypewriterStop,
-          () => this.runtime.onTruckDoors?.()
-        );
+        // Two clearly-distinct trigger beats so the player always knows WHAT
+        // triggered the Getaway. The book tells us which: a scatter trigger
+        // carries the 3+ truck positions; the Wanted-meter trigger carries none.
+        const viaScatter = event.scatterPositions.length >= 3;
+        if (viaScatter) {
+          // 3+ armored trucks: they rev and tear off the board — engine audio,
+          // exhaust, speed lines, and a screen shake as they launch.
+          this.runtime.onTruckDriveOff?.();
+          await Promise.all([
+            this.board.truckDriveOff(event.scatterPositions, turbo),
+            this.effects.screenShake(this.root, turbo),
+          ]);
+          // Hide the entire HUD so the bonus board has the full screen.
+          this.hud.visible = false;
+          await this.bonus.intro(
+            turbo,
+            this.runtime.onTypewriterStart,
+            this.runtime.onTypewriterStop,
+            () => this.runtime.onTruckDoors?.()
+          );
+        } else {
+          // Wanted path: the five filled stars themselves ignite and detonate
+          // into the chase, so the meter — not the cyan/armor wild that merely
+          // helped fill it — visibly triggers the feature. A warm white-out
+          // covers the seam while the intro cross-fades in beneath it, so the
+          // stars cleanly *become* the Getaway. No trigger text, by request.
+          this.runtime.onWantedIgnite?.();
+          await this.hud.igniteWantedStars(
+            (i) => this.runtime.onWantedStarBeat?.(i),
+            turbo
+          );
+          this.triggerWhiteout(turbo);
+          void this.effects.screenShake(this.root, turbo);
+          this.hud.visible = false;
+          await this.bonus.intro(
+            turbo,
+            this.runtime.onTypewriterStart,
+            this.runtime.onTypewriterStop,
+            () => this.runtime.onTruckDoors?.()
+          );
+        }
         return;
+      }
       case "bonus_spin": {
         const landed = event.landedSymbols.map((s) => s.position);
         // Dead spin (nothing landed) stacks the heat; a hit resets it.

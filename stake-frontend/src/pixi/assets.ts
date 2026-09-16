@@ -51,7 +51,11 @@ const SKEL_ASSETS: Partial<Record<SymbolId, { dir: string; fitW: number; fitH: n
   AMMO: { dir: "skel/ammo", fitW: 230, fitH: 193 },
   DUFFEL: { dir: "skel/duffel", fitW: 230, fitH: 184 },
   CASH: { dir: "skel/cash", fitW: 230, fitH: 192 },
-  DIAMOND: { dir: "skel/diamond", fitW: 247, fitH: 206 },
+  // DIAMOND: regenerated clean art (Gemini green-screen render → chroma-keyed),
+  // then its skeletal bundle REBUILT from that clean art (make_parts → pack_atlas
+  // → make_skeleton → gen_anim → validate PASS). Same idle luster / win burst as
+  // before, now with no crop-halo or chromatic fringe. fitW/fitH = new body size.
+  DIAMOND: { dir: "skel/diamond", fitW: 280, fitH: 228 },
   BIKE: { dir: "skel/bike", fitW: 230, fitH: 210 },
   WILD: { dir: "skel/wild_symbole", fitW: 222, fitH: 230 },
   CAR_WILD: { dir: "skel/cyan_car_wild", fitW: 207, fitH: 230 },
