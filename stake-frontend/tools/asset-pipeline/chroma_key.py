@@ -18,21 +18,31 @@ from PIL import Image
 import numpy as np
 
 
-def chroma_key(src: str, dst: str, size: int, thr: float, soft: float) -> None:
+def chroma_key(src: str, dst: str, size: int, thr: float, soft: float, key: str = "green") -> None:
     img = Image.open(src).convert("RGB")
     arr = np.array(img).astype(np.float32) / 255.0
     r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
 
-    # Greenness = how much green exceeds the stronger of red/blue. The flat
-    # background scores high; white/blue/gold diamond facets score ~0 or below.
-    greenness = g - np.maximum(r, b)
-    # Ramp: greenness >= thr -> fully transparent; <= thr-soft -> fully opaque.
-    alpha = np.clip((thr - greenness) / max(soft, 1e-4), 0.0, 1.0)
+    # "Keyness" = how strongly a pixel matches the backdrop colour. The flat
+    # background scores high; the subject scores ~0 or below. Use magenta/blue
+    # when the subject is itself green (e.g. a green pistol on green won't key).
+    if key == "magenta":
+        keyness = np.minimum(r, b) - g          # magenta = high R&B, low G
+        # magenta despill: pull R and B down toward G on the fringe
+        r2 = np.minimum(r, np.maximum(g, b))
+        b2 = np.minimum(b, np.maximum(g, r))
+        rgb = np.dstack([r2, g, b2])
+    elif key == "blue":
+        keyness = b - np.maximum(r, g)
+        b2 = np.minimum(b, np.maximum(r, g))
+        rgb = np.dstack([r, g, b2])
+    else:  # green (default)
+        keyness = g - np.maximum(r, b)
+        g2 = np.minimum(g, np.maximum(r, b))
+        rgb = np.dstack([r, g2, b])
 
-    # Despill: clamp green down to the max of red/blue so no green tint survives
-    # on antialiased edges (kills the green fringe a naive key would leave).
-    g2 = np.minimum(g, np.maximum(r, b))
-    rgb = np.dstack([r, g2, b])
+    # Ramp: keyness >= thr -> fully transparent; <= thr-soft -> fully opaque.
+    alpha = np.clip((thr - keyness) / max(soft, 1e-4), 0.0, 1.0)
 
     out = (np.dstack([rgb, alpha]) * 255.0).clip(0, 255).astype(np.uint8)
     im = Image.fromarray(out, "RGBA")
@@ -59,5 +69,6 @@ if __name__ == "__main__":
     ap.add_argument("--size", type=int, default=512)
     ap.add_argument("--thr", type=float, default=0.18)
     ap.add_argument("--soft", type=float, default=0.12)
+    ap.add_argument("--key", choices=["green", "magenta", "blue"], default="green")
     a = ap.parse_args()
-    chroma_key(a.src, a.dst, a.size, a.thr, a.soft)
+    chroma_key(a.src, a.dst, a.size, a.thr, a.soft, a.key)

@@ -2,7 +2,7 @@
  "skeleton": {
   "spine": "3.8.75",
   "width": 318,
-  "height": 250,
+  "height": 278,
   "images": "./parts",
   "hash": "kf"
  },
@@ -17,20 +17,20 @@
   {
    "name": "glow",
    "parent": "symbol_anchor",
-   "x": 0.5,
-   "y": 0.0
+   "x": -1.0,
+   "y": 2.0
   },
   {
    "name": "body",
    "parent": "symbol_anchor",
    "x": 0.0,
-   "y": 0.0
+   "y": 0.5
   },
   {
    "name": "shine",
    "parent": "symbol_anchor",
-   "x": -1.5,
-   "y": 5.0
+   "x": -3.5,
+   "y": 8.0
   }
  ],
  "slots": [
@@ -56,8 +56,8 @@
     "glow": {
      "x": 0.0,
      "y": 0.0,
-     "width": 247,
-     "height": 196
+     "width": 302,
+     "height": 270
     }
    },
    "body": {
@@ -65,15 +65,15 @@
      "x": 0.0,
      "y": 0.0,
      "width": 230,
-     "height": 180
+     "height": 201
     }
    },
    "shine": {
     "shine": {
      "x": 0.0,
      "y": 0.0,
-     "width": 219,
-     "height": 164
+     "width": 221,
+     "height": 184
     }
    }
   }
@@ -1619,27 +1619,27 @@
       {
        "time": 0.0,
        "x": 0,
-       "y": 225.0
+       "y": 250.2
       },
       {
        "time": 0.06667,
        "x": 0,
-       "y": 216.0
+       "y": 240.2
       },
       {
        "time": 0.13333,
        "x": 0,
-       "y": 189.0
+       "y": 210.2
       },
       {
        "time": 0.2,
        "x": 0,
-       "y": 144.0
+       "y": 160.1
       },
       {
        "time": 0.26667,
        "x": 0,
-       "y": 81.0
+       "y": 90.1
       },
       {
        "time": 0.33333,

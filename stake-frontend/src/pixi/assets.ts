@@ -45,11 +45,11 @@ const SKEL_ASSETS: Partial<Record<SymbolId, { dir: string; fitW: number; fitH: n
   // Motion is authored per symbol in tools/skel-pipeline/symbol_motion.py —
   // the pistol recoils, the knife flips, the bike revs, the safe's dial whirls.
   // Regenerate with: python tools/skel-pipeline/build_all.py <name>
-  BRASS: { dir: "skel/brass_knuckles", fitW: 230, fitH: 180 },
-  KNIFE: { dir: "skel/knife", fitW: 204, fitH: 230 },
-  PISTOL: { dir: "skel/pistol", fitW: 230, fitH: 190 },
+  BRASS: { dir: "skel/brass_knuckles", fitW: 230, fitH: 201 }, // regenerated cel-shaded GTA art, skeletal rebuilt
+  KNIFE: { dir: "skel/knife", fitW: 230, fitH: 208 }, // regenerated cel-shaded GTA art, skeletal rebuilt
+  PISTOL: { dir: "skel/pistol", fitW: 230, fitH: 191 }, // regenerated cel-shaded GTA art (was 3D), skeletal rebuilt
   AMMO: { dir: "skel/ammo", fitW: 230, fitH: 193 },
-  DUFFEL: { dir: "skel/duffel", fitW: 230, fitH: 184 },
+  DUFFEL: { dir: "skel/duffel", fitW: 230, fitH: 203 }, // regenerated clean art (Gemini green-screen → chroma-key), skeletal rebuilt
   CASH: { dir: "skel/cash", fitW: 230, fitH: 192 },
   // DIAMOND: regenerated clean art (Gemini green-screen render → chroma-keyed),
   // then its skeletal bundle REBUILT from that clean art (make_parts → pack_atlas
