@@ -17,7 +17,7 @@
   {
    "name": "glow",
    "parent": "symbol_anchor",
-   "x": 0.0,
+   "x": 0.5,
    "y": 0.0
   },
   {
@@ -56,8 +56,8 @@
     "glow": {
      "x": 0.0,
      "y": 0.0,
-     "width": 304,
-     "height": 250
+     "width": 247,
+     "height": 196
     }
    },
    "body": {
@@ -72,8 +72,8 @@
     "shine": {
      "x": 0.0,
      "y": 0.0,
-     "width": 223,
-     "height": 168
+     "width": 219,
+     "height": 164
     }
    }
   }

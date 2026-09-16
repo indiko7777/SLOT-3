@@ -18,7 +18,7 @@
    "name": "glow",
    "parent": "symbol_anchor",
    "x": -0.5,
-   "y": 2.0
+   "y": 3.0
   },
   {
    "name": "body",
@@ -89,8 +89,8 @@
     "glow": {
      "x": 0.0,
      "y": 0.0,
-     "width": 333,
-     "height": 290
+     "width": 271,
+     "height": 230
     }
    },
    "body": {
@@ -105,32 +105,32 @@
     "shine": {
      "x": 0.0,
      "y": 0.0,
-     "width": 224,
-     "height": 176
+     "width": 216,
+     "height": 172
     }
    },
    "sparkle_l": {
     "sparkle_l": {
      "x": 0.0,
      "y": 0.0,
-     "width": 46,
-     "height": 46
+     "width": 38,
+     "height": 38
     }
    },
    "sparkle_r": {
     "sparkle_r": {
      "x": 0.0,
      "y": 0.0,
-     "width": 40,
-     "height": 38
+     "width": 32,
+     "height": 34
     }
    },
    "sparkle_top": {
     "sparkle_top": {
      "x": 0.0,
      "y": 0.0,
-     "width": 54,
-     "height": 54
+     "width": 46,
+     "height": 48
     }
    }
   }

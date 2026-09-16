@@ -161,6 +161,8 @@ const BG_ASSETS: Record<string, string> = {
   "bg_slot3": "slot3_bg.webp",
 };
 
+const CACHE_BUST = `?v=${Date.now()}`;
+
 export async function loadSymbolTextures(): Promise<void> {
   if (loaded) return;
 
@@ -171,7 +173,7 @@ export async function loadSymbolTextures(): Promise<void> {
       .filter(([id]) => !BONUS_ONLY_SYMBOLS.has(id))
       .map(async ([, skin]) => {
         try {
-          const tex = await Assets.load<Texture>(BASE_PATH + skin.assetKey);
+          const tex = await Assets.load<Texture>(BASE_PATH + skin.assetKey + CACHE_BUST);
           if (tex instanceof Texture) textureCache.set(skin.assetKey, tex);
         } catch (err) {
           console.warn(`[assets] Failed to load symbol texture: ${skin.assetKey}`, err);
@@ -183,7 +185,7 @@ export async function loadSymbolTextures(): Promise<void> {
   await Promise.all(
     Object.entries(EXTRA_ASSETS).map(async ([key, file]) => {
       try {
-        const url = BASE_PATH + file;
+        const url = BASE_PATH + file + CACHE_BUST;
         const tex = await Assets.load<Texture>(url);
         if (tex instanceof Texture) textureCache.set(key, tex);
       } catch (err) {
@@ -197,7 +199,7 @@ export async function loadSymbolTextures(): Promise<void> {
   // Backgrounds + optional bonus art — failures are silently ignored.
   for (const [key, file] of [...Object.entries(BG_ASSETS), ...Object.entries(OPTIONAL_ASSETS)]) {
     try {
-      const url = BASE_PATH + file;
+      const url = BASE_PATH + file + CACHE_BUST;
       const tex = await Assets.load<Texture>(url);
       if (tex instanceof Texture) textureCache.set(key, tex);
     } catch {
@@ -212,15 +214,15 @@ export async function loadSymbolTextures(): Promise<void> {
         try {
           const name = cfg.dir.split("/").pop();
           const [data, atlasText, texture] = await Promise.all([
-            fetch(`${BASE_PATH}${cfg.dir}/${name}.json`).then((r) => {
+            fetch(`${BASE_PATH}${cfg.dir}/${name}.json${CACHE_BUST}`).then((r) => {
               if (!r.ok) throw new Error(`${r.status}`);
               return r.json() as Promise<SkelData>;
             }),
-            fetch(`${BASE_PATH}${cfg.dir}/${name}.atlas`).then((r) => {
+            fetch(`${BASE_PATH}${cfg.dir}/${name}.atlas${CACHE_BUST}`).then((r) => {
               if (!r.ok) throw new Error(`${r.status}`);
               return r.text();
             }),
-            Assets.load<Texture>(`${BASE_PATH}${cfg.dir}/packed.png`),
+            Assets.load<Texture>(`${BASE_PATH}${cfg.dir}/packed.png${CACHE_BUST}`),
           ]);
           if (texture instanceof Texture) {
             skelCache.set(id, { data, atlasText, texture, fitW: cfg.fitW, fitH: cfg.fitH });
