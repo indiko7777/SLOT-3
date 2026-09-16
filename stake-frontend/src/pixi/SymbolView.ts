@@ -97,7 +97,7 @@ export class SymbolView extends Container {
     this.addChild(this.topSheen, this.shimmer, this.shimmerMask);
     // The win shimmer streak is clipped to the cell so it never bleeds onto neighbours.
     this.shimmer.mask = this.shimmerMask;
-    if (!this.sprite) {
+    if (!this.sprite && !this.skel) {
       this.addChild(this.labelText, this.corner);
     }
   }
@@ -161,7 +161,7 @@ export class SymbolView extends Container {
     }
 
     // Fallback text
-    if (!this.sprite) {
+    if (!this.sprite && !this.skel) {
       this.labelText.style.fontSize = Math.max(20, Math.min(w, h) * 0.42);
       this.labelText.position.set(w / 2, h * 0.23);
       this.corner.style.fontSize = Math.max(10, Math.min(18, w * 0.18));
