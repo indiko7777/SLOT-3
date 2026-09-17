@@ -45,12 +45,12 @@ const SKEL_ASSETS: Partial<Record<SymbolId, { dir: string; fitW: number; fitH: n
   // Motion is authored per symbol in tools/skel-pipeline/symbol_motion.py —
   // the pistol recoils, the knife flips, the bike revs, the safe's dial whirls.
   // Regenerate with: python tools/skel-pipeline/build_all.py <name>
-  BRASS: { dir: "skel/brass_knuckles", fitW: 230, fitH: 201 }, // regenerated cel-shaded GTA art, skeletal rebuilt
+  BRASS: { dir: "skel/brass_knuckles", fitW: 230, fitH: 205 }, // cel-shaded GTA silver/chrome, skeletal rebuilt
   KNIFE: { dir: "skel/knife", fitW: 230, fitH: 208 }, // regenerated cel-shaded GTA art, skeletal rebuilt
   PISTOL: { dir: "skel/pistol", fitW: 230, fitH: 191 }, // regenerated cel-shaded GTA art (was 3D), skeletal rebuilt
   AMMO: { dir: "skel/ammo", fitW: 230, fitH: 193 },
-  DUFFEL: { dir: "skel/duffel", fitW: 230, fitH: 203 }, // regenerated clean art (Gemini green-screen → chroma-key), skeletal rebuilt
-  CASH: { dir: "skel/cash", fitW: 230, fitH: 192 },
+  DUFFEL: { dir: "skel/duffel", fitW: 230, fitH: 226 }, // brighter teal Miami loot bag, skeletal rebuilt
+  CASH: { dir: "skel/cash", fitW: 230, fitH: 168 }, // regenerated cel-shaded GTA money brick (simple stack), skeletal rebuilt
   // DIAMOND: regenerated clean art (Gemini green-screen render → chroma-keyed),
   // then its skeletal bundle REBUILT from that clean art (make_parts → pack_atlas
   // → make_skeleton → gen_anim → validate PASS). Same idle luster / win burst as

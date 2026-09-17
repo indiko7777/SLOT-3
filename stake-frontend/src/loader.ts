@@ -11,7 +11,10 @@ export function showLoader(): void {
     width: "100%",
     height: "100%",
     zIndex: "9999",
-    background: "#050816",
+    // Miami neon key-art loading screen: the image covers any aspect (landscape
+    // or portrait) with a dark scrim so the title/progress stay legible.
+    background:
+      "linear-gradient(rgba(5,8,22,0.5), rgba(5,8,22,0.5)), url(assets/miami_loadscreen.webp) center center / cover no-repeat #050816",
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
@@ -28,6 +31,7 @@ export function showLoader(): void {
     letterSpacing: "4px",
     textAlign: "center",
     marginBottom: "8px",
+    textShadow: "0 2px 14px rgba(0,0,0,0.9), 0 0 4px rgba(0,0,0,0.9)",
   } satisfies Partial<Record<keyof CSSStyleDeclaration, string>>);
   title.textContent = "HEAT CHASE";
 
@@ -39,6 +43,7 @@ export function showLoader(): void {
     letterSpacing: "6px",
     textAlign: "center",
     marginBottom: "32px",
+    textShadow: "0 2px 14px rgba(0,0,0,0.9), 0 0 4px rgba(0,0,0,0.9)",
   } satisfies Partial<Record<keyof CSSStyleDeclaration, string>>);
   subtitle.textContent = "GRAND ESCAPE";
 
@@ -69,6 +74,7 @@ export function showLoader(): void {
     color: "#ffdf65",
     letterSpacing: "3px",
     textAlign: "center",
+    textShadow: "0 2px 10px rgba(0,0,0,0.9)",
   } satisfies Partial<Record<keyof CSSStyleDeclaration, string>>);
   label.textContent = "LOADING...";
 

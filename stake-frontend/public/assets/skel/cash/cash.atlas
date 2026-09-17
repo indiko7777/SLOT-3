@@ -6,21 +6,21 @@ repeat: none
 glow
   rotate: false
   xy: 2, 2
-  size: 306, 260
-  orig: 306, 260
+  size: 304, 232
+  orig: 304, 232
   offset: 0, 0
   index: -1
 body
   rotate: false
-  xy: 2, 264
-  size: 230, 192
-  orig: 230, 192
+  xy: 2, 236
+  size: 230, 168
+  orig: 230, 168
   offset: 0, 0
   index: -1
 shine
   rotate: false
-  xy: 234, 264
-  size: 217, 159
-  orig: 217, 159
+  xy: 234, 236
+  size: 196, 146
+  orig: 196, 146
   offset: 0, 0
   index: -1
