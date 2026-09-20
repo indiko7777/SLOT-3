@@ -32,7 +32,8 @@ Preserve the user's intended flow. A review-ready explanation and alternatives a
 
 ## Verification
 
-- 37 frontend tests pass; TypeScript and production build pass. Six math tests pass. Audio now has a shared master output, compression, full-channel mute and background-tab suspension. Failed launch imports/parsing show a recovery screen; modal focus and Escape behavior work.
+- 53 frontend tests pass; TypeScript and production build pass. Six math tests pass. Audio now has a shared master output, compression, full-channel mute and background-tab suspension. Failed launch imports/parsing show a recovery screen; modal focus and Escape behavior work.
+- Getaway now uses a new gold result card with dedicated progress-driven synthesized audio and a bounded final chord. Its covered exit restores all base layers before revealing them, including key-up/resize during the transition. The grid and doors move together over one uniformly colored, clipped aperture. Held bars retain their nodes and landing effects are awaited. Production phone replay checks cover Space skip, pointer skip, repeated taps and the 500,000 USD cap display. See RELEASE_CANDIDATE.md for scope and physical-audio limitations.
 - Six math tests passed; all seven published mode lookup tables verify at 96.0000% RTP.
 - Local RGS scenario runner checked 19 published replay samples across seven modes, including wins, available losses, bonuses and 5,000x cap outcomes. Wallet debit, settlement, repeated settlement and active-round reconnect checks pass. Evidence: [LOCAL_RGS_QA.json](LOCAL_RGS_QA.json). Run `npm run qa:rgs` with the mock online.
 - Browser inspection: 1440x900 desktop, 390x844 portrait, 844x390 landscape and 320x240 mini-player. Loading, intro, local spin and sessionless replay inspected. Known Getaway event 1860 renders its 103.5x locked-grid result on portrait mobile. Base replay event 34076 reaches a zero-win result; invalid event 0 displays an error.

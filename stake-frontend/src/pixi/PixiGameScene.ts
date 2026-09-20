@@ -83,15 +83,15 @@ export class PixiGameScene {
     });
     this.gallery = new GalleryView(runtime);
     
-    // Layer order: bgLayer, board, cardPeek, bonus, underParticlesLayer, particleLayer, hud, effects, paytable, gallery.
+    // Bonus covers the complete base scene, including controls, during its exit dissolve.
     this.root.addChild(
       this.bgLayer,
       this.board,
       this.cardPeek,
-      this.bonus,
       this.underParticlesLayer,
       this.particleLayer,
       this.hud,
+      this.bonus,
       this.effects,
       this.paytable,
       this.gallery
@@ -154,7 +154,7 @@ export class PixiGameScene {
       this.hud.draw(this.layout, this.currentSnapshot);
       // hud.draw always resets children but does NOT touch .visible.
       // However, guard it explicitly in case behaviour changes.
-      if (this.bonusActive) this.hud.visible = false;
+      this.hud.visible = !this.bonusActive;
     }
   }
 
@@ -196,9 +196,7 @@ export class PixiGameScene {
     this.hud.draw(this.layout, snapshot);
     // Ensure HUD and cardPeek visibility matches bonus state
     // (e.g. window resize while bonus is running must not reveal the HUD).
-    if (this.bonusActive || isBonusActive) {
-      this.hud.visible = false;
-    }
+    this.hud.visible = !(this.bonusActive || isBonusActive);
     // Only rebuild the board if we don't already have one showing.
     // After a spin/tumble round the board is already in the correct state
     // from the animations — rebuilding would cause a visible flash.
@@ -223,10 +221,12 @@ export class PixiGameScene {
     }
     
     if (this.runtime.isReplayActive?.()) {
+      const compact = this.layout.width < this.layout.height;
+      const badgeWidth = compact ? 62 : 140;
+      const badgeHeight = compact ? 23 : 36;
       if (!this.replayIndicator) {
         this.replayIndicator = new Container();
         const bg = new Graphics();
-        bg.roundRect(0, 0, 140, 36, 6).fill({ color: 0x000000, alpha: 0.7 }).stroke({ color: 0xffffff, width: 2, alpha: 0.5 });
         const txt = new Text({
           text: "REPLAY MODE",
           style: new TextStyle({ fill: 0xffffff, fontFamily: "Impact, sans-serif", fontSize: 18, letterSpacing: 1 })
@@ -236,7 +236,13 @@ export class PixiGameScene {
         this.replayIndicator.addChild(bg, txt);
         this.root.addChild(this.replayIndicator);
       }
-      this.replayIndicator.position.set(this.layout.width - 150, 10);
+      const bg = this.replayIndicator.children[0] as Graphics;
+      const label = this.replayIndicator.children[1] as Text;
+      bg.clear().roundRect(0, 0, badgeWidth, badgeHeight, 5).fill({ color: 0x000000, alpha: 0.7 }).stroke({ color: 0xffffff, width: 1, alpha: 0.5 });
+      label.text = compact ? "REPLAY" : "REPLAY MODE";
+      label.style.fontSize = compact ? 11 : 18;
+      label.position.set(badgeWidth / 2, badgeHeight / 2);
+      this.replayIndicator.position.set(this.layout.width - badgeWidth - 10, 10);
       this.root.setChildIndex(this.replayIndicator, this.root.children.length - 1);
     }
   }
@@ -467,48 +473,29 @@ export class PixiGameScene {
         return;
       case "bonus_end":
         this.runtime.onBonusHeat?.(0);
-        this.effects.screenShake(this.root, turbo);
-        // The bonus shows its own clean, centered result card (no board-rect banner).
+        // A separate payout stage replaces the chase without shaking its text.
         await this.bonus.finish(event.filledScreen, event.totalPayout, turbo, this.unattended(), {
-          start: () => this.runtime.winCounterStart?.(),
-          tick: (level) => this.runtime.playWinTick?.(level),
-          end: () => this.runtime.winCounterEnd?.(),
-          // Same tier ladder the base game's cinematic banner uses, so a
-          // Getaway total lands with the sting the player already associates
-          // with a win that size.
-          impact: () => {
-            const x = event.totalPayout;
-            const key = x >= 5000 ? "win_max"
-                      : x >= 100 ? "win_mega_grand"
-                      : x >= 20 ? "win_big_lowest"
-                      : "good_win_combo";
-            this.runtime.playAudio?.(key);
-            this.runtime.bannerImpact?.(x >= 500 ? "grand" : x >= 100 ? "high" : x >= 20 ? "mid" : "low");
-          },
+          open: () => this.runtime.getawayResultOpen?.(),
+          start: () => this.runtime.getawayResultStart?.(),
+          progress: (p) => this.runtime.getawayResultProgress?.(p),
+          end: () => this.runtime.getawayResultEnd?.(),
+          cancel: () => this.runtime.getawayResultCancel?.(),
         });
         return;
       case "round_end": {
-        this.hud.draw(this.layout, snapshot);
         if (this.bonusActive) {
-          // The chase result card waits for the player's tap inside finish(), so
-          // by the time we reach round_end they've acknowledged it.
-          this.bonusActive = false;
-
-          // Bring the base game back FIRST, then dissolve the bonus over it, so
-          // the two cross-fade. HudView.visible also toggles the shared bgLayer
-          // (the bottom-most layer), so restoring the HUD only AFTER the fade
-          // meant the bonus dissolved into nothing — a black screen showing bare
-          // reel symbols — and then popped the entire base UI in at the end.
-          // hud.draw() above already rebuilt it with the base background, since
-          // round_end's state is idle/round_complete/big_win, never "bonus*".
-          this.hud.visible = true;
-          this.cardPeek.visible = true;
-          this.cardPeek.layout(this.layout);
-
-          await wait(turbo ? 40 : 140);
-          await this.bonus.fadeOutAndHide(turbo);
+          await this.bonus.fadeOutAndHide(turbo, () => {
+            // Run only once the result's cover is opaque. Clearing bonusActive
+            // before renderSnapshot also prevents key-up/resize hiding the HUD.
+            this.bonusActive = false;
+            this.renderSnapshot(snapshot);
+            this.hud.visible = true;
+            this.cardPeek.visible = true;
+            this.runtime.onBonusExit?.();
+          });
           return;
         }
+        this.hud.draw(this.layout, snapshot);
         if (event.payoutMultiplier === 0) {
           await wait(turbo ? 20 : 80);
           return;

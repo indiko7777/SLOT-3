@@ -434,6 +434,13 @@ async function boot(): Promise<void> {
     winCounterStart: () => { if (!muted) audioBus.startWinCounter(); },
     winCounterUpdate: (p, tier) => { if (!muted) audioBus.updateWinCounter(p, tier); },
     winCounterEnd: () => audioBus.stopWinCounter(),
+    winCounterCancel: () => audioBus.cancelWinCounter(),
+    onBonusExit: () => audioBus.finishBonus(),
+    getawayResultOpen: () => audioBus.openGetawayResult(),
+    getawayResultStart: () => audioBus.startGetawayResultCount(),
+    getawayResultProgress: (p) => audioBus.updateGetawayResultCount(p),
+    getawayResultEnd: () => audioBus.endGetawayResultCount(),
+    getawayResultCancel: () => audioBus.cancelGetawayResult(),
     playWinTick: (level) => { if (!muted) audioBus.playWinTick(level); },
     previewRecord: PREVIEW_RECORD
   });

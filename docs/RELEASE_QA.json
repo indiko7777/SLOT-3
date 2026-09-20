@@ -1,7 +1,7 @@
 {
   "checkedAt": "2026-09-20",
   "productionBase": "http://127.0.0.1:5177/candidate/",
-  "frontendTests": 37,
+  "frontendTests": 47,
   "mathTests": 6,
   "mathModesVerified": 7,
   "allModeRtpPercent": 96,
@@ -14,10 +14,25 @@
     "missingProductionLaunchParams": "pass, recovery screen",
     "portraitCollectionStrip": "pass, clear of reels",
     "portraitFullGalleryAccess": "pass",
-    "nestedPathAssetsAndFonts": "pass"
+    "nestedPathAssetsAndFonts": "pass",
+    "bonusCounterSpaceSkip": "pass: production, 390x844, 103.5 USD exact total",
+    "bonusCounterPointerSkip": "pass: production, 390x844, 5000x cap / 500,000 USD, repeated taps dismiss",
+    "bonusReturnToBase": "pass: completed and skipped results, overlay removed, no console errors"
   },
   "releaseFilesHashVerified": 165,
   "frontendArchiveRoot": "index.html",
   "mathArchiveRoot": "index.json",
-  "limitations": ["Stake hosted integration and rating pending", "physical iOS/Android performance and audio not tested", "existing asset rights require owner source records"]
+  "limitations": [
+    "Stake hosted integration and rating pending",
+    "physical iOS/Android performance and audio not tested",
+    "existing asset rights require owner source records"
+  ],
+  "candidateDirectory": "C:\\Users\\tengu\\OneDrive\\Documents\\GitHub\\SLOT-3\\release\\2026-09-20T17-18-29Z",
+  "audioChecks": {
+    "method": "Web Audio scheduled-node regression tests; no physical listening performed",
+    "loopStopSeconds": 0.015,
+    "completionAccentMaxSeconds": 0.28,
+    "dismissAndMute": "cancel, no extra completion cue",
+    "backgroundMusic": "restored at visual bonus exit"
+  }
 }

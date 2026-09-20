@@ -30,7 +30,10 @@ The compiled build deliberately requires casino launch parameters. Opening it wi
 
 ## Acceptance evidence
 
-- 37 frontend tests, six math tests, production TypeScript/build checks.
+- 53 frontend tests, six math tests, production TypeScript/build checks.
+- Getaway grid: one opaque aperture surface and common clip mask, uniform matte edge trim, with the frame/reels/doors/effects moving together. Active resize preserves their coordinate system. Blast flashes/particles no longer obscure adjacent values.
+- Getaway payout completely replaced with an accessible gold result card, separate currency/multiplier, reveal/continue button and responsive layout. It has a dedicated synthesized entrance, progress-driven counting notes and final chord under 0.6 seconds. All voices cancel on skip/dismissal; base-win sounds are separate. The exit covers the old scene, restores the entire base scene, then reveals it. Fixed key-up/resize being able to leave the base HUD hidden.
+- Earlier production replay checks: normal 103.5x completion; portrait Space skip to exactly 103.5 USD; portrait 5,000x cap with a 100 USD base amount displays 500,000 USD within the viewport. Pointer skip and repeated taps dismiss correctly, and the result overlay is removed. No console errors. Audio scheduling verified with Web Audio node tests; physical speaker/headphone listening remains a device QA task.
 - Seven published modes verify at 96.0000% RTP, zero cross-mode spread. Books/distributions unchanged.
 - 19 local replay scenarios plus all seven wallet/settlement mode checks. Machine-readable details: LOCAL_RGS_QA.json.
 - Rapid HUD rebuild regression exercises 100 scheduler restarts without multiplying animation loops. Spin filters now release GPU resources.

@@ -1,4 +1,5 @@
 import type { GameEvent } from "./domain";
+import { GetawayResultSound } from "./audio/GetawayResultSound";
 
 /* ═══════════════════════════════════════════════════
    Layered Audio Bus – GTA 6 Miami Heist theme
@@ -220,7 +221,11 @@ export class EventAudioBus {
   private bgLoop: ActiveLoop | null = null;
   private spinLoop: ActiveLoop | null = null;
   private counterLoop: ActiveLoop | null = null;
+  private counterEnd: ActiveLoop | null = null;
+  private bonusOutro: ActiveLoop | null = null;
   private inBonus = false;
+  private inGetawayResult = false;
+  private getawayResultSound: GetawayResultSound | null = null;
 
   /* voice playback & audio ducking tracking */
   private activeVoiceSource: AudioBufferSourceNode | null = null;
@@ -319,6 +324,7 @@ export class EventAudioBus {
   /* ── public API (same signature as before) ─────── */
 
   playEvent(event: GameEvent, muted: boolean, turbo: boolean): void {
+    if (event.type === "bonus_trigger") this.inBonus = true;
     if (muted) {
       this.killAll();
       return;
@@ -728,9 +734,7 @@ export class EventAudioBus {
         break;
 
       case "bonus_end":
-        this.inBonus = false;
-        this.fire("getaway_end", vol);
-        this.restoreBaseBg();
+        // The Getaway result owns a separate sound stage, opened by the view.
         break;
 
       /* ── round end (just cleanup) ──────────── */
@@ -794,6 +798,15 @@ export class EventAudioBus {
     gain.gain.value = (VOLUME[track] ?? 0.5) * volumeScale;
     source.connect(gain).connect(this.output);
     source.start();
+
+    if (track === "getaway_end") {
+      this.bonusOutro = { source, gain, track };
+      source.onended = () => {
+        if (this.bonusOutro?.source === source) this.bonusOutro = null;
+        source.disconnect();
+        gain.disconnect();
+      };
+    }
 
     if (isVoice) {
       this.activeVoiceSource = source;
@@ -1356,19 +1369,90 @@ export class EventAudioBus {
 
   /** Spin up the looping counter voice. */
   startWinCounter(): void {
+    this.cancelWinCounter();
+    if (this.silenced) return;
     this.startLoop("money_counter_loop", "counter");
   }
 
   /** Drive the roller from the count-up. */
   updateWinCounter(p: number, tier: "none" | "big" | "mega" | "grand" | "max"): void {
-    // With a static track we don't dynamically adjust pitch like the synth, 
-    // but the API signature remains the same so EffectsLayer doesn't need changes here.
+    if (!this.ctx || !this.counterLoop) return;
+    this.counterLoop.source.playbackRate.setTargetAtTime(0.96 + Math.max(0, Math.min(1, p)) * 0.12, this.ctx.currentTime, 0.04);
   }
 
   /** Resolve the roller: a quick upward flourish, then a clean fade-and-stop. */
   stopWinCounter(): void {
+    const wasCounting = this.counterLoop !== null;
     this.stopCounterLoop();
-    this.fire("money_counter_end");
+    if (!wasCounting || !this.ctx || this.silenced) return;
+    const buffer = this.buffers.get("money_counter_end");
+    if (!buffer) return;
+    // The source file is 2.9 seconds: playing it in full sounds like counting
+    // continues after the total has landed. Use only a short landing accent.
+    const source = this.ctx.createBufferSource();
+    source.buffer = buffer;
+    const gain = this.ctx.createGain();
+    const now = this.ctx.currentTime;
+    const duration = Math.min(0.28, buffer.duration);
+    const volume = VOLUME.money_counter_end ?? 0.5;
+    gain.gain.setValueAtTime(volume, now);
+    gain.gain.linearRampToValueAtTime(0, now + duration);
+    source.connect(gain).connect(this.output);
+    const voice: ActiveLoop = { source, gain, track: "money_counter_end" };
+    this.counterEnd = voice;
+    source.onended = () => {
+      source.disconnect();
+      gain.disconnect();
+      if (this.counterEnd === voice) this.counterEnd = null;
+    };
+    source.start(now, 0, duration);
+  }
+
+  /** Dismissal/mute must never launch another ending sound. */
+  cancelWinCounter(): void {
+    this.stopCounterLoop();
+    if (!this.counterEnd || !this.ctx) return;
+    const voice = this.counterEnd;
+    this.counterEnd = null;
+    const now = this.ctx.currentTime;
+    voice.gain.gain.cancelScheduledValues(now);
+    voice.gain.gain.setValueAtTime(voice.gain.gain.value, now);
+    voice.gain.gain.linearRampToValueAtTime(0, now + 0.01);
+    try { voice.source.stop(now + 0.015); } catch { /* already ended */ }
+  }
+
+  finishBonus(): void {
+    this.cancelGetawayResult();
+    this.inGetawayResult = false;
+    this.cancelWinCounter();
+    this.stopBonusOutro();
+    this.inBonus = false;
+    if (!this.silenced) this.restoreBaseBg();
+  }
+
+  openGetawayResult(): void {
+    this.inGetawayResult = true;
+    this.fadeOut("bg");
+    this.stopBonusOutro();
+    if (!this.ctx || this.silenced) return;
+    this.getawayResultSound ??= new GetawayResultSound(this.ctx, this.output);
+    this.getawayResultSound.open();
+  }
+
+  startGetawayResultCount(): void { if (!this.silenced) this.getawayResultSound?.start(); }
+  updateGetawayResultCount(progress: number): void { if (!this.silenced) this.getawayResultSound?.progress(progress); }
+  endGetawayResultCount(): void { if (!this.silenced) this.getawayResultSound?.end(); }
+  cancelGetawayResult(): void { this.getawayResultSound?.cancel(); }
+
+  private stopBonusOutro(): void {
+    if (!this.bonusOutro || !this.ctx) return;
+    const voice = this.bonusOutro;
+    this.bonusOutro = null;
+    const now = this.ctx.currentTime;
+    voice.gain.gain.cancelScheduledValues(now);
+    voice.gain.gain.setValueAtTime(voice.gain.gain.value, now);
+    voice.gain.gain.linearRampToValueAtTime(0, now + 0.04);
+    try { voice.source.stop(now + 0.05); } catch { /* already ended */ }
   }
 
   private stopCounterLoop(): void {
@@ -1473,6 +1557,7 @@ export class EventAudioBus {
 
   /** Make sure background music is running (restart after mute) */
   private ensureBg(): void {
+    if (this.inGetawayResult) return;
     if (this.inBonus) {
       if (this.radioStation === "off") return;
       if (!this.bgLoop || this.bgLoop.track !== "bg_bonus") {
@@ -1514,7 +1599,9 @@ export class EventAudioBus {
     this.fadeOut("spin");
     this.stopSynthReel();
     this.stopSynthRadio();
-    this.stopWinCounter();
+    this.cancelWinCounter();
+    this.stopBonusOutro();
+    this.cancelGetawayResult();
   }
 
   /* ═══════════════════════════════════════════════

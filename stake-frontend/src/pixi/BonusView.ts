@@ -1,18 +1,10 @@
 import { BlurFilter, Container, Graphics, PerspectiveMesh, Sprite, Text, TextStyle, Texture } from "pixi.js";
 import { BONUS_START_RESPINS, GRID_COLUMNS, GRID_ROWS, type BonusCell, type Position } from "../domain";
 import { getExtraTexture } from "./assets";
-import { tween, wait, easeOutBack, easeOutCubic, linear, ambientTicker, getTimeScale } from "./tween";
+import { UI_FONT } from "../typography";
+import { GetawayResult, type GetawayResultAudio } from "./GetawayResult";
+import { tween, wait, easeOutBack, easeOutCubic, linear, ambientTicker } from "./tween";
 
-/** Audio hooks for the Getaway result count-up, supplied by the scene so
- *  BonusView stays free of any direct audio dependency. */
-export interface BonusCountAudio {
-  start(): void;
-  tick(level: "normal" | "medium" | "high"): void;
-  end(): void;
-  /** Fires once the total has landed — the tier-matched win sting that gives
-   *  the count-up a payoff instead of just petering out. */
-  impact(): void;
-}
 import type { Rect } from "./types";
 import { shockwave, pulseBloom, pulseChromaticAberration } from "../vfx/Shaders";
 
@@ -25,7 +17,7 @@ import { shockwave, pulseBloom, pulseChromaticAberration } from "../vfx/Shaders"
    Every image has a procedural fallback so it works with no art added.
    ═══════════════════════════════════════════════════════════════════ */
 
-const FONT = "Impact, 'Arial Black', Arial, sans-serif";
+const FONT = UI_FONT;
 const keyOf = ([c, r]: Position): string => `${c}:${r}`;
 const HEAT_PERIOD = [0.5, 0.34, 0.22, 0.12]; // seconds per red/blue pulse by heat level
 // Police strobe channels — real emergency lighting: vivid red paired with blue.
@@ -107,11 +99,11 @@ const REEL_BG = 0x0c0c0f;
 // image twice per cycle); the small zoom RANGE keeps the crossfade double subtle
 // (it reads as zoom-blur, not a ghost).
 const HW_ZOOM_MIN = 1.0;      // fully-out framing (whole scene visible)
-const HW_ZOOM_MAX = 1.6;      // pushed-in framing; small range keeps the seam subtle
+const HW_ZOOM_MAX = 1.35;      // pushed-in framing; small range keeps the seam subtle
 const HW_RATE_START = 0.16;   // dolly cycles / sec at launch (slow roll-out)
-const HW_RATE_CRUISE = 0.9;   // dolly cycles / sec once up to speed (fast)
+const HW_RATE_CRUISE = 0.48;   // dolly cycles / sec once up to speed (fast)
 const HW_RAMP_SECS = 7;       // seconds of continuous acceleration to reach cruise
-const HW_RATE_SURGE = 0.5;    // extra cycles / sec while the reels spin — flooring it
+const HW_RATE_SURGE = 0.2;    // extra cycles / sec while the reels spin — flooring it
 const HW_HEAT = 0.05;         // extra cycles / sec per heat level (the chase tightening)
 const HW_COVER_MARGIN = 1.2;  // over-scale so the pivot offset + lane weave never gap
 const HW_VP_FRAC_Y = 0.4;     // art's vanishing point: horizontal centre, ~40% down
@@ -154,6 +146,10 @@ function fmtMoneyNum(amount: number): string {
 export class BonusView extends Container {
   private readonly bgLayer = new Container();
   private readonly truckLayer = new Container();
+  private readonly rig = new Container();
+  private readonly reelSurface = new Container();
+  private readonly aperture = new Graphics();
+  private readonly apertureMask = new Graphics();
   private readonly gridLayer = new Container();
   /** Locked (previously landed) gold bars rendered ABOVE the spinning strip so the
    *  strip's blur filter never bleeds onto or clips them. */
@@ -189,10 +185,11 @@ export class BonusView extends Container {
   /** Small always-visible USD readout of the total win, under the COLLECTED meter. */
   private collectedUsdText: Text | null = null;
   private collectedShown = 0;
+  private collectedTarget = 0;
   private spinsBox: Container | null = null;
   private spinsText: Text | null = null;
   private spinsLabel: Text | null = null;
-  private resultCard: Container | null = null;
+  private result: GetawayResult | null = null;
 
   private heat = 0;          // 0 = baseline … 3 = max
   private busted = false;
@@ -222,13 +219,25 @@ export class BonusView extends Container {
     this.visible = false;
     // lockedLayer sits between gridLayer (spinning strip) and fxLayer so
     // the sticky gold bars are always drawn on top of any reel blur.
-    this.addChild(this.bgLayer, this.truckLayer, this.gridLayer, this.lockedLayer, this.dividerLayer, this.doorLayer, this.fxLayer, this.police, this.hudLayer);
+    this.reelSurface.addChild(this.aperture, this.gridLayer, this.lockedLayer);
+    this.reelSurface.mask = this.apertureMask;
+    this.rig.addChild(this.truckLayer, this.reelSurface, this.apertureMask, this.dividerLayer, this.doorLayer, this.fxLayer);
+    this.addChild(this.bgLayer, this.rig, this.police, this.hudLayer);
     // Heavy blur turns the police light sources into soft, natural bloom.
     this.police.filters = [new BlurFilter({ strength: 30, quality: 3 })];
   }
 
   layout(rect: Rect): void {
+    if (this.visible && this.truck) {
+      // A live reel animation owns its coordinate system. Resizing only some
+      // layers made future strips use new cells while held bars kept old ones.
+      const scale = Math.min(rect.width / this.rect.width, rect.height / this.rect.height);
+      this.scale.set(scale);
+      this.position.set(rect.x + (rect.width - this.rect.width * scale) / 2, rect.y + (rect.height - this.rect.height * scale) / 2);
+      return;
+    }
     this.rect = rect;
+    this.scale.set(1);
     this.position.set(rect.x, rect.y);
   }
 
@@ -374,7 +383,7 @@ export class BonusView extends Container {
     const the = new Text({
       text: "THE",
       style: new TextStyle({
-        fill: 0xc8d4e0, fontFamily: "'Pricedown', " + FONT, fontSize: theSize,
+        fill: 0xc8d4e0, fontFamily: FONT, fontSize: theSize,
         fontWeight: "900", letterSpacing: 18,
         stroke: { color: 0x000000, width: 3 },
         dropShadow: { color: 0x000000, alpha: 0.8, blur: 8, distance: 0, angle: 0 }
@@ -389,7 +398,7 @@ export class BonusView extends Container {
     const big = new Text({
       text: "GETAWAY",
       style: new TextStyle({
-        fill: 0xffffff, fontFamily: "'Pricedown', " + FONT, fontSize: bigSize,
+        fill: 0xffffff, fontFamily: FONT, fontSize: bigSize,
         fontWeight: "900", letterSpacing: 4,
         stroke: { color: 0x000000, width: 6 },
         dropShadow: { color: 0x000000, alpha: 0.7, blur: 14, distance: 3, angle: Math.PI / 2 }
@@ -459,12 +468,22 @@ export class BonusView extends Container {
     await this.openDoors(false);
   }
 
-  /** Smoothly fade the whole bonus out, then tear it down (used at round end). */
-  async fadeOutAndHide(turbo: boolean): Promise<void> {
-    if (turbo) { this.hide(); this.alpha = 1; return; }
-    await tween(560, (p) => { this.alpha = 1 - p; }, easeOutCubic);
-    this.hide();
-    this.alpha = 1;
+  /** The payout owns the cover, so restoration is hidden even during resize or
+   * key-up. Its DOM remains above the canvas until the base scene is ready. */
+  async fadeOutAndHide(turbo: boolean, restoreBase: () => void): Promise<void> {
+    const restore = (): void => {
+      this.hide();
+      this.alpha = 1;
+      restoreBase();
+    };
+    if (this.result) {
+      const result = this.result;
+      this.result = null;
+      await result.exit(turbo, restore);
+    } else {
+      // Recovery path without a result screen must still restore all base layers.
+      restore();
+    }
   }
 
   /** Draw the current grid with no animation (used when resuming a round). */
@@ -492,8 +511,7 @@ export class BonusView extends Container {
 
     const landedSet = new Set(landed.map(keyOf));
 
-    // Clear the spinning layer; rebuild locked bars into lockedLayer so they
-    // always render ABOVE the spinning strip (prevents blur/clip artefacts).
+    const previous = new Map(this.cells);
     this.gridLayer.removeChildren();
     this.lockedLayer.removeChildren();
     this.cells.clear();
@@ -504,7 +522,10 @@ export class BonusView extends Container {
         const prevLocked = cell.symbol === "SAFE" && !landedSet.has(keyOf([c, r]));
         if (prevLocked) {
           // Place in lockedLayer so the spinning strip behind it is never clipped.
-          const node = this.buildGoldBar(cell.value ?? 0, c, r);
+          const key = keyOf([c, r]);
+          const node = previous.get(key) ?? this.buildGoldBar(cell.value ?? 0, c, r);
+          previous.delete(key);
+          this.updateGoldValue(node, cell.value ?? 0);
           const rc = this.cellRect(c, r);
           node.position.set(rc.x + rc.w / 2, rc.y + rc.h / 2);
           this.lockedLayer.addChild(node);
@@ -515,6 +536,7 @@ export class BonusView extends Container {
       }
 
     // Normal reel spin: open cells spin and STOP on their result, which sticks.
+    for (const node of previous.values()) node.destroy({ children: true });
     await this.spinColumns(grid, spinning, turbo, onLand);
 
     // Count up any gold just collected (bottom-centre, away from the meter).
@@ -554,11 +576,11 @@ export class BonusView extends Container {
     const maxVal = affected.reduce((max, a) => Math.max(max, a.newValue), 1);
 
     // Dynamic scale of the explosion based on multiplier
-    const explosionRadius = reach * (1.8 + Math.min(3.5, maxVal * 0.04));
+    const explosionRadius = reach * (1.1 + Math.min(1.0, maxVal * 0.015));
 
     // Screen thud/shake scaling with max multiplier
-    const shakeIntensity = 12 + Math.min(28, maxVal * 0.6);
-    const shakeDuration = turbo ? 220 : 450 + Math.min(350, maxVal * 6);
+    const shakeIntensity = 3 + Math.min(4, maxVal * 0.12);
+    const shakeDuration = turbo ? 180 : 320;
     const origX = this.x;
     const origY = this.y;
     const shakePromise = tween(shakeDuration, (p) => {
@@ -608,23 +630,23 @@ export class BonusView extends Container {
     // This is what sells the blast as physical; the old version only had the
     // flat full-screen orange wash, which read as cheap.
     const core = new Graphics();
-    core.circle(0, 0, reach * 0.9).fill({ color: 0xffffff, alpha: 0.9 });
-    core.circle(0, 0, reach * 0.55).fill({ color: 0xffffff, alpha: 1 });
+    core.circle(0, 0, reach * 0.36).fill({ color: 0xffd77a, alpha: 0.7 });
+    core.circle(0, 0, reach * 0.15).fill({ color: 0xfff6d7, alpha: 1 });
     core.position.set(cx, cy);
     core.blendMode = "add";
     core.scale.set(0.2);
     this.fxLayer.addChild(core);
     void tween(turbo ? 160 : 300, (p) => {
-      core.scale.set(0.2 + 2.6 * p);
+      core.scale.set(0.4 + 1.1 * p);
       core.alpha = 1 - p;
     }, easeOutCubic).then(() => core.destroy());
 
     // GPU bloom pulse over the whole grid — the frame "blows out" for a beat.
-    if (!turbo) void pulseBloom(this.lockedLayer, { scale: 1.2, duration: 500 });
+    if (!turbo) void pulseBloom(this.lockedLayer, { scale: 0.35, duration: 320 });
 
     // Full screen blast overlay — toned down from 0.75 to a filmic kiss.
     const blastFlash = new Graphics();
-    blastFlash.rect(0, 0, this.rect.width, this.rect.height).fill({ color: 0xffaa00, alpha: 0.42 });
+    blastFlash.rect(0, 0, this.rect.width, this.rect.height).fill({ color: 0xffaa00, alpha: 0.12 });
     this.fxLayer.addChild(blastFlash);
 
     // ── The payout beat fires IMMEDIATELY with the blast, not after it. ──
@@ -635,17 +657,19 @@ export class BonusView extends Container {
       const node = this.cells.get(keyOf(a.position));
       if (node) {
         this.updateGoldValue(node, a.newValue);
-        const num = node.getChildByLabel("num") as Text | null;
-        void tween(turbo ? 180 : 420, (p) => { const s = 1 + Math.sin(Math.min(1, p) * Math.PI) * 0.45; node.scale.set(s); if (num) num.scale.set(s); }).then(() => { node.scale.set(1); if (num) num.scale.set(1); });
+        void this.cellStopFx(a.position, true, turbo);
         const cf = new Graphics(); this.fxLayer.addChild(cf);
-        void tween(turbo ? 160 : 360, (p) => { cf.clear(); cf.circle(nc.x + nc.w / 2, nc.y + nc.h / 2, Math.max(nc.w, nc.h) * 0.55 * (1 + p * 0.4)).fill({ color: 0xffd95c, alpha: (1 - p) * 0.5 }); }).then(() => cf.destroy());
+        void tween(turbo ? 160 : 360, (p) => {
+          cf.clear().roundRect(nc.x + 6, nc.y + 6, nc.w - 12, nc.h - 12, 7)
+            .stroke({ color: 0xffdc84, width: 1.5, alpha: (1 - p) * 0.8 });
+        }).then(() => cf.destroy());
       }
       // Doubling: the money gained is the other half of the new value.
-      this.floatWinBadge(nc.x + nc.w / 2, nc.y + nc.h * 0.16, a.newValue / 2, turbo);
+      this.floatWinBadge(nc.x + nc.w / 2, nc.y + nc.h * 0.30, a.newValue / 2, turbo);
     }
     // Roll the COLLECTED meter up by the total gained, in sync with the badges.
     const gained = affected.reduce((s, a) => s + a.newValue / 2, 0);
-    this.setCollected(this.collectedShown + gained, true);
+    this.setCollected(this.collectedTarget + gained, true);
 
     // Layered particles setup
     interface ExplosionParticle {
@@ -660,14 +684,14 @@ export class BonusView extends Container {
     }
 
     const particles: ExplosionParticle[] = [];
-    const numParticles = turbo ? 10 : 26 + Math.min(24, maxVal * 0.5);
+    const numParticles = turbo ? 8 : 16;
 
     for (let i = 0; i < numParticles; i++) {
       const g = new Graphics();
       this.fxLayer.addChild(g);
       const angle = Math.random() * Math.PI * 2;
       const speed = (0.25 + Math.random() * 0.75) * explosionRadius;
-      const size = 14 + Math.random() * 22;
+      const size = 5 + Math.random() * 9;
       particles.push({
         g,
         vx: Math.cos(angle) * speed,
@@ -735,17 +759,19 @@ export class BonusView extends Container {
   private floatWinBadge(x: number, y: number, gainedX: number, turbo: boolean): void {
     const c = new Container();
     c.position.set(x, y);
+    const cell = this.cellRect(0, 0);
 
     const moneyStr = this.betAmount > 0 ? `+${fmtMoneyNum(gainedX * this.betAmount)}` : `+${fmtX(gainedX)}`;
     const money = new Text({
       text: moneyStr,
       style: new TextStyle({
-        fill: GOLD_HI, fontFamily: FONT, fontSize: 34, fontWeight: "900", letterSpacing: 1,
-        stroke: { color: GOLD_DEEP, width: 5 },
+        fill: GOLD_HI, fontFamily: FONT, fontSize: Math.min(28, cell.h * 0.30), fontWeight: "700", letterSpacing: 0,
+        stroke: { color: GOLD_DEEP, width: 3 },
         dropShadow: { color: 0x000000, alpha: 0.85, blur: 6, distance: 2, angle: Math.PI / 2 }
       })
     });
     money.anchor.set(0.5);
+    this.fit(money, cell.w * 0.8);
 
     const tag = new Text({
       text: "×2",
@@ -759,7 +785,7 @@ export class BonusView extends Container {
 
     // Soft additive glow behind the number so it lifts off the busy blast frame.
     const glow = new Graphics();
-    glow.ellipse(0, 0, money.width * 0.75, money.height * 0.85).fill({ color: GOLD, alpha: 0.30 });
+    glow.ellipse(0, 0, money.width * 0.6, money.height * 0.65).fill({ color: GOLD, alpha: 0.15 });
     glow.blendMode = "add";
 
     c.addChild(glow, money, tag);
@@ -772,86 +798,21 @@ export class BonusView extends Container {
       // Overshoot pop in the first 22%, then a slow readable drift up + fade.
       const pop = Math.min(1, p / 0.22);
       c.scale.set(0.2 + 0.8 * easeOutBack(pop));
-      c.y = y - 54 * p;
+      c.y = y - Math.min(36, cell.h * 0.3) * p;
       c.alpha = p < 0.12 ? p / 0.12 : p > 0.72 ? (1 - p) / 0.28 : 1;
       glow.alpha = 1 - p;
     }, linear).then(() => c.destroy());
   }
 
-  /** End of the chase. filled = Grand Escape jackpot; otherwise Busted.
-   *  A big, dramatic result card with the win amount. Manual play keeps it up
-   *  until the player taps; unattended runs (autoplay/replay) auto-dismiss so
-   *  the sequence can never freeze waiting for a tap that will not come. */
-  async finish(filled: boolean, totalX: number, turbo: boolean, autoDismiss = false, audio?: BonusCountAudio): Promise<void> {
-    const W = this.rect.width;
-    const H = this.rect.height;
-
-    // Cinematic outro framing — vignette behind, dim, rays, card, letterbox on top.
-    const vig = this.buildVignette();
-    vig.alpha = 0;
-    this.hudLayer.addChild(vig);
-
-    // The bust desaturates the world with a cold slate; the escape goes near-black
-    // so the warm gold pops.
-    const dim = new Graphics();
-    dim.rect(0, 0, W, H).fill({ color: filled ? 0x000000 : 0x0a0d14, alpha: 1 });
-    dim.alpha = 0;
-    this.hudLayer.addChild(dim);
-
-    // Only the triumphant escape gets a sunburst; the bust stays grim.
-    const rays = filled ? this.buildResultRays(true) : null;
-    if (rays) this.hudLayer.addChild(rays);
-
-    // Kick off the signature sequence behind the card.
-    if (filled) { void this.grandEscape(turbo); }
-    else { this.busted = true; this.heat = 3; void this.bustedSequence(turbo); }
-
-    const card = this.buildResultCard(filled);
-    this.hudLayer.addChild(card);
-    this.resultCard = card;
-
-    const lb = this.buildLetterbox();
-
-    card.scale.set(1.03);
-    card.alpha = 0;
-    // Slow, weighty settle — a fade-in with minimal scale, not a bouncy popup.
-    await tween(turbo ? 300 : 900, (p) => {
-      const e = easeOutCubic(p);
-      dim.alpha = e * (filled ? 0.78 : 0.92);
-      vig.alpha = e * 0.9;
-      if (rays) rays.alpha = e * 0.85;
-      lb.top.y = -lb.barH + lb.barH * e;
-      lb.bot.y = H - lb.barH * e;
-      card.alpha = Math.min(1, p * 1.8);
-      card.scale.set(1.03 - 0.03 * e);
-    }, linear);
-    card.scale.set(1);
-    card.alpha = 1;
-
-    // Count the win amount up — big and central.
-    const payout = card.getChildByLabel("payout") as Text | null;
-    if (payout) await this.countUp(payout, totalX, turbo, audio);
+  /** The Getaway has its own payout stage and audio, independent of base wins. */
+  async finish(filled: boolean, totalX: number, turbo: boolean, autoDismiss = false, audio?: GetawayResultAudio): Promise<void> {
+    this.stopAmbient();
+    this.heat = 0;
+    this.police.clear();
     this.setCollected(totalX, false);
-
-    // Keep it alive: slowly rotate the rays, pulse the amount + the tap hint,
-    // until the player acknowledges the win.
-    const hint = card.getChildByLabel("hint") as Text | null;
-    const baseRot = rays ? rays.rotation : 0;
-    const idle = (_dt: number, elapsed: number): void => {
-      if (rays) rays.rotation = baseRot + elapsed * 0.08;
-      if (payout) payout.scale.set(1 + Math.sin(elapsed * 1.6) * 0.012);
-      if (hint) hint.alpha = 0.2 + 0.25 * Math.abs(Math.sin(elapsed * 1.8));
-    };
-    ambientTicker.add(idle);
-
-    // Manual play: stay up until the player taps/clicks. Autoplay/replay:
-    // hold long enough to read, then continue on its own.
-    await this.waitForDismiss(autoDismiss ? (turbo ? 1400 : 2600) : 0);
-
-    ambientTicker.remove(idle);
-    // A small acknowledge pop on tap before the round_end fade takes over.
-    await tween(turbo ? 120 : 200, (p) => { card.scale.set(1 + 0.05 * Math.sin(p * Math.PI)); });
-    card.scale.set(1);
+    this.result?.destroy();
+    this.result = new GetawayResult();
+    await this.result.present({ filled, totalX, turbo, autoDismiss, audio, bet: this.betAmount, currency: this.currency });
   }
 
   // ── cinematic helpers (shared by intro + finish) ─────────────────────
@@ -890,309 +851,6 @@ export class BonusView extends Container {
     return g;
   }
 
-  /**
-   * Cinematic cash-rain for the Grand Escape — realistic falling bank notes and
-   * gold coins with gravity + sway, NOT arcade confetti squares. Fire-and-forget;
-   * cleans itself up.
-   */
-  private cashRain(turbo: boolean): void {
-    const W = this.rect.width;
-    const H = this.rect.height;
-    const n = turbo ? 26 : 64;
-    const notes: Array<{ g: Graphics; x0: number; vy: number; swayAmp: number; swayFreq: number; phase: number; spin: number; rot: number; isCoin: boolean }> = [];
-    for (let i = 0; i < n; i++) {
-      const g = new Graphics();
-      const isCoin = Math.random() < 0.28;
-      if (isCoin) {
-        const s = 7 + Math.random() * 6;
-        g.circle(0, 0, s).fill(GOLD);
-        g.circle(0, 0, s * 0.66).fill(GOLD_HI);
-        g.circle(-s * 0.22, -s * 0.22, s * 0.22).fill({ color: 0xffffff, alpha: 0.55 });
-      } else {
-        const w = 30 + Math.random() * 18;
-        const h = w * 0.46;
-        // a bank note: muted green with a gold band + dark frame (realistic, not neon)
-        g.roundRect(-w / 2, -h / 2, w, h, 2).fill(0x2f6f4e);
-        g.roundRect(-w / 2, -h / 2, w, h, 2).stroke({ color: 0x16331f, width: 1, alpha: 0.7 });
-        g.circle(0, 0, h * 0.3).fill({ color: 0xdfe9c8, alpha: 0.5 });
-        g.rect(-w / 2 + 2, -h / 2 + 2, 3, h - 4).fill({ color: GOLD, alpha: 0.55 });
-      }
-      const x0 = Math.random() * W;
-      g.position.set(x0, -40 - Math.random() * H * 0.5);
-      g.rotation = Math.random() * Math.PI;
-      this.fxLayer.addChild(g);
-      notes.push({
-        g, x0,
-        vy: H * (0.42 + Math.random() * 0.34),
-        swayAmp: 18 + Math.random() * 34,
-        swayFreq: 1.2 + Math.random() * 1.6,
-        phase: Math.random() * Math.PI * 2,
-        spin: (Math.random() - 0.5) * 4,
-        rot: g.rotation,
-        isCoin
-      });
-    }
-    let elapsed = 0;
-    const dur = turbo ? 1.0 : 2.6;
-    const cb = (dt: number): void => {
-      elapsed += dt;
-      const k = elapsed / dur;
-      for (const p of notes) {
-        const y = p.g.y + p.vy * dt;
-        p.g.y = y;
-        p.g.x = p.x0 + Math.sin(elapsed * p.swayFreq + p.phase) * p.swayAmp;
-        p.rot += p.spin * dt;
-        p.g.rotation = p.rot;
-        // fade the last 25% out, and once past the bottom
-        if (y > H + 30 || k > 1) p.g.alpha = Math.max(0, p.g.alpha - dt * 1.4);
-        else if (k > 0.75) p.g.alpha = Math.max(0, 1 - (k - 0.75) / 0.25);
-      }
-      if (k >= 1.2) {
-        ambientTicker.remove(cb);
-        notes.forEach((p) => p.g.destroy());
-      }
-    };
-    ambientTicker.add(cb);
-  }
-
-  /** Soft volumetric sunburst behind the result card — blurred light shafts, not
-   *  flat triangles, so it reads as god-rays rather than a cartoon star. */
-  private buildResultRays(filled: boolean): Container {
-    const c = new Container();
-    c.position.set(this.rect.width / 2, this.rect.height * 0.46);
-    const g = new Graphics();
-    const color = filled ? GOLD : 0xff6a00;
-    const R = Math.max(this.rect.width, this.rect.height) * 1.15;
-    const n = 26;
-    for (let i = 0; i < n; i++) {
-      const a0 = (i / n) * Math.PI * 2;
-      const spread = (Math.PI * 2 / n) * 0.3;
-      g.moveTo(0, 0)
-        .lineTo(Math.cos(a0 - spread) * R, Math.sin(a0 - spread) * R)
-        .lineTo(Math.cos(a0 + spread) * R, Math.sin(a0 + spread) * R)
-        .fill({ color, alpha: 0.06 });
-    }
-    g.filters = [new BlurFilter({ strength: 12, quality: 2 })];
-    c.addChild(g);
-    c.alpha = 0;
-    return c;
-  }
-
-  /** Resolve once the player clicks/taps anywhere — used to dismiss the result.
-   *  With `autoDismissMs` set (autoplay/replay: nobody will tap) it also
-   *  resolves on its own, so an unattended run can never freeze here. */
-  private waitForDismiss(autoDismissMs = 0): Promise<void> {
-    return new Promise((resolve) => {
-      let timer = 0;
-      const onDown = (): void => {
-        window.removeEventListener("pointerdown", onDown);
-        if (timer) window.clearTimeout(timer);
-        resolve();
-      };
-      window.addEventListener("pointerdown", onDown);
-      if (autoDismissMs > 0) {
-        timer = window.setTimeout(() => {
-          window.removeEventListener("pointerdown", onDown);
-          resolve();
-        }, autoDismissMs);
-      }
-    });
-  }
-
-  /**
-   * Count the Getaway total up. Deliberately paced — the old version rushed the
-   * whole thing in a silent 700ms, which threw away the single best dopamine
-   * moment in the feature.
-   *
-   * - Length scales with the win (log, so a 5000x doesn't take a minute), so a
-   *   bigger total visibly takes longer to land.
-   * - A continuous money-counter loop underneath plus discrete ticks that climb
-   *   in pitch across three phases, so the ear tracks the number rising.
-   * - Tapping (or double-tapping) anywhere skips straight to the final amount
-   *   and resolves the audio cleanly — never leaves the loop droning.
-   */
-  private async countUp(
-    text: Text,
-    target: number,
-    turbo: boolean,
-    audio?: BonusCountAudio
-  ): Promise<void> {
-    const finish = (): void => {
-      text.text = this.fmtTotal(target);
-      text.scale.set(1);
-    };
-    if (turbo || target <= 0) {
-      finish();
-      return;
-    }
-
-    // 1.6s floor, +~700ms per 10x, capped at 5s.
-    const durMs = Math.min(5000, 1600 + Math.log10(Math.max(1, target)) * 700) / getTimeScale();
-    const TICK_MS = 85;
-
-    audio?.start();
-    let skipped = false;
-    let audioEnded = false;
-    const stopAudioNow = (): void => {
-      if (audioEnded) return;
-      audioEnded = true;
-      audio?.end();
-    };
-    const onSkip = (e?: Event): void => {
-      if (e && e.type === "keydown") {
-        const k = (e as KeyboardEvent).code;
-        if (k !== "Space" && k !== "Enter") return;
-        e.preventDefault();
-      }
-      if (skipped) return;
-      skipped = true;
-      // Stop the loop sound immediately when the player skips — don't wait
-      // for the next rAF frame + promise resolution to call audio.end().
-      stopAudioNow();
-    };
-    window.addEventListener("pointerdown", onSkip);
-    window.addEventListener("keydown", onSkip);
-
-    await new Promise<void>((resolve) => {
-      const t0 = performance.now();
-      let lastTick = 0;
-      const frame = (now: number): void => {
-        const p = skipped ? 1 : Math.min(1, (now - t0) / durMs);
-        // Slight front-load so the number moves immediately, then settles.
-        const eased = Math.pow(p, 0.88);
-        text.text = this.fmtTotal(target * eased);
-        text.scale.set(1 + Math.sin(p * Math.PI) * 0.1);
-
-        if (!skipped && now - lastTick >= TICK_MS) {
-          lastTick = now;
-          audio?.tick(p < 0.4 ? "normal" : p < 0.75 ? "medium" : "high");
-        }
-        if (p < 1) requestAnimationFrame(frame);
-        else resolve();
-      };
-      requestAnimationFrame(frame);
-    });
-
-    window.removeEventListener("pointerdown", onSkip);
-    window.removeEventListener("keydown", onSkip);
-    // Only call end() here if skip never fired (normal completion path).
-    stopAudioNow();
-    finish();
-    // The payoff: the win sting lands on the same frame as the final number.
-    audio?.impact();
-    // Landing pop — the number arrives, it doesn't just stop.
-    await tween(220, (p) => text.scale.set(1 + 0.14 * Math.sin(p * Math.PI)), linear);
-    text.scale.set(1);
-  }
-
-  private buildResultCard(filled: boolean): Container {
-    const W = this.rect.width;
-    const H = this.rect.height;
-    const c = new Container();
-    c.position.set(W / 2, H * 0.46);
-    const accentDeep = filled ? GOLD_DEEP : STEEL_DEEP;
-
-    // --- NO popup card. Full-bleed cinematic text layout. ---
-
-    // Soft title glow: warm gold (escape) or cold red (bust) — reads as ambient
-    // light from off-screen, not a UI element.
-    const titleGlow = new Graphics();
-    if (filled) {
-      titleGlow.ellipse(0, -H * 0.06, W * 0.4, H * 0.18).fill({ color: 0x6a4410, alpha: 0.18 });
-    } else {
-      titleGlow.ellipse(0, -H * 0.06, W * 0.4, H * 0.18).fill({ color: 0x5a0a0a, alpha: 0.22 });
-    }
-    titleGlow.filters = [new BlurFilter({ strength: 36, quality: 2 })];
-    c.addChild(titleGlow);
-
-    // TITLE: massive, cinematic — GTA WASTED / BUSTED style
-    const titleSize = filled ? Math.min(68, W / 8) : Math.min(90, W / 6.5);
-    const title = new Text({
-      text: filled ? "GRAND ESCAPE" : "BUSTED",
-      style: new TextStyle({
-        fill: filled ? GOLD_HI : 0xeaeaea,
-        fontFamily: "'Pricedown', " + FONT,
-        fontSize: titleSize,
-        fontWeight: "900",
-        letterSpacing: filled ? 4 : 12,
-        stroke: { color: filled ? accentDeep : 0x3a0a0a, width: filled ? 4 : 6 },
-        dropShadow: {
-          color: filled ? 0x000000 : 0x6b0000,
-          alpha: filled ? 0.7 : 0.85,
-          blur: filled ? 16 : 28,
-          distance: filled ? 3 : 0,
-          angle: Math.PI / 2
-        }
-      })
-    });
-    title.anchor.set(0.5);
-    title.position.set(0, -H * 0.12);
-    c.addChild(title);
-
-    // Subtitle: understated, spaced caps — like a mission debrief line
-    const subText = filled ? "CLEAN GETAWAY  ·  TOTAL HAUL" : "TAKEN DOWN  ·  FINAL TAKE";
-    const sub = new Text({
-      text: subText,
-      style: new TextStyle({
-        fill: filled ? 0xa89060 : 0x7a8a9e,
-        fontFamily: FONT,
-        fontSize: Math.min(15, W / 36),
-        letterSpacing: 5
-      })
-    });
-    sub.anchor.set(0.5);
-    sub.position.set(0, -H * 0.02);
-    c.addChild(sub);
-
-    // Thin horizontal rule — cinematic divider, not a UI element
-    const rule = new Graphics();
-    const ruleColor = filled ? GOLD : 0x5a6a7e;
-    rule.rect(-W * 0.18, 0, W * 0.36, 1).fill({ color: ruleColor, alpha: 0.35 });
-    rule.position.set(0, H * 0.01);
-    c.addChild(rule);
-
-    // Payout: clean, large, central — the hero number
-    const payout = new Text({
-      text: "0x",
-      style: new TextStyle({
-        fill: filled ? GOLD_HI : 0xd0c89a,
-        fontFamily: "'Pricedown', " + FONT,
-        fontSize: Math.min(110, W / 5),
-        fontWeight: "900",
-        letterSpacing: 2,
-        stroke: { color: accentDeep, width: 5 },
-        dropShadow: {
-          color: 0x000000,
-          alpha: 0.65,
-          blur: 12,
-          distance: 2,
-          angle: Math.PI / 2
-        }
-      })
-    });
-    payout.anchor.set(0.5);
-    payout.position.set(0, H * 0.1);
-    payout.label = "payout";
-    c.addChild(payout);
-
-    // Tap hint — barely visible, like a subtitle watermark
-    const hint = new Text({
-      text: "TAP TO CONTINUE",
-      style: new TextStyle({
-        fill: 0x8a8a8a,
-        fontFamily: FONT,
-        fontSize: Math.min(13, W / 40),
-        letterSpacing: 4
-      })
-    });
-    hint.anchor.set(0.5);
-    hint.position.set(0, H * 0.22);
-    hint.alpha = 0.35;
-    hint.label = "hint";
-    c.addChild(hint);
-    return c;
-  }
-
   hide(): void {
     this.visible = false;
     this.stopAmbient();
@@ -1203,12 +861,13 @@ export class BonusView extends Container {
     this.hudLayer.removeChildren();
     this.truckLayer.removeChildren();
     this.bgLayer.removeChildren();
+    this.doorLayer.removeChildren().forEach((child) => child.destroy({ children: true }));
     this.cells.clear();
     this.highwayA = this.highwayB = null;
     this.truck = this.stars = null;
     this.collectedText = this.collectedUsdText = this.spinsLabel = this.spinsText = null;
     this.spinsBox = null;
-    this.resultCard = null;
+
   }
 
   // ── layer builders ───────────────────────────────────────────────────
@@ -1400,8 +1059,8 @@ export class BonusView extends Container {
           const t = i / 4;
           const a = 0.5 * open * (1 - t);
           const wStep = band * (1 - t * 0.35);
-          g.rect(o.x, o.y, wStep, o.height).fill({ color: 0x000000, alpha: a });
-          g.rect(o.x + o.width - wStep, o.y, wStep, o.height).fill({ color: 0x000000, alpha: a });
+          g.rect(o.x - wStep - 8, o.y, wStep, o.height).fill({ color: 0x000000, alpha: a });
+          g.rect(o.x + o.width + 8, o.y, wStep, o.height).fill({ color: 0x000000, alpha: a });
         }
       }
     }
@@ -1521,7 +1180,17 @@ export class BonusView extends Container {
   }
 
   private buildDividers(): void {
-    this.dividerLayer.removeChildren();
+    this.dividerLayer.removeChildren().forEach((child) => child.destroy());
+    const o = this.opening();
+    this.aperture.clear().rect(o.x - 1, o.y - 1, o.width + 2, o.height + 2).fill(REEL_BG);
+    this.apertureMask.clear().rect(o.x, o.y, o.width, o.height).fill(0xffffff);
+    // Cover the tinted bitmap recess with the exact reel-surface color. The
+    // trim lives outside the grid; no inset shadow darkens the outer cells.
+    const trim = new Graphics();
+    trim.rect(o.x - 8, o.y - 8, o.width + 16, o.height + 16).fill(REEL_BG);
+    trim.rect(o.x, o.y, o.width, o.height).cut();
+    trim.rect(o.x - 8, o.y - 8, o.width + 16, o.height + 16).stroke({ color: 0x74807a, width: 1, alpha: 0.4 });
+    this.dividerLayer.addChild(trim);
   }
 
   /** Procedural armored-truck frame: steel border with a transparent door window. */
@@ -1560,7 +1229,7 @@ export class BonusView extends Container {
     // Small kicker title at the very top
     const title = new Text({
       text: "THE GETAWAY",
-      style: new TextStyle({ fill: 0xffd95c, fontFamily: FONT, fontSize: Math.min(20, W / 38), fontWeight: "900", letterSpacing: 5, dropShadow: { color: 0xff6a00, alpha: 0.6, blur: 12, distance: 0, angle: 0 } })
+      style: new TextStyle({ fill: 0xffd95c, fontFamily: FONT, fontSize: Math.max(16, Math.min(22, W / 38)), fontWeight: "900", letterSpacing: 5, dropShadow: { color: 0xff6a00, alpha: 0.6, blur: 12, distance: 0, angle: 0 } })
     });
     title.anchor.set(0.5, 0);
     title.position.set(W / 2, H * 0.022);
@@ -1575,7 +1244,7 @@ export class BonusView extends Container {
     // (never up, never refilled). The count only falls, so the player always
     // knows exactly how close the feature is to ending.
     const box = new Container();
-    box.position.set(W * 0.88, H * 0.04);
+    box.position.set(W < H ? W / 2 : W * 0.88, H * (W < H ? 0.13 : 0.10));
     this.hudLayer.addChild(box);
     this.spinsBox = box;
     const sLabel = new Text({ text: "SPINS LEFT", style: new TextStyle({ fill: 0x9fb4d0, fontFamily: FONT, fontSize: 13, letterSpacing: 2 }) });
@@ -1583,7 +1252,7 @@ export class BonusView extends Container {
     sLabel.position.set(0, 0);
     box.addChild(sLabel);
     this.spinsLabel = sLabel;
-    const sVal = new Text({ text: `${START_RESPINS}`, style: new TextStyle({ fill: 0xffd95c, fontFamily: FONT, fontSize: Math.min(56, W / 14), fontWeight: "900", dropShadow: { color: 0xff6a00, alpha: 0.6, blur: 8, distance: 0, angle: 0 } }) });
+    const sVal = new Text({ text: `${START_RESPINS}`, style: new TextStyle({ fill: 0xffd95c, fontFamily: FONT, fontSize: Math.max(34, Math.min(52, W / 14)), fontWeight: "900", dropShadow: { color: 0xff6a00, alpha: 0.6, blur: 8, distance: 0, angle: 0 } }) });
     sVal.anchor.set(0.5, 0);
     sVal.position.set(0, 16);
     box.addChild(sVal);
@@ -1595,9 +1264,9 @@ export class BonusView extends Container {
     // can never overflow: the old layout hung the multiplier off H*0.905 and put
     // the USD line a further (fontSize + 6) below it, which pushed the USD text
     // past the bottom of the view — the real-money total was clipped off-screen.
-    const valSize = Math.min(46, W / 16);
-    const usdSize = Math.min(17, W / 46);
-    const bottom = H * 0.988;
+    const valSize = Math.max(30, Math.min(46, W / 16));
+    const usdSize = Math.max(15, Math.min(18, W / 46));
+    const bottom = H * 0.962;
 
     const usd = new Text({ text: this.fmtTotal(0), style: new TextStyle({ fill: 0xd9e4f5, fontFamily: FONT, fontSize: usdSize, letterSpacing: 1.5, dropShadow: { color: 0x000000, alpha: 0.8, blur: 4, distance: 1, angle: Math.PI / 2 } }) });
     usd.anchor.set(0.5, 1);
@@ -1791,8 +1460,8 @@ export class BonusView extends Container {
     const t = new Text({
       text: fmtX(value),
       style: new TextStyle({
-        fill: 0xffffff, fontFamily: FONT, fontSize: Math.min(26, r.h * 0.34), fontWeight: "900",
-        letterSpacing: 1, stroke: { color: 0x3a2400, width: 4 },
+        fill: 0xffffff, fontFamily: FONT, fontSize: Math.min(28, r.h * 0.32), fontWeight: "700",
+        letterSpacing: 0, stroke: { color: 0x3a2400, width: 3 },
         dropShadow: { color: 0x000000, alpha: 0.7, blur: 4, distance: 1, angle: Math.PI / 2 }
       })
     });
@@ -1804,7 +1473,11 @@ export class BonusView extends Container {
 
   private updateGoldValue(node: Container, value: number): void {
     const num = node.getChildByLabel("num") as Text | null;
-    if (num) num.text = fmtX(value);
+    if (num) {
+      num.text = fmtX(value);
+      num.scale.set(1);
+      this.fit(num, this.opening().width / GRID_COLUMNS * 0.88);
+    }
   }
 
   private buildDynamite(col: number, row: number): Container {
@@ -1953,7 +1626,7 @@ export class BonusView extends Container {
     this.gridLayer.addChildAt(strip, 0);
 
     // Vertical motion blur so the reel reads as genuinely SPINNING.
-    const blurMax = turbo ? 7 : 16;
+    const blurMax = turbo ? 5 : 10;
     const blur = new BlurFilter({ strength: blurMax, quality: 2 });
     blur.strengthX = 0;
     strip.filters = [blur];
@@ -1964,43 +1637,47 @@ export class BonusView extends Container {
     return tween(dur, (p) => {
       strip.y = -travel * (1 - reelPos(p));
       blur.strengthY = blurMax * reelVel(p);   // blurry while fast, razor sharp at rest
-    }, linear).then(() => {
+    }, linear).then(async () => {
       strip.filters = null;
       blur.destroy();
       strip.destroy({ children: true });
       mask.destroy();
-      let landDelay = 0;
+      const landings: Promise<void>[] = [];
       for (const r of rows) {
         const cell = grid[col][r];
         const landed = cell.symbol === "SAFE" || cell.symbol === "MASTER_KEY";
         if (cell.symbol === "SAFE") { 
           this.placeCell([col, r], this.buildGoldBar(cell.value ?? 0, col, r)); 
-          setTimeout(onLandOne, landDelay);
-          landDelay += 80;
+          onLandOne();
         }
         else if (cell.symbol === "MASTER_KEY") { 
           this.placeCell([col, r], this.buildDynamite(col, r)); 
-          setTimeout(onLandOne, landDelay);
-          landDelay += 80;
+          onLandOne();
         }
         // EMPTY: leave a resting Heat Chase watermark so the logos never just
         // vanish when the reel stops (every cell stays consistent, spin or rest).
         else this.placeCell([col, r], this.buildEmptyFace(col, r, logoTex));
-        this.cellStopFx([col, r], landed);
+        landings.push(this.cellStopFx([col, r], landed, turbo));
       }
+      await Promise.all(landings);
     });
   }
 
   /** A quick impact when a reel stops on a WIN: the gold/dynamite symbol punches
    *  in. Empty stops get nothing — the old expanding ring + grey puff circles were
    *  removed (they looked ugly); the reel motion and the symbol sell the stop. */
-  private cellStopFx(pos: Position, landed: boolean): void {
+  private async cellStopFx(pos: Position, landed: boolean, turbo: boolean): Promise<void> {
     if (!landed) return;
     const node = this.cells.get(keyOf(pos));
     if (!node) return;
-    const num = node.getChildByLabel("num") as Text | null;
-    void tween(300, (p) => { const s = 1 + Math.sin(Math.min(1, p) * Math.PI) * 0.28; node.scale.set(s); if (num) num.scale.set(s); })
-      .then(() => { node.scale.set(1); if (num) num.scale.set(1); });
+    // Keep the cell backdrop fixed: scaling it covered adjacent held values.
+    const art = node.children.slice(1);
+    const scales = art.map((child) => child.scale.x);
+    await tween(turbo ? 100 : 220, (p) => {
+      const scale = 1 + Math.sin(p * Math.PI) * 0.08;
+      art.forEach((child, i) => child.scale.set(scales[i]! * scale));
+    }, linear);
+    art.forEach((child, i) => child.scale.set(scales[i]!));
   }
 
   /** Dead spin (no land): a red wash around the opening + a centred "NO HIT" so
@@ -2011,20 +1688,11 @@ export class BonusView extends Container {
     // A dead spin spends one of only three chances, so it has to LAND as bad:
     // the reel window jolts, dims, and takes a hard amber slam ring — not just
     // a soft outline pulse.
-    const shakeTarget = this.gridLayer;
-    const ox = shakeTarget.x;
-    const oy = shakeTarget.y;
-    void tween(260, (p) => {
-      const d = (1 - p) * 7;
-      shakeTarget.x = ox + Math.sin(p * Math.PI * 9) * d;
-      shakeTarget.y = oy + Math.cos(p * Math.PI * 7) * d * 0.6;
-    }, linear).then(() => { shakeTarget.x = ox; shakeTarget.y = oy; });
-
     // Dark wash over the window — the light goes out for a beat.
     const wash = new Graphics();
     wash.rect(o.x, o.y, o.width, o.height).fill({ color: 0x000000, alpha: 1 });
     this.fxLayer.addChild(wash);
-    void tween(430, (p) => { wash.alpha = 0.44 * Math.sin(p * Math.PI) ** 0.7; })
+    void tween(430, (p) => { wash.alpha = 0.2 * Math.sin(p * Math.PI) ** 0.7; })
       .then(() => wash.destroy());
 
     const ring = new Graphics();
@@ -2034,7 +1702,7 @@ export class BonusView extends Container {
       ring.clear();
       // Two rings: a hard inner slam plus a wider one that snaps outward.
       ring.roundRect(o.x - 8, o.y - 8, o.width + 16, o.height + 16, 10)
-        .stroke({ color: POLICE_RED, width: 9, alpha: a });
+        .stroke({ color: POLICE_RED, width: 3, alpha: a * 0.6 });
       const g = 10 + 26 * p;
       ring.roundRect(o.x - g, o.y - g, o.width + g * 2, o.height + g * 2, 14)
         .stroke({ color: POLICE_RED, width: 3, alpha: a * (1 - p) * 0.8 });
@@ -2063,91 +1731,14 @@ export class BonusView extends Container {
     void tween(360, (p) => {
       f.clear();
       const blue = p < 0.5;
-      f.rect(0, 0, W, H).fill({ color: blue ? POLICE_BLUE : POLICE_RED, alpha: (1 - p) * 0.28 });
+      f.rect(0, 0, W, H).fill({ color: blue ? POLICE_BLUE : POLICE_RED, alpha: (1 - p) * 0.09 });
     }).then(() => f.destroy());
-  }
-
-  /**
-   * GTA-style BUST: a chromatic jolt, the police strobes slam in from both sides
-   * and converge, then everything settles to a slow, grim red heartbeat. No
-   * fireworks — the world goes cold and you got caught.
-   */
-  private async bustedSequence(turbo: boolean): Promise<void> {
-    const W = this.rect.width;
-    const H = this.rect.height;
-    // Hard chromatic jolt — the world splits for a moment
-    void pulseChromaticAberration(this, { intensity: turbo ? 8 : 18, duration: turbo ? 300 : 800 });
-
-    // Brief white snap at impact (like a taser/flashbang hit)
-    const snap = new Graphics();
-    snap.rect(0, 0, W, H).fill({ color: 0xffffff, alpha: 0.6 });
-    this.fxLayer.addChild(snap);
-    void tween(turbo ? 120 : 280, (p) => { snap.alpha = (1 - p) * 0.6; }).then(() => snap.destroy());
-
-    const lights = new Graphics();
-    this.fxLayer.addChild(lights);
-    lights.filters = [new BlurFilter({ strength: 50, quality: 2 })];
-
-    await tween(turbo ? 320 : 1800, (p) => {
-      lights.clear();
-      // red (left) + blue (right) strobes slam in hard and converge
-      const conv = easeOutCubic(Math.min(1, p * 2.8));
-      const redX = -W * 0.2 + W * 0.38 * conv;
-      const blueX = W * 1.2 - W * 0.38 * conv;
-      const strobe = Math.abs(Math.sin(p * Math.PI * (turbo ? 8 : 14)));
-      const fade = p > 0.55 ? 1 - (p - 0.55) / 0.45 : 1;
-      lights.ellipse(redX, H * 0.52, W * 0.42, H * 0.68)
-        .fill({ color: POLICE_RED, alpha: strobe * 0.58 * fade });
-      lights.ellipse(blueX, H * 0.52, W * 0.42, H * 0.68)
-        .fill({ color: POLICE_BLUE, alpha: (1 - strobe) * 0.58 * fade });
-      // grim red heartbeat that lingers — you're caught
-      const beat = p > 0.4 ? Math.abs(Math.sin((p - 0.4) * Math.PI * 3.5)) * 0.22 : 0;
-      lights.rect(0, 0, W, H).fill({ color: 0x3a0505, alpha: beat });
-    }, linear);
-    lights.destroy();
-  }
-
-  /**
-   * GRAND ESCAPE: a warm bloom surge over the whole scene, a soft gold light ring
-   * blooming outward, and a cinematic rain of bank notes + coins. Filmic, not
-   * arcade confetti.
-   */
-  private async grandEscape(turbo: boolean): Promise<void> {
-    const W = this.rect.width;
-    const H = this.rect.height;
-    const cx = W / 2, cy = H * 0.46;
-
-    // the lights surge — GPU bloom over the entire bonus
-    void pulseBloom(this, { scale: turbo ? 0.8 : 1.5, duration: turbo ? 520 : 1150 });
-
-    // warm flash that decays
-    const flash = new Graphics();
-    flash.rect(0, 0, W, H).fill({ color: 0xfff0cf, alpha: 0.72 });
-    this.fxLayer.addChild(flash);
-
-    // soft blooming light ring (blurred → a shockwave of light, not a hoop)
-    const ring = new Graphics();
-    ring.filters = [new BlurFilter({ strength: 9, quality: 2 })];
-    this.fxLayer.addChild(ring);
-
-    // cinematic cash-rain
-    this.cashRain(turbo);
-
-    const reach = Math.max(W, H) * 0.62;
-    await tween(turbo ? 320 : 1150, (p) => {
-      const e = easeOutCubic(p);
-      flash.alpha = (1 - p) * 0.72;
-      ring.clear();
-      ring.circle(cx, cy, reach * e).stroke({ color: GOLD, width: Math.max(1, 16 * (1 - p)), alpha: (1 - p) * 0.7 });
-      ring.circle(cx, cy, reach * e * 0.66).stroke({ color: 0xffffff, width: Math.max(1, 7 * (1 - p)), alpha: (1 - p) * 0.45 });
-    }, linear);
-    flash.destroy();
-    ring.destroy();
   }
 
   // ── ambient + totals ─────────────────────────────────────────────────
   private startAmbient(): void {
     this.stopAmbient();
+    this.rig.position.set(0, 0);
     this.truckLayer.position.set(0, 0);
     this.gridLayer.position.set(0, 0);
     this.lockedLayer.position.set(0, 0);
@@ -2181,9 +1772,7 @@ export class BonusView extends Container {
     const amp = 1.6 + this.heat * 0.6 + this.shakeBoost * 2.6;
     const ox = rx * amp;
     const oy = (ry + bob) * amp;
-    this.truckLayer.position.set(ox, oy);
-    this.gridLayer.position.set(ox, oy);
-    this.lockedLayer.position.set(ox, oy);
+    this.rig.position.set(ox, oy);
   }
 
   private stopAmbient(): void {
@@ -2200,7 +1789,11 @@ export class BonusView extends Container {
     return Number(t.toFixed(2));
   }
 
+  private collectedRevision = 0;
+
   private setCollected(total: number, animate: boolean): void {
+    const revision = ++this.collectedRevision;
+    this.collectedTarget = total;
     if (!this.collectedText) return;
     const paint = (v: number): void => {
       if (this.collectedText) this.collectedText.text = fmtX(v);
@@ -2212,12 +1805,14 @@ export class BonusView extends Container {
       return;
     }
     const start = this.collectedShown;
-    void tween(450, (p) => {
+    void tween(320, (p) => {
+      if (revision !== this.collectedRevision) return;
       const v = start + (total - start) * p;
       this.collectedShown = v;
       paint(v);
       this.collectedText?.scale.set(1 + Math.sin(p * Math.PI) * 0.12);
     }, easeOutCubic).then(() => {
+      if (revision !== this.collectedRevision) return;
       this.collectedShown = total;
       paint(total);
       this.collectedText?.scale.set(1);
