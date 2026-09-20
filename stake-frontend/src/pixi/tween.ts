@@ -69,23 +69,30 @@ export function tween(duration: number, update: (progress: number) => void, ease
 
 export class AmbientTicker {
   private running = false;
+  private frameId = 0;
   private callbacks: Array<(dt: number, elapsed: number) => void> = [];
   private startTime = 0;
   private lastTime = 0;
 
   add(cb: (dt: number, elapsed: number) => void): void {
-    this.callbacks.push(cb);
+    if (!this.callbacks.includes(cb)) this.callbacks.push(cb);
     if (!this.running) this.start();
   }
 
   remove(cb: (dt: number, elapsed: number) => void): void {
     this.callbacks = this.callbacks.filter((c) => c !== cb);
-    if (!this.callbacks.length) this.running = false;
+    if (!this.callbacks.length) this.stop();
   }
 
   clear(): void {
     this.callbacks = [];
+    this.stop();
+  }
+
+  private stop(): void {
     this.running = false;
+    if (this.frameId) cancelAnimationFrame(this.frameId);
+    this.frameId = 0;
   }
 
   private start(): void {
@@ -94,13 +101,14 @@ export class AmbientTicker {
     this.lastTime = this.startTime;
     const tick = (now: number) => {
       if (!this.running) return;
-      const dt = (now - this.lastTime) / 1000;
+      this.frameId = 0;
+      const dt = Math.min(0.1, (now - this.lastTime) / 1000);
       const elapsed = (now - this.startTime) / 1000;
       this.lastTime = now;
       for (const cb of this.callbacks) cb(dt, elapsed);
-      requestAnimationFrame(tick);
+      if (this.running) this.frameId = requestAnimationFrame(tick);
     };
-    requestAnimationFrame(tick);
+    this.frameId = requestAnimationFrame(tick);
   }
 }
 

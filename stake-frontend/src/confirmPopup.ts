@@ -405,6 +405,9 @@ function injectStyles(): void {
   document.head.appendChild(style);
 }
 
+
+import { attachDialog } from "./dialog";
+
 /** Sharp 5-point GTA wanted star as inline SVG (lit or dim). */
 function starSvg(lit: boolean): string {
   const cls = lit ? "lit" : "dim";
@@ -422,6 +425,8 @@ export function showConfirmPopup(
   /** Stake.US social casino — strips every restricted word (buy/bet). */
   social = false
 ): Promise<boolean> {
+
+
   injectStyles();
 
   // Single instance: a second confirmation can never stack on an open one.
@@ -440,7 +445,7 @@ export function showConfirmPopup(
     const isSuper = action === "super_getaway";
     const cardClass = isSuper ? "hc-buy-card super" : "hc-buy-card";
     const kicker = isSuper
-      ? "MAXIMUM HEAT · ALL-IN"
+      ? "SUPER GETAWAY · FEATURE PLAY"
       : social ? "HEIST BRIEFING · FEATURE PLAY" : "HEIST BRIEFING · BUY FEATURE";
     const titleLead = isSuper ? "SUPER" : social ? "THE" : "BUY";
     const titleMain = "GETAWAY";
@@ -448,8 +453,8 @@ export function showConfirmPopup(
     const confirmLabel = social ? "Confirm" : "Confirm Buy";
 
     const description = isSuper
-      ? "Skip the chase and force the highest-heat Getaway — the richest escape routes and top multipliers are locked in from the first spin."
-      : "Skip the build-up and drop straight into the Getaway bonus. The heist triggers instantly the moment you confirm.";
+      ? "Start the Super Getaway directly, with its enhanced Gold Bar value table. Five starting spins. Maximum win 5,000×. RTP 96%."
+      : "Start The Getaway directly. Five starting spins; Gold Bars stay locked. Maximum win 5,000×. RTP 96%.";
 
     // Wanted-level rating — 3 stars for a standard buy, 5 for the super.
     const litCount = isSuper ? 5 : 3;
@@ -497,9 +502,11 @@ export function showConfirmPopup(
     playAudio();
 
     let closed = false;
+    let releaseFocus = () => {};
     const cleanup = (value: boolean): void => {
       if (closed) return;
       closed = true;
+      releaseFocus();
       trackModalClosed();
       overlay.classList.remove("show");
       setTimeout(() => {
@@ -508,7 +515,7 @@ export function showConfirmPopup(
       }, 300);
 
       // Clean up key listeners
-      window.removeEventListener("keydown", handleKeyDown);
+
     };
 
     overlay.addEventListener("pointerdown", (e) => {
@@ -518,17 +525,7 @@ export function showConfirmPopup(
       }
     });
 
-    const handleKeyDown = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        playAudio();
-        cleanup(false);
-      } else if (e.key === "Enter") {
-        playAudio();
-        cleanup(true);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
+    releaseFocus = attachDialog(overlay, "Confirm feature play", () => cleanup(false));
 
     const btnClose = overlay.querySelector("#hc-btn-close") as HTMLButtonElement | null;
     const btnCancel = overlay.querySelector("#hc-btn-cancel") as HTMLButtonElement;

@@ -1,4 +1,5 @@
 import { Application } from "pixi.js";
+import { loadUiFonts } from "./typography";
 import { EventAudioBus } from "./audio";
 import { displayCurrency, uiStrings, type Board, type GameEvent, type RoundRecord, type SymbolId } from "./domain";
 import { isModalOpen, showChoiceModal, showToast } from "./modals";
@@ -23,6 +24,9 @@ import { readSession } from "./rgs/session";
 import type { BetModeObject, Jurisdiction } from "./rgs/types";
 import { showConfirmPopup } from "./confirmPopup";
 import { SettingsMenu, type TurboMode } from "./settingsMenu";
+import { selectSpinMode, starsForMode } from "./meta/starModes";
+import { cosmeticThemeFor } from "./meta/rewards";
+import { countRoundWilds, receiptKey, sanitizeReceipts, type CollectionReceipts } from "./meta/roundCollection";
 
 const root = document.querySelector<HTMLDivElement>("#app");
 if (!root) throw new Error("Missing #app root");
@@ -93,17 +97,24 @@ let power: PowerState = powerStore.load();
 // Separate 1:1 gallery state (1 WILD = 1 body part revealed).
 // This is the collection.ts system — completely distinct from powerLevel points.
 const GALLERY_STORAGE_KEY = "heatchase.gallery.v1";
+let collectionReceipts: CollectionReceipts = {};
+let collectionRoundKey = "";
+let collectionWildOrdinal = 0;
 function loadGallery(): GalleryData {
   try {
     const raw = localStorage.getItem(GALLERY_STORAGE_KEY);
     if (!raw) return emptyGallery();
-    return sanitizeGallery(JSON.parse(raw) as Partial<GalleryData>);
+    const saved = JSON.parse(raw) as Partial<GalleryData> & { receipts?: unknown };
+    collectionReceipts = sanitizeReceipts(saved.receipts);
+    return sanitizeGallery(saved);
   } catch {
     return emptyGallery();
   }
 }
 function saveGallery(data: GalleryData): void {
-  try { localStorage.setItem(GALLERY_STORAGE_KEY, JSON.stringify(data)); } catch { /* quota/private */ }
+  collectionReceipts = sanitizeReceipts(collectionReceipts);
+  // Progress and its duplicate guard are persisted together in one write.
+  try { localStorage.setItem(GALLERY_STORAGE_KEY, JSON.stringify({ ...data, receipts: collectionReceipts })); } catch { /* quota/private */ }
 }
 let gallery: GalleryData = loadGallery();
 
@@ -118,6 +129,7 @@ const currentBet = (): number => betLevels[betIndex] ?? 0;
  *  (XGC/XSC) imply it there — the replay window must stay restricted-word
  *  free too. */
 const isSocial = (): boolean =>
+  session.social ||
   Boolean(jurisdiction?.socialCasino) ||
   (isReplayActive && (currency === "XGC" || currency === "XSC"));
 /** Currency code for DISPLAY (XGC→GC, XSC→SC); wire calls keep the raw code. */
@@ -156,9 +168,14 @@ function anyOverlayOpen(): boolean {
  *  every single WILD reveals exactly one body part — always, immediately.
  *  Also adds power-level points for the head-start routing (separate system). */
 function onWildCollected(): PieceGain | null {
+  // Watching a shared result must not change the viewer's saved collection.
+  if (isReplayActive) return null;
+  const ordinal = ++collectionWildOrdinal;
+  if (collectionRoundKey && ordinal <= (collectionReceipts[collectionRoundKey]?.wilds ?? 0)) return null;
   // Always call collectWild so every WILD reveals a piece, regardless of bet mode.
   const { data: nextGallery, gain } = collectWildPiece(gallery);
   gallery = nextGallery;
+  if (collectionRoundKey) collectionReceipts[collectionRoundKey] = { wilds: ordinal, consumed: collectionReceipts[collectionRoundKey]?.consumed ?? false };
   saveGallery(gallery);
 
   // Also add power-level points (head-start routing), but only on organic spins.
@@ -181,7 +198,9 @@ function galleryStars(): number {
  *  the matching base_tierN table. (The old points-based power tier no longer feeds
  *  the meter, so the two systems can never desync.) */
 function headStartStars(): number {
-  return galleryStars();
+  // The current book was already selected. A card completed during its
+  // animation may arm the NEXT round, but cannot rewrite this round's meter.
+  return starsForMode(isPlaying || isReplayActive ? activeModeKey : spinModeForUser());
 }
 /** All armed head-start stars — same single girl-completion source now. */
 function activeStars(): number {
@@ -214,7 +233,16 @@ function galleryProgress(): GalleryProgress {
   };
 }
 
-void boot();
+// Art review only; never intercept a production/RGS launch.
+if (import.meta.env.DEV && new URLSearchParams(location.search).get("preview") === "loading") {
+  showLoader();
+  updateLoader(0.55);
+} else {
+  void boot().catch((error: unknown) => {
+    hideLoader();
+    showFatal(error instanceof Error ? error.message : String(error));
+  });
+}
 
 async function boot(): Promise<void> {
   mount.textContent = "";
@@ -235,7 +263,7 @@ async function boot(): Promise<void> {
   // Boot gates ONLY on the symbol textures. The ~6 MB of background music used
   // to be awaited here, freezing the loader on slow connections; it now streams
   // in the background and unlock() waits on it before the first sound plays.
-  await loadSymbolTextures();
+  await Promise.all([loadSymbolTextures(), loadUiFonts()]);
   void audioBus.prefetch();
   updateLoader(0.55);
 
@@ -252,7 +280,7 @@ async function boot(): Promise<void> {
       activeModeKey = session.replayMode || "base";
       anteEnabled = activeModeKey === "ante";
       const replayData = await client.getReplayData(
-        "heat-chase", "1", activeModeKey, session.replayEvent
+        session.replayGame, session.replayVersion, activeModeKey, session.replayEvent
       );
       if (replayData && replayData.state) {
         resume = {
@@ -325,6 +353,7 @@ async function boot(): Promise<void> {
 
   scene = new PixiGameScene(pixi, {
     getMode: () => activeModeKey,
+    getCosmeticTheme: () => cosmeticThemeFor(gallery.unlocks),
     isAnteEnabled: () => anteEnabled,
     isMuted: () => muted,
     isTurbo: () => isTurbo(),
@@ -579,21 +608,25 @@ async function resumeInterruptedRound(record: RoundRecord): Promise<void> {
   );
 
   isPlaying = true;
+  collectionRoundKey = receiptKey(record);
+  collectionWildOrdinal = 0;
+  spinOrganic = activeModeKey === "base" || activeModeKey === "ante" || starsForMode(activeModeKey) > 0;
+  spinBet = betAmount;
   snapshot = { ...snapshot, betAmount };
   try {
     if (choice === "watch") {
       await replayRound(record, true);
     } else {
+      // Complete only the missing collection reveals when skipping animation.
+      for (let i = 0; i < countRoundWilds(record.events); i++) onWildCollected();
       // Apply every event silently to reach the final state, settle, then
       // present the result in one popup.
       for (const event of record.events as GameEvent[]) {
         snapshot = applyEvent(snapshot, event, record);
       }
       snapshot = { ...snapshot, state: "idle" };
-      try {
-        const end = await client.endRound();
-        balance = toDisplay(end.balance.amount);
-      } catch { /* a later authenticate reconciles */ }
+      const end = await client.endRound();
+      balance = toDisplay(end.balance.amount);
       scene.renderSnapshot(snapshot);
       const total = record.payoutMultiplier * betAmount;
       await showChoiceModal(
@@ -608,6 +641,7 @@ async function resumeInterruptedRound(record: RoundRecord): Promise<void> {
         () => { if (!muted) audioBus.playUI("click", false); }
       );
     }
+    consumeRoundStars(record);
   } finally {
     isPlaying = false;
     scene.renderSnapshot(snapshot);
@@ -740,15 +774,7 @@ async function handleAction(action: string): Promise<void> {
 /** The bet mode a user "spin" should request: ante if enabled, else the
  *  collection-routed base table (base / base_tierN). */
 function spinModeForUser(): string {
-  if (anteEnabled && betModes.ante) return "ante";
-  // ONE unified head-start: the girl-completion stars (getawayStars) route the
-  // spin to the matching certified table. Every base_tierN verifies to 96%, so
-  // this is variance reshaping, not EV. Falls back to base when no girl is done.
-  const tier = Math.min(3, galleryStars());
-  for (let t = tier; t >= 1; t--) {
-    if (betModes[`base_tier${t}`]) return `base_tier${t}`;
-  }
-  return "base";
+  return selectSpinMode(anteEnabled, galleryStars(), betModes);
 }
 
 /** True when animations should run at turbo speed (persistent mode or held space). */
@@ -836,33 +862,34 @@ async function playRound(modeKey: string): Promise<void> {
       payoutMultiplier: res.round.payoutMultiplier,
       events: res.round.state
     };
+    collectionRoundKey = receiptKey(record);
+    collectionWildOrdinal = 0;
     await replayRound(record, res.round.active);
     // The collection advances DURING replay: each WILD calls runtime.collectWild()
     // from the scene, adding value-weighted points and revealing a card on cross.
   } catch (e) {
     isPlaying = false;
-    // Surface the failure — a silent stall reads as a frozen game. Connection
-    // errors additionally tell the player to reload so the round can recover.
-    if (e instanceof RgsError) {
-      showToast(
-        e.code === "ERR_NETWORK"
-          ? "CONNECTION LOST — PLEASE RELOAD THE GAME"
-          : e.code === "ERR_IPB"
-            ? "INSUFFICIENT BALANCE"
-            : `SERVER ERROR (${e.code}) — PLEASE TRY AGAIN`,
-        4200
-      );
-    } else {
-      showToast("SOMETHING WENT WRONG — PLEASE TRY AGAIN", 4200);
+    autoplayStop = true;
+    autoplayRemaining = 0;
+    // A timed-out play or settlement may already exist on the server. Never
+    // place another spin until authentication has recovered that round.
+    if (!(e instanceof RgsError) || e.code !== "ERR_IPB") {
+      showFatal(e instanceof Error ? e.message : String(e));
+      return;
     }
+    showToast("INSUFFICIENT BALANCE", 4200);
     snapshot = { ...snapshot, state: "idle" };
     scene.renderSnapshot(snapshot);
     return;
   }
   isPlaying = false;
+  consumeRoundStars(record);
+  scene.renderSnapshot(snapshot);
+}
 
-  // Consume head-starts when the Getaway triggers. The bonus has just settled
-  // (/wallet/end-round, inside replayRound).
+function consumeRoundStars(record: RoundRecord): void {
+  const key = receiptKey(record);
+  if (collectionReceipts[key]?.consumed) return;
   if (record.events.some((e) => e.type === "bonus_trigger")) {
     // Unified head-start: a NATURAL Getaway (an organic spin whose live wanted
     // level reached 5★) spends ALL the girl-completion stars — that IS the
@@ -870,12 +897,12 @@ async function playRound(modeKey: string): Promise<void> {
     if (spinOrganic && (gallery.getawayStars ?? 0) > 0) {
       const spent = gallery.getawayStars ?? 0;
       gallery = consumeGetawayStars(gallery);
+      collectionReceipts[key] = { wilds: collectionReceipts[key]?.wilds ?? 0, consumed: true };
       saveGallery(gallery);
       snapshot = { ...snapshot, lastMessage: `${spent}★ head-start used` };
     }
   }
 
-  scene.renderSnapshot(snapshot);
 }
 
 
@@ -890,12 +917,8 @@ async function replayRound(record: RoundRecord, active: boolean): Promise<void> 
   // Zero-win rounds arrive with active=false (the RGS settles them itself), so
   // no end-round request is ever sent for them.
   if (active && !isReplayActive) {
-    try {
-      const end = await client.endRound();
-      balance = toDisplay(end.balance.amount);
-    } catch {
-      /* keep last RGS balance; a future authenticate reconciles it */
-    }
+    const end = await client.endRound();
+    balance = toDisplay(end.balance.amount);
   }
 }
 
@@ -931,7 +954,23 @@ function showFatal(message: string): void {
     padding: "24px",
     zIndex: "99999"
   });
-  div.textContent = `Cannot start game — ${message}`;
+  div.style.flexDirection = "column";
+  div.style.gap = "20px";
+  div.setAttribute("role", "alert");
+  const title = document.createElement("h1");
+  title.textContent = "LET’S GET YOU BACK IN";
+  title.style.fontSize = "26px";
+  title.style.color = "#f6c3a2";
+  const detail = document.createElement("p");
+  detail.style.cssText = "max-width:540px;font:14px/1.6 Arial,sans-serif;color:#ccd5da;overflow-wrap:anywhere";
+  detail.textContent = import.meta.env.DEV
+    ? `The local game could not finish loading. Ensure the mock server is ready, then retry. ${message}`
+    : "The game could not finish loading. Check your connection and retry. If the problem continues, relaunch from the casino.";
+  const retry = document.createElement("button");
+  retry.className = "intro-enter";
+  retry.textContent = "RETRY CONNECTION";
+  retry.onclick = () => window.location.reload();
+  div.append(title, detail, retry);
   document.body.appendChild(div);
 }
 

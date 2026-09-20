@@ -1,11 +1,12 @@
 import { Text, TextStyle } from "pixi.js";
+import { UI_FONT } from "../typography";
 
 export function makeText(value: string, size: number, color: number, x = 0, y = 0, align: "left" | "center" | "right" = "left"): Text {
   const text = new Text({
     text: value,
     style: new TextStyle({
       fill: color,
-      fontFamily: "Arial, Helvetica, sans-serif",
+      fontFamily: UI_FONT,
       fontSize: size,
       fontWeight: "900",
       align

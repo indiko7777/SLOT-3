@@ -27,6 +27,8 @@ export class CardPeekView extends Container {
   ];
 
   private screenWidth = 1024;
+  private readonly compact = new Container();
+  private readonly tickPositions = this.updatePositions.bind(this);
 
   constructor(
     private readonly runtime: any,
@@ -35,9 +37,13 @@ export class CardPeekView extends Container {
     super();
     this.eventMode = "passive"; // let children receive mouse inputs
     this.createCards();
+    this.compact.eventMode = "static";
+    this.compact.cursor = "pointer";
+    this.compact.on("pointertap", () => this.onCardTapped());
+    this.addChild(this.compact);
 
     // Register smooth slider animation in the ambient ticker
-    ambientTicker.add(this.updatePositions.bind(this));
+    ambientTicker.add(this.tickPositions);
   }
 
   private getCollapsedX(index: number, parentWidth: number, isPortrait: boolean): number {
@@ -115,6 +121,22 @@ export class CardPeekView extends Container {
     const prog = this.runtime.getGalleryProgress();
     const currentGirlIdx = prog.completedGirls;
     const isPortrait = layout.portrait;
+    this.compact.visible = isPortrait;
+    for (const card of this.cards) card.visible = !isPortrait;
+    if (isPortrait && layout.collectionBar) {
+      const rect = layout.collectionBar;
+      for (const child of this.compact.removeChildren()) child.destroy({ children: true });
+      this.compact.position.set(rect.x, rect.y);
+      const accent = this.themeColors[prog.girlId] ?? 0xffdf65;
+      const bg = new Graphics().roundRect(0, 0, rect.width, rect.height, 6)
+        .fill({ color: 0x070c1e, alpha: 0.9 }).stroke({ color: accent, width: 1.5 });
+      bg.rect(8, rect.height - 5, (rect.width - 16) * Math.min(1, prog.pieces / prog.totalPieces), 2)
+        .fill({ color: accent });
+      const title = makeText(`COLLECTION · ${prog.girlName.toUpperCase()}`, 14, 0xffffff, 12, 11);
+      const progress = makeText(`${prog.pieces}/${prog.totalPieces}  ›`, 16, 0xffdf65, rect.width - 12, 9, "right");
+      this.compact.addChild(bg, title, progress);
+      return;
+    }
 
     const centerY = layout.height / 2;
     const cardStep = this.cardHeight + this.gap;
@@ -354,14 +376,14 @@ export class CardPeekView extends Container {
           }
         }
 
-        const progText = makeText(`${prog.pieces} / 8`, 11, 0xffffff, 0, this.cardHeight / 2 - 20, "center");
+        const progText = makeText(`${prog.pieces} / ${prog.totalPieces}`, 11, 0xffffff, 0, this.cardHeight / 2 - 20, "center");
         card.addChild(progText);
       }
     }
   }
 
   destroy(options?: any): void {
-    ambientTicker.remove(this.updatePositions.bind(this));
+    ambientTicker.remove(this.tickPositions);
     super.destroy(options);
   }
 }

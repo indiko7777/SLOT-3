@@ -1,0 +1,195 @@
+{
+  "checkedAt": "2026-09-20T16:46:07.314Z",
+  "server": "http://127.0.0.1:8787",
+  "modes": [
+    {
+      "mode": "base",
+      "cost": 1,
+      "replays": [
+        {
+          "scenario": "loss",
+          "event": 34076,
+          "payout": 0,
+          "events": 8,
+          "bonus": false
+        },
+        {
+          "scenario": "win",
+          "event": 2001,
+          "payout": 58,
+          "events": 36,
+          "bonus": true
+        },
+        {
+          "scenario": "cap",
+          "event": 1,
+          "payout": 5000,
+          "events": 63,
+          "bonus": true
+        }
+      ],
+      "wallet": "pass",
+      "resume": "pass"
+    },
+    {
+      "mode": "ante",
+      "cost": 1.5,
+      "replays": [
+        {
+          "scenario": "loss",
+          "event": 4022,
+          "payout": 0,
+          "events": 17,
+          "bonus": true
+        },
+        {
+          "scenario": "win",
+          "event": 2001,
+          "payout": 90.6,
+          "events": 79,
+          "bonus": true
+        },
+        {
+          "scenario": "cap",
+          "event": 1,
+          "payout": 5000,
+          "events": 69,
+          "bonus": true
+        }
+      ],
+      "wallet": "pass",
+      "resume": "pass"
+    },
+    {
+      "mode": "getaway",
+      "cost": 100,
+      "replays": [
+        {
+          "scenario": "win",
+          "event": 1860,
+          "payout": 103.5,
+          "events": 39,
+          "bonus": true
+        },
+        {
+          "scenario": "cap",
+          "event": 1,
+          "payout": 5000,
+          "events": 28,
+          "bonus": true
+        }
+      ],
+      "wallet": "pass",
+      "resume": "pass"
+    },
+    {
+      "mode": "super_getaway",
+      "cost": 500,
+      "replays": [
+        {
+          "scenario": "win",
+          "event": 2247,
+          "payout": 1933,
+          "events": 42,
+          "bonus": true
+        },
+        {
+          "scenario": "cap",
+          "event": 1,
+          "payout": 5000,
+          "events": 34,
+          "bonus": true
+        }
+      ],
+      "wallet": "pass",
+      "resume": "pass"
+    },
+    {
+      "mode": "base_tier1",
+      "cost": 1,
+      "replays": [
+        {
+          "scenario": "loss",
+          "event": 32003,
+          "payout": 0,
+          "events": 8,
+          "bonus": false
+        },
+        {
+          "scenario": "win",
+          "event": 1155,
+          "payout": 109.3,
+          "events": 68,
+          "bonus": true
+        },
+        {
+          "scenario": "cap",
+          "event": 1,
+          "payout": 5000,
+          "events": 64,
+          "bonus": true
+        }
+      ],
+      "wallet": "pass",
+      "resume": "pass"
+    },
+    {
+      "mode": "base_tier2",
+      "cost": 1,
+      "replays": [
+        {
+          "scenario": "loss",
+          "event": 32196,
+          "payout": 0,
+          "events": 8,
+          "bonus": false
+        },
+        {
+          "scenario": "win",
+          "event": 776,
+          "payout": 825.5,
+          "events": 68,
+          "bonus": true
+        },
+        {
+          "scenario": "cap",
+          "event": 1,
+          "payout": 5000,
+          "events": 64,
+          "bonus": true
+        }
+      ],
+      "wallet": "pass",
+      "resume": "not-active"
+    },
+    {
+      "mode": "base_tier3",
+      "cost": 1,
+      "replays": [
+        {
+          "scenario": "loss",
+          "event": 32197,
+          "payout": 0,
+          "events": 8,
+          "bonus": false
+        },
+        {
+          "scenario": "win",
+          "event": 2001,
+          "payout": 95.9,
+          "events": 71,
+          "bonus": true
+        },
+        {
+          "scenario": "cap",
+          "event": 1,
+          "payout": 5000,
+          "events": 42,
+          "bonus": true
+        }
+      ],
+      "wallet": "pass",
+      "resume": "not-active"
+    }
+  ]
+}

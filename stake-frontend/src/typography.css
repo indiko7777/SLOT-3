@@ -1,0 +1,19 @@
+@font-face {
+  font-family: 'Barlow Semi Condensed';
+  src: url('/assets/fonts/BarlowSemiCondensed-SemiBold.ttf') format('truetype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Barlow Semi Condensed';
+  src: url('/assets/fonts/BarlowSemiCondensed-Bold.ttf') format('truetype');
+  font-weight: 700 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+button:focus-visible, [role='button']:focus-visible {
+  outline: 2px solid #f5c8a9;
+  outline-offset: 4px;
+}

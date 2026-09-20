@@ -1,110 +1,31 @@
+import './splash.css';
 let overlay: HTMLDivElement | null = null;
-let bar: HTMLDivElement | null = null;
-
+let bar: HTMLElement | null = null;
+let label: HTMLElement | null = null;
+let track: HTMLElement | null = null;
 export function showLoader(): void {
-  overlay = document.createElement("div");
-  overlay.id = "loading-overlay";
-  Object.assign(overlay.style, {
-    position: "fixed",
-    top: "0",
-    left: "0",
-    width: "100%",
-    height: "100%",
-    zIndex: "9999",
-    // Miami neon key-art loading screen: the image covers any aspect (landscape
-    // or portrait) with a dark scrim so the title/progress stay legible.
-    background:
-      "linear-gradient(rgba(5,8,22,0.5), rgba(5,8,22,0.5)), url(assets/miami_loadscreen.webp) center center / cover no-repeat #050816",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    transition: "opacity 0.5s ease",
-    opacity: "1",
-  } satisfies Partial<Record<keyof CSSStyleDeclaration, string>>);
-
-  const title = document.createElement("div");
-  Object.assign(title.style, {
-    fontFamily: "Impact, 'Arial Black', sans-serif",
-    fontSize: "48px",
-    color: "#ffdf65",
-    letterSpacing: "4px",
-    textAlign: "center",
-    marginBottom: "8px",
-    textShadow: "0 2px 14px rgba(0,0,0,0.9), 0 0 4px rgba(0,0,0,0.9)",
-  } satisfies Partial<Record<keyof CSSStyleDeclaration, string>>);
-  title.textContent = "HEAT CHASE";
-
-  const subtitle = document.createElement("div");
-  Object.assign(subtitle.style, {
-    fontFamily: "Impact, 'Arial Black', sans-serif",
-    fontSize: "22px",
-    color: "#ffffff",
-    letterSpacing: "6px",
-    textAlign: "center",
-    marginBottom: "32px",
-    textShadow: "0 2px 14px rgba(0,0,0,0.9), 0 0 4px rgba(0,0,0,0.9)",
-  } satisfies Partial<Record<keyof CSSStyleDeclaration, string>>);
-  subtitle.textContent = "GRAND ESCAPE";
-
-  const track = document.createElement("div");
-  Object.assign(track.style, {
-    width: "60%",
-    height: "4px",
-    background: "#1a1e36",
-    borderRadius: "2px",
-    overflow: "hidden",
-    marginBottom: "16px",
-  } satisfies Partial<Record<keyof CSSStyleDeclaration, string>>);
-
-  bar = document.createElement("div");
-  Object.assign(bar.style, {
-    width: "0%",
-    height: "100%",
-    background: "#ffdf65",
-    borderRadius: "2px",
-    transition: "width 0.3s ease",
-  } satisfies Partial<Record<keyof CSSStyleDeclaration, string>>);
-  track.appendChild(bar);
-
-  const label = document.createElement("div");
-  Object.assign(label.style, {
-    fontFamily: "Impact, 'Arial Black', sans-serif",
-    fontSize: "14px",
-    color: "#ffdf65",
-    letterSpacing: "3px",
-    textAlign: "center",
-    textShadow: "0 2px 10px rgba(0,0,0,0.9)",
-  } satisfies Partial<Record<keyof CSSStyleDeclaration, string>>);
-  label.textContent = "LOADING...";
-
-  overlay.appendChild(title);
-  overlay.appendChild(subtitle);
-  overlay.appendChild(track);
-  overlay.appendChild(label);
-
-  const app = document.getElementById("app");
-  if (app) {
-    app.appendChild(overlay);
-  } else {
-    document.body.appendChild(overlay);
-  }
+  overlay?.remove();
+  overlay = document.createElement('div');
+  overlay.id = 'loading-overlay';
+  overlay.className = 'splash loader';
+  overlay.innerHTML = `<div class="splash-brand"><span class="splash-eyebrow">A COASTAL GETAWAY</span><h1>HEAT<br>CHASE<span class="splash-period">.</span></h1><p class="splash-subtitle">GRAND ESCAPE</p></div><div class="loader-footer"><div class="loader-caption"><span>WELCOME TO THE CITY</span><span data-load-label>PREPARING THE SCENE</span></div><div class="loader-track" role="progressbar" aria-label="Loading game" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="loader-fill"></div></div><p>CLUSTER WINS · WANTED LEVEL · THE GETAWAY</p></div>`;
+  bar = overlay.querySelector('.loader-fill');
+  label = overlay.querySelector('[data-load-label]');
+  track = overlay.querySelector('.loader-track');
+  (document.getElementById('app') ?? document.body).appendChild(overlay);
 }
-
 export function updateLoader(progress: number): void {
-  if (bar) {
-    const clamped = Math.max(0, Math.min(1, progress));
-    bar.style.width = `${clamped * 100}%`;
-  }
+  const value = Number.isFinite(progress) ? Math.round(Math.max(0, Math.min(1, progress)) * 100) : 0;
+  if (bar) bar.style.width = `${value}%`;
+  track?.setAttribute('aria-valuenow', String(value));
+  if (label) label.textContent = value < 55 ? 'PREPARING THE SCENE' : value < 100 ? 'CONNECTING TO THE CITY' : 'READY';
 }
-
 export function hideLoader(): void {
   if (!overlay) return;
-  overlay.style.opacity = "0";
   const ref = overlay;
-  ref.addEventListener("transitionend", () => {
-    ref.remove();
-  });
-  overlay = null;
-  bar = null;
+  ref.classList.add('splash-leaving');
+  ref.addEventListener('transitionend', () => ref.remove(), { once: true });
+  // Also remove with reduced motion or a background tab (no transitionend).
+  window.setTimeout(() => ref.remove(), 500);
+  overlay = null; bar = null; label = null; track = null;
 }

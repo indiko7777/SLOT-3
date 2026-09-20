@@ -74,7 +74,6 @@ let loaded = false;
 /** Extra non-symbol images to preload */
 const EXTRA_ASSETS: Record<string, string> = {
   "getaway_car_scene": "getaway_car_scene.webp",
-  "wanted_star": "wanted_star.webp",
   "char_silhouette": "bodycharachter1/silhouette_image1.png.webp",
   "char_piece_1": "bodycharachter1/rightfoot1.png.webp",
   "char_piece_2": "bodycharachter1/leftfoot1.png.webp",
@@ -142,7 +141,6 @@ const OPTIONAL_ASSETS: Record<string, string> = {
   // perspective still (vanishing point centred, motion-blur baked in) that
   // BonusView dolly-zooms for a 3D forward-flight feel.
   "getaway_highway": "getaway_highway.webp",
-  "highway_loop": "highway_loop.jpg",
   "brinks_truck_frame": "brinks_truck_frame.webp",
   // Door-reveal set, built by tools/asset-pipeline/prep_truck_doors.py. The
   // frame's cargo opening is transparent, so the reels show through it, and the
@@ -160,12 +158,13 @@ const OPTIONAL_ASSETS: Record<string, string> = {
 
 /** Background images — loaded separately so a missing file doesn't block the game */
 const BG_ASSETS: Record<string, string> = {
-  "bg_base": "slot3_bg.webp",
+  "bg_base": "miami_daylight_gameplay_v2.webp",
   "bg_bonus": "vault_bonus.webp",
-  "bg_slot3": "slot3_bg.webp",
 };
 
-const CACHE_BUST = `?v=${Date.now()}`;
+// Stake versions the containing CDN path. Per-load timestamps defeated the
+// browser cache and redownloaded every texture on each launch.
+const CACHE_BUST = "";
 
 export async function loadSymbolTextures(): Promise<void> {
   if (loaded) return;
@@ -267,6 +266,6 @@ export function createSkelSymbol(id: SymbolId): SkelSymbol | null {
 export const IMAGE_DROP_IN_GUIDE = {
   basePath: "public/assets/",
   requiredSymbolFiles: Object.values(SYMBOL_ASSETS).map((skin) => skin.assetKey),
-  backgrounds: ["slot3_bg.webp", "vault_bonus.webp"],
+  backgrounds: ["miami_daylight_gameplay_v2.webp", "vault_bonus.webp"],
   rightPanel: ["brand/logo.webp", "characters/getaway_driver.webp", "vehicles/cyan_sports_car.webp"]
 } as const;

@@ -16,25 +16,32 @@ export class RgsClient {
   constructor(private readonly session: GameSession) {}
 
   private async post<T>(path: string, body: Record<string, unknown>): Promise<T> {
-    let res: Response;
-    try {
-      res = await fetch(`${this.session.rgsBase}${path}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body)
-      });
-    } catch (e) {
-      throw new RgsError("ERR_NETWORK", `RGS unreachable: ${String(e)}`);
-    }
-    const json = (await res.json().catch(() => null)) as
-      | (T & { status?: { statusCode: string; statusMessage: string }; error?: string | null })
-      | null;
+    const { res, json } = await this.requestJson(
+      `${this.session.rgsBase}${path}`,
+      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }
+    );
     if (!json) throw new RgsError("ERR_GE", `RGS ${path} returned no JSON`);
     const code = json.status?.statusCode;
     if (code && code !== "SUCCESS") {
       throw new RgsError(code, json.status?.statusMessage || json.error || code);
     }
+    if (!res.ok) throw new RgsError("ERR_GE", `RGS request failed (${res.status})`);
     return json as T;
+  }
+
+  /** The deadline covers headers AND body, including a server that stalls JSON. */
+  private async requestJson(url: string, init: RequestInit = {}): Promise<{res: Response; json: any}> {
+    const abort = new AbortController();
+    const timeout = setTimeout(() => abort.abort(), 15000);
+    try {
+      const res = await fetch(url, { ...init, signal: abort.signal });
+      const json = await res.json();
+      return { res, json };
+    } catch (error) {
+      throw new RgsError("ERR_NETWORK", `RGS response could not complete: ${String(error)}`);
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   authenticate(): Promise<AuthenticateResponse> {
@@ -69,15 +76,11 @@ export class RgsClient {
   }
 
   async getReplayData(game: string, version: string, mode: string, event: string): Promise<any> {
-    const url = `${this.session.rgsBase}/bet/replay/${game}/${version}/${mode}/${event}?lang=${this.session.lang}`;
-    let res: Response;
-    try {
-      res = await fetch(url);
-    } catch (e) {
-      throw new RgsError("ERR_NETWORK", `RGS unreachable for replay: ${String(e)}`);
-    }
-    const json = await res.json().catch(() => null);
-    if (!json) throw new RgsError("ERR_GE", `RGS replay returned no JSON`);
+    const path = [game, version, mode, event].map(encodeURIComponent).join("/");
+    const url = `${this.session.rgsBase}/bet/replay/${path}?lang=${encodeURIComponent(this.session.lang)}`;
+    const { res, json } = await this.requestJson(url);
+    if (!res.ok) throw new RgsError("ERR_GE", `RGS replay failed (${res.status})`);
+    if (!json || !Array.isArray(json.state) || json.state.length === 0) throw new RgsError("ERR_GE", "RGS replay returned no events");
     return json;
   }
 }

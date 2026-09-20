@@ -1,4 +1,5 @@
 import type { Board, BonusCell, GameEvent, Position, RoundRecord, SymbolId } from "./domain";
+import { BONUS_START_RESPINS } from "./domain";
 
 export interface PlaybackSnapshot {
   state: string;
@@ -37,7 +38,7 @@ export const INITIAL_SNAPSHOT: PlaybackSnapshot = {
   transformed: [],
   cracked: [],
   scatterPositions: [],
-  respins: 3,
+  respins: BONUS_START_RESPINS,
   capApplied: false,
   collectionCount: 0,
   betAmount: 0

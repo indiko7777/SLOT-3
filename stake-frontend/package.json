@@ -7,7 +7,10 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5176",
     "mock-rgs": "tsx mock-rgs/server.ts",
-    "dev:local": "concurrently -k -n RGS,WEB -c cyan,magenta \"npm:mock-rgs\" \"npm:dev\"",
+    "dev:local": "node tools/dev-local.mjs",
+    "qa:rgs": "node tools/qa-rgs.mjs",
+    "preview:release": "node tools/preview-release.mjs",
+    "package:release": "npm run check && node tools/package-release.mjs",
     "build": "tsc && vite build",
     "test": "vitest run",
     "strip-bg": "node tools/asset-pipeline/strip-bg.mjs",

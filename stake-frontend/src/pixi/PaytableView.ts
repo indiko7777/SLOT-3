@@ -8,6 +8,7 @@ import {
 } from "../domain";
 import { getSymbolTexture, SYMBOL_ASSETS } from "./assets";
 import type { SceneRuntime } from "./types";
+import { COLLECTION_RULES, GETAWAY_RULES } from "../rules";
 
 /**
  * GAME INFO / paytable overlay. Contents satisfy the Stake approval checklist:
@@ -297,10 +298,7 @@ export class PaytableView extends Container {
     y = this.specialRow("SAFE", "Gold Bar", `Sticky value symbol worth 1x–750x your ${betWord.toLowerCase()} (higher value tables in feature plays).`, innerW, y);
     y = this.specialRow("MASTER_KEY", "Dynamite", "Doubles the value of every adjacent Gold Bar, then clears its cell.", innerW, y);
     y = this.body(
-      "Triggered by reaching a 5★ Wanted Level or by landing 3 or more Armored Trucks on one paid spin. " +
-      "The bonus starts with 4 respins on an empty 5x4 grid. Every spin that locks at least one new symbol grants +1 respin; " +
-      "a spin that locks nothing uses one respin. The bonus ends when no respins remain — all locked Gold Bar values are then paid out — " +
-      "or instantly when all 20 cells are filled, which awards the 5,000x MAX WIN.",
+      GETAWAY_RULES,
       innerW, y) + 6;
 
     // ════ 6. SPECIAL SYMBOLS ════
@@ -316,12 +314,7 @@ export class PaytableView extends Container {
     // ════ 7. COLLECTION & HEAD-START ════
     y = this.section("COLLECTION & HEAD-START", CYAN, y);
     y = this.body(
-      "Every Beach Girl Wild that lands reveals one gallery piece (tap the card next to the reels to view the gallery). " +
-      "Completing a gallery girl arms one gold Wanted star for future spins; collecting points unlocks Head-Start levels " +
-      "that route standard spins to the Head-Start modes listed above. Head-Start modes cost the same as the base game and " +
-      "return the same 96.00% — The Getaway simply appears more often in them. The Collection is a free extra: it never " +
-      "changes the price of a spin and never adds extra value beyond the listed modes. A natural 5★ Getaway consumes the " +
-      "armed gold stars; the highest Head-Start level resets the gallery when used.",
+      COLLECTION_RULES,
       innerW, y) + 6;
 
     // ════ 8. CONTROLS ════

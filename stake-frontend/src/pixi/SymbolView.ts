@@ -211,6 +211,7 @@ export class SymbolView extends Container {
       // through the filter pipeline (a render-texture resample), which softens
       // the art exactly like the reel-column blur did.
       this.filters = null;
+      this.blurFilter?.destroy();
       this.blurFilter = null;
     }
   }
@@ -373,6 +374,7 @@ export class SymbolView extends Container {
   }
 
   override destroy(options?: { children?: boolean }): void {
+    this.setSpinBlur(0);
     this.stopIdleShimmer();
     if (this.skelCb) {
       ambientTicker.remove(this.skelCb);

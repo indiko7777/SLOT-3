@@ -8,6 +8,7 @@ import type { LayoutMetrics, Rect, SceneRuntime } from "./types";
 import { formatBalance, formatWin } from "../rgs/client";
 import { OutlineFilter, DropShadowFilter } from "pixi-filters";
 import { getPrestigeTitle } from "../meta/collection";
+import { UI_FONT } from "../typography";
 
 const IDLE_MESSAGES = [
   "PRESS SPACE TO SPIN!",
@@ -59,7 +60,16 @@ const BAR = {
 } as const;
 
 export class HudView extends Container {
+  private get palette(): { gold: number; amber: number; amberDim: number; icon: number; glass: number; hot: number } {
+    switch (this.runtime.getCosmeticTheme?.()) {
+      case "neon": return { ...BAR, gold: 0x75e3dc, amber: 0xdca0cb, icon: 0xabefeb, glass: 0x101d27 };
+      case "gold": return { ...BAR, gold: 0xffd894, amber: 0xc98b4c, icon: 0xffe3b5, glass: 0x241c17 };
+      case "diamond": return { ...BAR, gold: 0xd1edff, amber: 0x87adcd, icon: 0xe7f5ff, glass: 0x152330 };
+      default: return { ...BAR, gold: 0xf5c8a9, amber: 0xd39574, icon: 0xffe8d7, glass: 0x111c23 };
+    }
+  }
   private ambientCbs: Array<(dt: number, elapsed: number) => void> = [];
+  private readonly starEffects = new Container();
   private statusText: Text | null = null;
   private winText: Text | null = null;
   private creditText: Text | null = null;
@@ -107,9 +117,12 @@ export class HudView extends Container {
   /** Full rebuild — call on initial load, window resize, and major state changes (heat advance, round end) */
   draw(layout: LayoutMetrics, snapshot: PlaybackSnapshot): void {
     this.cleanupAmbient();
-    this.removeChildren();
-    if (this.bgContainer) this.bgContainer.removeChildren();
-    if (this.underParticlesContainer) this.underParticlesContainer.removeChildren();
+    this.cancelWinAnim();
+    for (const child of this.removeChildren()) child.destroy({ children: true });
+    for (const child of this.bgContainer.removeChildren()) child.destroy({ children: true });
+    for (const child of this.underParticlesContainer.removeChildren()) {
+      if (child !== this.starEffects) child.destroy({ children: true });
+    }
     this.starDrawRect = null;
     this.statusText = null;
     this.winText = null;
@@ -121,6 +134,8 @@ export class HudView extends Container {
     if (layout.starsBar) this.drawWantedStars(layout.starsBar);
     this.drawBoardFrame(layout.boardFrame);
     this.drawControls(layout.bottomBar, snapshot);
+    // Running star tweens own their lifetime and survive an unrelated HUD redraw.
+    this.underParticlesContainer.addChild(this.starEffects);
   }
 
   /** Lightweight update — only changes the status/win text. No rebuild, no flash. */
@@ -221,7 +236,7 @@ export class HudView extends Container {
     const active = this.runtime.isHeadStartActive?.() ?? false;
     const prog = this.runtime.getGalleryProgress();
     if (tier > 0 && active) return `POWER LEVEL ${tier} ACTIVE · ${tier}★ HEAD-START`;
-    if (tier > 0 && !active) return `LOWER BET TO ARM YOUR TIER ${tier} HEAD-START`;
+    if (tier > 0 && !active) return `${tier} GOLD STARS SAVED FOR BASE MODE`;
     if (prog.prestige > 0) return `${getPrestigeTitle(prog.prestige)} ACTIVE · COLLECT WILDS FOR ${prog.girlName.toUpperCase()}`;
     if (prog.mastered) return "GALLERY MASTERED · COLLECT TO RESET";
     return `COLLECT WILDS TO UNLOCK ${prog.girlName.toUpperCase()}`;
@@ -266,11 +281,11 @@ export class HudView extends Container {
       const scaleY = layout.height / bgTex.height;
       const scale = Math.max(scaleX, scaleY);
       sprite.scale.set(scale);
-      sprite.anchor.set(0, 1);
-      sprite.position.set(0, layout.height);
+      sprite.anchor.set(0.5);
+      sprite.position.set(layout.width / 2, layout.height / 2);
       this.bgContainer.addChild(sprite);
       const dim = new Graphics();
-      dim.rect(0, 0, layout.width, layout.height).fill({ color: 0x000000, alpha: 0.15 });
+      dim.rect(0, 0, layout.width, layout.height).fill({ color: 0x0b151c, alpha: 0.06 });
       this.bgContainer.addChild(dim);
     } else {
       const g = new Graphics();
@@ -527,9 +542,9 @@ export class HudView extends Container {
   private drawBoardFrame(rect: Rect): void {
     const frame = new Graphics();
     frame.roundRect(rect.x - 2, rect.y - 2, rect.width + 4, rect.height + 4, 12)
-      .stroke({ color: BAR.amber, width: 2, alpha: 0.45 });
+      .stroke({ color: this.palette.amber, width: 2, alpha: 0.45 });
     frame.roundRect(rect.x, rect.y, rect.width, rect.height, 10)
-      .stroke({ color: BAR.gold, width: 1, alpha: 0.25 });
+      .stroke({ color: this.palette.gold, width: 1, alpha: 0.25 });
     this.underParticlesContainer.addChild(frame);
   }
 
@@ -559,7 +574,7 @@ export class HudView extends Container {
         text: "",
         style: new TextStyle({
           fill: 0xffffff,
-          fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
+          fontFamily: UI_FONT,
           fontSize: 22,
           fontWeight: "900",
           letterSpacing: 2,
@@ -573,49 +588,52 @@ export class HudView extends Container {
       this.winText = this.statusText;
 
       // 2) Single Main Horizontal Level (Level Y)
-      const levelY = rect.y + 48;
+      const compact = rect.width < 560;
+      const levelY = rect.y + (compact ? 82 : 68);
 
       // Left: Stacked Balances (Credit & Bet)
       this.creditText = new Text({
         text: isReplay ? "" : `${this.t().creditLabel} ${this.fmtMoney(credit)} ${currency}`,
         style: new TextStyle({
           fill: 0xffffff,
-          fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
+          fontFamily: UI_FONT,
           fontSize: 13,
           fontWeight: "900",
           letterSpacing: 0.5
         })
       });
       this.creditText.anchor.set(0, 0);
-      this.creditText.position.set(rect.x + 14, levelY + 12);
+      this.creditText.position.set(rect.x + 14, rect.y + 43);
+      this.fitText(this.creditText, rect.width * 0.58 - 24);
       this.addChild(this.creditText);
 
       this.betText = new Text({
         text: `${this.t().betLabel} ${this.fmtMoney(effectiveBet)} ${currency}`,
         style: new TextStyle({
           fill: 0xffdf65,
-          fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
+          fontFamily: UI_FONT,
           fontSize: 13,
           fontWeight: "900",
           letterSpacing: 0.5,
           dropShadow: { color: 0xff6a00, alpha: 0.3, blur: 4, distance: 0 }
         })
       });
-      this.betText.anchor.set(0, 0);
-      this.betText.position.set(rect.x + 14, levelY + 34);
+      this.betText.anchor.set(1, 0);
+      this.betText.position.set(rect.x + rect.width - 14, rect.y + 43);
+      this.fitText(this.betText, rect.width * 0.4 - 20);
       this.addChild(this.betText);
 
       // Center: Spin Button & Minus / Plus Controls
-      this.betButton(cx - 96, levelY + 22, 38, "−", "minus");
+      this.betButton(cx - 94, levelY + 24, 44, "−", "minus");
       this.spinButton(cx - 44, levelY); // 88px diameter spin button
-      this.betButton(cx + 58, levelY + 22, 38, "+", "plus");
+      this.betButton(cx + 50, levelY + 24, 44, "+", "plus");
 
       // Right: Utility Buttons (Menu, Radio, Info)
-      const btnSize = 34;
+      const btnSize = 36;
       const rightX = rect.x + rect.width;
-      this.smallButton(rightX - 120, levelY + 24, btnSize, "☰", "menu");
-      this.smallButton(rightX - 78, levelY + 24, btnSize, this.runtime.isMuted() ? "🔇" : "📻", "mute");
-      this.smallButton(rightX - 36, levelY + 24, btnSize, "i", "info");
+      this.smallButton(rect.x + 8, levelY + 26, btnSize, "☰", "menu");
+      this.smallButton(rightX - 44, levelY + 2, btnSize, this.runtime.isMuted() ? "🔇" : "📻", "mute");
+      this.smallButton(rightX - 44, levelY + 48, btnSize, "i", "info");
 
       const initBet = snapshot.betAmount || betLevel;
       const initWin = snapshot.roundWin > 0 ? snapshot.roundWin * initBet : 0;
@@ -651,7 +669,7 @@ export class HudView extends Container {
       text: isReplay ? "" : `${this.t().creditLabel} ${this.fmtMoney(credit)} ${currency}`,
       style: new TextStyle({
         fill: 0xffffff,
-        fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
+        fontFamily: UI_FONT,
         fontSize: 20,
         fontWeight: "900",
         letterSpacing: 1
@@ -665,7 +683,7 @@ export class HudView extends Container {
       text: `${this.t().betLabel} ${this.fmtMoney(effectiveBet)} ${currency}`,
       style: new TextStyle({
         fill: 0xffdf65,
-        fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
+        fontFamily: UI_FONT,
         fontSize: 18,
         fontWeight: "900",
         letterSpacing: 1,
@@ -683,7 +701,7 @@ export class HudView extends Container {
       text: "",
       style: new TextStyle({
         fill: 0xffffff,
-        fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
+        fontFamily: UI_FONT,
         fontSize: 24,
         fontWeight: "900",
         letterSpacing: 2,
@@ -808,7 +826,7 @@ export class HudView extends Container {
     starGfx.poly(pts).stroke({ color: 0xffffff, width: 1.5, alpha: 0.75 });
     starGfx.position.set(sx, starCY);
     starGfx.alpha = 0;
-    this.underParticlesContainer.addChild(starGfx);
+    this.starEffects.addChild(starGfx);
 
     await tween(150, (p) => {
       starGfx.alpha = p;
@@ -847,7 +865,7 @@ export class HudView extends Container {
     const centerX = rect.x + rect.width / 2;
 
     const fx = new Container();
-    this.underParticlesContainer.addChild(fx);
+    this.starEffects.addChild(fx);
 
     const stars: Graphics[] = [];
     for (let i = 0; i < 5; i++) {
@@ -939,7 +957,7 @@ export class HudView extends Container {
     const activeTier = Math.max(0, Math.min(5, this.runtime.getActiveTier?.() ?? 0));
 
     this.underParticlesContainer.addChild(makeText(
-      "WANTED LEVEL",
+      headStart > 0 ? `WANTED LEVEL · ${headStart} STAR MODE` : "WANTED LEVEL",
       labelSize,
       0x9fb4d0,
       rect.x + rect.width / 2,
@@ -1084,7 +1102,7 @@ export class HudView extends Container {
    *  (☰ 📻 ⓘ) that rendered differently on every platform and read as cheap.
    *  Sized to the button radius so they stay sharp at any DPI. */
   private drawUtilityIcon(g: Graphics, action: string, r: number): void {
-    const c = BAR.icon;
+    const c = this.palette.icon;
     const s = r / 19; // icons authored for r≈19, scaled to the actual button
     const cx = r, cy = r;
     if (action === "menu") {
@@ -1125,9 +1143,9 @@ export class HudView extends Container {
   private smallButton(x: number, y: number, size: number, _label: string, action: string): void {
     const button = new Container();
     const r = size / 2;
-    const accent = BAR.amber;
+    const accent = this.palette.amber;
     const disc = new Graphics();
-    disc.circle(r, r, r).fill({ color: BAR.glass, alpha: 0.55 });
+    disc.circle(r, r, r).fill({ color: this.palette.glass, alpha: 0.55 });
     disc.circle(r, r, r).stroke({ color: accent, width: 2.6, alpha: 0.24 });
     disc.circle(r, r, r - 0.5).stroke({ color: accent, width: 1.2, alpha: 0.82 });
     // top specular highlight — an OPEN polyline (never g.arc(); see arcPts()).
@@ -1150,9 +1168,9 @@ export class HudView extends Container {
   private betButton(x: number, y: number, size: number, _label: string, action: string): void {
     const button = new Container();
     const r = size / 2;
-    const accent = BAR.amber;
+    const accent = this.palette.amber;
     const g = new Graphics();
-    g.circle(r, r, r).fill({ color: BAR.glass, alpha: 0.55 });
+    g.circle(r, r, r).fill({ color: this.palette.glass, alpha: 0.55 });
     g.circle(r, r, r).stroke({ color: accent, width: 2.8, alpha: 0.3 });
     g.circle(r, r, r - 0.5).stroke({ color: accent, width: 1.3, alpha: 0.9 });
     g.poly(this.arcPts(r, r, r - 1.8, Math.PI * 1.15, Math.PI * 1.85), false).stroke({ color: 0xffffff, width: 1.1, alpha: 0.3 });
@@ -1163,8 +1181,8 @@ export class HudView extends Container {
     const sym = new Graphics();
     const barW = r * 0.66;
     const th = Math.max(2.8, r * 0.17);
-    sym.roundRect(r - barW / 2, r - th / 2, barW, th, th / 2).fill(BAR.gold);
-    if (action === "plus") sym.roundRect(r - th / 2, r - barW / 2, th, barW, th / 2).fill(BAR.gold);
+    sym.roundRect(r - barW / 2, r - th / 2, barW, th, th / 2).fill(this.palette.gold);
+    if (action === "plus") sym.roundRect(r - th / 2, r - barW / 2, th, barW, th / 2).fill(this.palette.gold);
     button.addChild(sym);
 
     button.position.set(x, y);
@@ -1189,21 +1207,21 @@ export class HudView extends Container {
 
     const visual = new Container();
 
-    const ring = isPlaying ? BAR.amberDim : BAR.gold;
+    const ring = isPlaying ? this.palette.amberDim : this.palette.gold;
 
     const halo = new Graphics();
-    halo.circle(R, R, R + 10).fill({ color: BAR.amber, alpha: isPlaying ? 0 : 0.09 });
+    halo.circle(R, R, R + 10).fill({ color: this.palette.amber, alpha: isPlaying ? 0 : 0.09 });
     visual.addChild(halo);
 
     const outer = new Graphics();
-    outer.circle(R, R, R).fill({ color: BAR.glass, alpha: 0.55 });
+    outer.circle(R, R, R).fill({ color: this.palette.glass, alpha: 0.55 });
     // Neon tube: soft wide pass under a bright hairline, like the buy panels.
     outer.circle(R, R, R).stroke({ color: ring, width: 4.2, alpha: 0.32 });
     outer.circle(R, R, R).stroke({ color: ring, width: 2, alpha: 0.95 });
     visual.addChild(outer);
 
     const inner = new Graphics();
-    inner.circle(R, R, R - 8).fill({ color: BAR.glass, alpha: 0.5 });
+    inner.circle(R, R, R - 8).fill({ color: this.palette.glass, alpha: 0.5 });
     inner.circle(R, R, R - 8).stroke({ color: ring, width: 1.5, alpha: 0.4 });
     visual.addChild(inner);
 
@@ -1214,13 +1232,13 @@ export class HudView extends Container {
       text: spinLabel,
       style: new TextStyle({
         fill: isAuto ? 0xff7676 : isPlaying ? 0x5a6a7c : 0xffffff,
-        fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
+        fontFamily: UI_FONT,
         fontSize: isAuto ? 18 : 22,
         fontWeight: "900",
         letterSpacing: 1,
         padding: 12,
         align: "center",
-        dropShadow: isPlaying && !isAuto ? undefined : { color: isAuto ? 0xff5555 : BAR.amber, alpha: 0.45, blur: 7, distance: 0 }
+        dropShadow: isPlaying && !isAuto ? undefined : { color: isAuto ? 0xff5555 : this.palette.amber, alpha: 0.45, blur: 7, distance: 0 }
       })
     });
     spinText.anchor.set(0.5, 0.5);

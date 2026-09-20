@@ -547,8 +547,8 @@ export class BoardView extends Container {
       const cells: ReelCell[] = [];
       const reelContainer = new Container();
       const filter = new BlurFilter();
-      filter.blurX = 0;
-      filter.blurY = 10;
+      filter.strengthX = 0;
+      filter.strengthY = 10;
       filter.quality = 3;
       reelContainer.filters = [filter];
       this.reelContainer.addChild(reelContainer);
@@ -593,11 +593,11 @@ export class BoardView extends Container {
       decelPromises.push(
         tween(stopDurMs, (p) => {
           if (p < 0.22) {
-            reel.filter.blurY = 10;
+            reel.filter.strengthY = 10;
           } else if (p <= 0.34) {
-            reel.filter.blurY = 10 * (1 - (p - 0.22) / 0.12);
+            reel.filter.strengthY = 10 * (1 - (p - 0.22) / 0.12);
           } else {
-            reel.filter.blurY = 0;
+            reel.filter.strengthY = 0;
           }
 
           const sb = slamBounce(p);
@@ -735,7 +735,7 @@ export class BoardView extends Container {
    */
   private handOffColumn(reel: Reel, finalBoard: Board): { view: SymbolView; baseY: number }[] {
     if (reel.container.destroyed) return [];
-    reel.filter.blurY = 0;
+    reel.filter.strengthY = 0;
     reel.container.filters = null;
 
     const views: { view: SymbolView; baseY: number }[] = [];
@@ -858,7 +858,7 @@ export class BoardView extends Container {
     for (let col = 0; col < GRID_COLUMNS; col++) {
       const x = col * colW;
       const shade = col % 2 === 0 ? 0x000000 : 0x000000;
-      this.background.rect(x, 0, colW, h).fill({ color: shade, alpha: 0.52 });
+      this.background.rect(x, 0, colW, h).fill({ color: shade, alpha: 0.88 });
     }
 
     // Thin neon column separators

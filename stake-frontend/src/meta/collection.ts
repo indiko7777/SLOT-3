@@ -1,16 +1,13 @@
 /**
  * Beach Girl collection — the persistent retention meta. Pure logic, no DOM.
  *
- * Design (see docs/MATH_DESIGN.md §3): the collection is COSMETIC / $0 EV. It
- * never touches RTP. ONE rare WILD symbol landing reveals ONE body part — a
- * strict 1:1 trigger (book-driven and provably fair: WILDs come from the book's
- * boards). Reveal all of a girl's parts to complete her, advance to the next,
- * grant an RTP-neutral cosmetic unlock, and persist — it NEVER resets. Three
- * girls = the gallery is mastered.
- *
- * Difficulty = WILD rarity (set in the reels) × parts per girl. To make a later
- * girl harder, give her more parts (each still one WILD). All free to tune
- * because it carries no money.
+ * One rare WILD reveals one piece. Completing a character grants a cosmetic
+ * frame theme and an armed star that selects a separate published base mode
+ * on subsequent spins. Individual pieces grant no extra gameplay reward.
+ * Completing the gallery starts a prestige loop; earned themes and armed
+ * stars survive that visual reset. Natural Getaway entry consumes the stars.
+ * Mode eligibility across paid rounds requires Stake approval; equal mode
+ * RTP alone does not establish compliance with the independent-bet rule.
  */
 
 export const SCHEMA_VERSION = 1;
@@ -27,10 +24,8 @@ export interface GirlConfig {
 }
 
 /**
- * 8 parts each = 8 rare WILDs per girl (24 WILDs to master the gallery). Only
- * girl 1 has shipped art (`char_*`); girls 2/3 progress in state and light up
- * when `char2_*` / `char3_*` art is added. To make a later girl harder, raise
- * her `pieces` (more body parts — each still one WILD).
+ * Character-specific piece counts match the shipped cutout assets:
+ * Sapphire 8, Roxy 7, Vega 8. Each piece requires one new rare WILD.
  */
 export const GIRLS: GirlConfig[] = [
   { id: 0, name: "Sapphire", pieces: 8, artPrefix: "char", unlockId: "skin_neon" },
@@ -157,7 +152,7 @@ export function collectWild(data: GalleryData): { data: GalleryData; gain: Piece
     if (!next.completed.includes(girl.id)) next.completed.push(girl.id);
     if (!next.unlocks.includes(girl.unlockId)) next.unlocks.push(girl.unlockId);
     unlockId = girl.unlockId;
-    next.getawayStars = Math.min(5, next.getawayStars + 1);
+    next.getawayStars = Math.min(3, next.getawayStars + 1);
     next.currentGirl += 1;
     next.pieces = 0;
 
@@ -168,7 +163,8 @@ export function collectWild(data: GalleryData): { data: GalleryData; gain: Piece
       next.prestige += 1;
       next.currentGirl = 0; // Loop back to Girl 0 (Sapphire)
       next.completed = []; // Reset completed for the next loop
-      next.getawayStars = 0; // Reset gold head-start stars back to 0 for fresh Prestige loop
+      // Keep the third completion reward. Prestige resets the visual collection,
+      // not its earned mode; a natural Getaway consumes the armed stars.
       if (!next.unlocks.includes(GALLERY_MASTER_UNLOCK)) next.unlocks.push(GALLERY_MASTER_UNLOCK);
     }
   }
@@ -222,7 +218,7 @@ export function sanitize(data: Partial<GalleryData> | null | undefined): Gallery
     pieces: clampInt(data.pieces, 0, maxPieces),
     completed,
     unlocks,
-    getawayStars: clampInt(data.getawayStars, 0, 5),
+    getawayStars: clampInt(data.getawayStars, 0, 3),
     prestige
   };
 }

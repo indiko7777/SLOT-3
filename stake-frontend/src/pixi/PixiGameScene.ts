@@ -10,7 +10,7 @@ import { EffectsLayer } from "./EffectsLayer";
 import { HudView } from "./HudView";
 import { PaytableView } from "./PaytableView";
 import { SymbolView, WIN_ACCENT, DEFAULT_ACCENT } from "./SymbolView";
-import { computeLayout } from "./layout";
+import { computeLayout, logicalViewport } from "./layout";
 import { getExtraTexture, silhouetteOffset } from "./assets";
 import { tween, wait, linear, easeInCubic, easeInOutCubic, easeOutBack, easeOutCubic } from "./tween";
 import type { LayoutMetrics, SceneRuntime } from "./types";
@@ -52,7 +52,7 @@ export class PixiGameScene {
   private replayIndicator: Container | null = null;
 
   constructor(private readonly app: Application, private readonly runtime: SceneRuntime) {
-    this.layout = computeLayout(app.screen.width, app.screen.height);
+    this.layout = this.measureLayout();
 
     // Disable hit-testing on the particle layer to avoid hit-testing overhead
     this.particleLayer.eventMode = "none";
@@ -132,8 +132,14 @@ export class PixiGameScene {
   }
 
   /** Called on window resize — recomputes layout and immediately redraws all panels. */
+  private measureLayout(): LayoutMetrics {
+    const viewport = logicalViewport(this.app.screen.width, this.app.screen.height);
+    this.root.scale.set(viewport.scale);
+    return computeLayout(viewport.width, viewport.height);
+  }
+
   resize(): void {
-    this.layout = computeLayout(this.app.screen.width, this.app.screen.height);
+    this.layout = this.measureLayout();
     this.board.layout(this.layout.board);
     // The Getaway bonus is a full-screen POV chase.
     this.bonus.layout({ x: 0, y: 0, width: this.layout.width, height: this.layout.height });
@@ -174,7 +180,7 @@ export class PixiGameScene {
     // Recompute layout and re-lay the board out to the new dimensions.
     // The HUD is also redrawn inside resize() if currentSnapshot is set,
     // so we don't need a second draw() call — just do it once below.
-    this.layout = computeLayout(this.app.screen.width, this.app.screen.height);
+    this.layout = this.measureLayout();
     this.board.layout(this.layout.board);
     this.bonus.layout({ x: 0, y: 0, width: this.layout.width, height: this.layout.height });
     this.board.updateCollectionCounter(snapshot.collectionCount);
@@ -263,7 +269,7 @@ export class PixiGameScene {
    *  forget: it destroys itself. */
   private triggerWhiteout(turbo: boolean): void {
     const g = new Graphics();
-    g.rect(0, 0, this.app.screen.width, this.app.screen.height).fill(0xfff4d6);
+    g.rect(0, 0, this.layout.width, this.layout.height).fill(0xfff4d6);
     g.alpha = 0;
     this.root.addChild(g);
     const dur = turbo ? 420 : 780;

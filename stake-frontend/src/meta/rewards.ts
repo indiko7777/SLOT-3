@@ -4,8 +4,8 @@
  * would break the per-mode 96% verification, see docs/MATH_DESIGN.md §3, §6).
  *
  * The unlock ids are recorded in the persistent gallery (`GalleryData.unlocks`);
- * this module maps them to display copy. Hook `applyCosmetic` to actually swap a
- * theme/skin when you build those assets — it must stay purely visual.
+ * this module maps them to display copy and the HUD frame palette. These
+ * cosmetic rewards are separate from the collection's earned star modes.
  */
 
 export interface Reward {
@@ -49,9 +49,11 @@ export function rewardFor(id: string | null | undefined): Reward | null {
 }
 
 /**
- * Apply a cosmetic unlock. Intentionally a no-op stub for now — wire it to a
- * theme swap when skin assets exist. MUST remain purely visual ($0 EV).
+ * Select the highest earned frame theme. This changes presentation only.
  */
-export function applyCosmetic(_id: string): void {
-  /* no visual themes wired yet — unlocks are recorded + surfaced via banners */
+export function cosmeticThemeFor(unlocks: readonly string[]): "neon" | "gold" | "diamond" | null {
+  if (unlocks.includes("skin_diamond")) return "diamond";
+  if (unlocks.includes("skin_gold")) return "gold";
+  if (unlocks.includes("skin_neon")) return "neon";
+  return null;
 }

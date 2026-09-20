@@ -186,7 +186,32 @@ export class EventAudioBus {
   private rawData = new Map<TrackName, ArrayBuffer>();    // pre-fetched
   private buffers = new Map<TrackName, AudioBuffer>();    // decoded
   private fetched = false;
-  private decoded = false;
+  private decodePromise: Promise<void> | null = null;
+  private master: GainNode | null = null;
+  private silenced = false;
+
+  constructor() {
+    document.addEventListener("visibilitychange", () => {
+      this.updateMaster();
+      if (!this.ctx) return;
+      if (document.hidden) void this.ctx.suspend().catch(() => undefined);
+      else void this.ctx.resume().catch(() => undefined);
+    });
+  }
+
+  private get output(): AudioNode { return this.master!; }
+
+  private updateMaster(): void {
+    if (!this.master || !this.ctx) return;
+    const value = this.silenced || document.hidden ? 0 : 0.8;
+    this.master.gain.cancelScheduledValues(this.ctx.currentTime);
+    this.master.gain.setTargetAtTime(value, this.ctx.currentTime, 0.015);
+  }
+
+  setMuted(muted: boolean): void {
+    this.silenced = muted;
+    this.updateMaster();
+  }
   /** In-flight prefetch, so boot can fire it without awaiting (keeps the ~6 MB
    *  of music off the startup critical path) while unlock() still waits on it. */
   private fetchPromise: Promise<void> | null = null;
@@ -249,20 +274,31 @@ export class EventAudioBus {
    * decode pre-fetched data into AudioBuffers (nearly instant).
    */
   async unlock(): Promise<void> {
-    if (!this.ctx) this.ctx = new AudioContext();
-    if (this.ctx.state === "suspended") await this.ctx.resume();
+    if (!this.ctx) {
+      this.ctx = new AudioContext();
+      this.master = this.ctx.createGain();
+      const limiter = this.ctx.createDynamicsCompressor();
+      limiter.threshold.value = -3;
+      limiter.knee.value = 0;
+      limiter.ratio.value = 20;
+      limiter.attack.value = 0.002;
+      limiter.release.value = 0.15;
+      this.master.connect(limiter).connect(this.ctx.destination);
+      this.updateMaster();
+    }
+    if (this.ctx.state === "suspended" && !document.hidden) await this.ctx.resume();
 
     // Boot no longer blocks on the audio download; make sure it has finished
     // (or kick it off) before decoding. unlock() always follows a user gesture,
     // so the fetch has had the whole intro/first-interaction to stream in.
     if (this.fetchPromise) await this.fetchPromise;
 
-    if (!this.decoded && this.fetched) {
-      this.decoded = true;
-      await this.decodeAll();
-      // start ambient bg music as soon as decoded
-      this.startLoop("bg_base", "bg");
+    if (!this.decodePromise && this.fetched) {
+      this.decodePromise = this.decodeAll().then(() => {
+        if (!this.silenced) this.startLoop("bg_base", "bg");
+      });
     }
+    await this.decodePromise;
   }
 
   /** Decode all pre-fetched ArrayBuffers → AudioBuffers */
@@ -302,7 +338,7 @@ export class EventAudioBus {
     source.playbackRate.value = 0.85 + progress * 0.4;     // pitch: 0.85→1.25
     const gain = this.ctx.createGain();
     gain.gain.value = (VOLUME.sticky_gold_bar ?? 0.70) * (0.5 + progress * 0.6);  // vol: 50%→110%
-    source.connect(gain).connect(this.ctx.destination);
+    source.connect(gain).connect(this.output);
     source.start();
   }
 
@@ -321,7 +357,7 @@ export class EventAudioBus {
     source.loop = false; // single play — the file is long enough for the typing duration
     const gain = this.ctx.createGain();
     gain.gain.value = VOLUME.typewriter ?? 0.80;
-    source.connect(gain).connect(this.ctx.destination);
+    source.connect(gain).connect(this.output);
     source.start();
     this.typewriterSource = source;
     this.typewriterGain = gain;
@@ -402,7 +438,7 @@ export class EventAudioBus {
       g.gain.setValueAtTime(0.0001, t);
       g.gain.exponentialRampToValueAtTime(0.10, t + dur * 0.7);
       g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.1);
-      osc.connect(lp).connect(g).connect(this.ctx.destination);
+      osc.connect(lp).connect(g).connect(this.output);
       osc.start(t); osc.stop(t + dur + 0.15);
       window.setTimeout(() => { this.riserActive = false; }, (dur + 0.2) * 1000);
     });
@@ -433,7 +469,7 @@ export class EventAudioBus {
     const master = this.ctx.createGain();
     master.gain.setValueAtTime(0.0001, this.ctx.currentTime);
     master.gain.exponentialRampToValueAtTime(0.5, this.ctx.currentTime + 0.4);
-    master.connect(this.ctx.destination);
+    master.connect(this.output);
     this.heliMaster = master;
     let next = this.ctx.currentTime + 0.05;
     const tick = (): void => {
@@ -480,6 +516,7 @@ export class EventAudioBus {
 
   /** Switch the background music to a chosen radio station. */
   selectStation(id: string): void {
+    this.setMuted(id === "off");
     this.radioStation = id;
     this.radioOverride = true;
     void this.unlock().then(() => {
@@ -513,7 +550,7 @@ export class EventAudioBus {
     const master = this.ctx.createGain();
     master.gain.setValueAtTime(0.0001, this.ctx.currentTime);
     master.gain.exponentialRampToValueAtTime(0.5, this.ctx.currentTime + FADE);
-    master.connect(this.ctx.destination);
+    master.connect(this.output);
     this.synthMaster = master;
 
     let step = 0;
@@ -543,7 +580,7 @@ export class EventAudioBus {
     const master = this.ctx.createGain();
     master.gain.setValueAtTime(0.0001, this.ctx.currentTime);
     master.gain.exponentialRampToValueAtTime(0.5, this.ctx.currentTime + FADE);
-    master.connect(this.ctx.destination);
+    master.connect(this.output);
     this.synthMaster = master;
 
     let nextTime = this.ctx.currentTime + 0.1;
@@ -755,7 +792,7 @@ export class EventAudioBus {
     source.playbackRate.value = playbackRate;
     const gain = this.ctx.createGain();
     gain.gain.value = (VOLUME[track] ?? 0.5) * volumeScale;
-    source.connect(gain).connect(this.ctx.destination);
+    source.connect(gain).connect(this.output);
     source.start();
 
     if (isVoice) {
@@ -785,7 +822,7 @@ export class EventAudioBus {
       source.playbackRate.value = pitchLevel === "high" ? 1.2 : pitchLevel === "medium" ? 1.1 : 1.0;
       const gain = this.ctx.createGain();
       gain.gain.value = (VOLUME.count_up_tick ?? 0.45);
-      source.connect(gain).connect(this.ctx.destination);
+      source.connect(gain).connect(this.output);
       source.start();
       return;
     }
@@ -801,7 +838,7 @@ export class EventAudioBus {
     g.gain.exponentialRampToValueAtTime(0.035, t + 0.005);
     g.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
     
-    osc.connect(g).connect(this.ctx.destination);
+    osc.connect(g).connect(this.output);
     osc.start(t);
     osc.stop(t + 0.09);
   }
@@ -825,7 +862,7 @@ export class EventAudioBus {
 
       const out = this.ctx.createGain();
       out.gain.value = 0.95 * scale;
-      out.connect(this.ctx.destination);
+      out.connect(this.output);
 
       // 1) Sub-bass body drop — the chest thump (sine pitch-sweep down).
       const subEnd = 0.42 + scale * 0.22;
@@ -926,7 +963,7 @@ export class EventAudioBus {
 
       const out = ctx.createGain();
       out.gain.value = 1.35 * inten;
-      out.connect(ctx.destination);
+      out.connect(this.output);
 
       // Sub-bass floor drop — this is what gives the miss real weight. Without
       // it the cue was all midrange "wah" and read as far too polite for a
@@ -1028,7 +1065,7 @@ export class EventAudioBus {
 
       const out = ctx.createGain();
       out.gain.value = 1.25;
-      out.connect(ctx.destination);
+      out.connect(this.output);
 
       // Power-down: the riser's own voice, sagging from bright to nothing while
       // the filter closes over it — reads as the machine giving up.
@@ -1115,7 +1152,7 @@ export class EventAudioBus {
 
       const out = ctx.createGain();
       out.gain.value = 1.15;
-      out.connect(ctx.destination);
+      out.connect(this.output);
 
       // 1) Diesel rev — detuned saws through a lowpass that opens as revs climb.
       const lp = ctx.createBiquadFilter();
@@ -1201,7 +1238,7 @@ export class EventAudioBus {
 
       const out = ctx.createGain();
       out.gain.value = 1.1;
-      out.connect(ctx.destination);
+      out.connect(this.output);
 
       // 1) Latch clunk — a short, hard metallic hit.
       const cFrames = Math.floor(ctx.sampleRate * 0.16);
@@ -1294,7 +1331,7 @@ export class EventAudioBus {
       g.gain.setValueAtTime(0.0001, t);
       g.gain.exponentialRampToValueAtTime(0.16, t + dur * 0.75);
       g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      src.connect(bp).connect(g).connect(this.ctx.destination);
+      src.connect(bp).connect(g).connect(this.output);
       src.start(t);
       src.stop(t + dur + 0.02);
 
@@ -1307,7 +1344,7 @@ export class EventAudioBus {
       og.gain.setValueAtTime(0.0001, t);
       og.gain.exponentialRampToValueAtTime(0.05, t + dur * 0.7);
       og.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      osc.connect(og).connect(this.ctx.destination);
+      osc.connect(og).connect(this.output);
       osc.start(t);
       osc.stop(t + dur + 0.05);
     });
@@ -1404,7 +1441,7 @@ export class EventAudioBus {
     gain.gain.setValueAtTime(0.0001, now);
     gain.gain.exponentialRampToValueAtTime(VOLUME[track] ?? 0.5, now + fade);
 
-    source.connect(gain).connect(this.ctx.destination);
+    source.connect(gain).connect(this.output);
     source.start();
 
     const loop: ActiveLoop = { source, gain, track };
@@ -1472,8 +1509,9 @@ export class EventAudioBus {
 
   /** Kill all loops immediately (for mute) */
   killAll(): void {
-    if (this.bgLoop) this.fadeAndStop(this.bgLoop);
-    if (this.spinLoop) this.fadeAndStop(this.spinLoop);
+    this.setMuted(true);
+    this.fadeOut("bg");
+    this.fadeOut("spin");
     this.stopSynthReel();
     this.stopSynthRadio();
     this.stopWinCounter();
@@ -1493,7 +1531,7 @@ export class EventAudioBus {
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(0.015, t + 0.01);
     g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
-    osc.connect(g).connect(this.ctx.destination);
+    osc.connect(g).connect(this.output);
     osc.start(t);
     osc.stop(t + 0.06);
   }
@@ -1523,7 +1561,7 @@ export class EventAudioBus {
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(s.g, t + 0.01);
     g.gain.exponentialRampToValueAtTime(0.0001, t + s.d);
-    osc.connect(g).connect(this.ctx.destination);
+    osc.connect(g).connect(this.output);
     osc.start(t);
     osc.stop(t + s.d + 0.02);
   }

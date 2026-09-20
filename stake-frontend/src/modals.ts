@@ -1,3 +1,5 @@
+import { UI_FONT } from "./typography";
+import { attachDialog } from "./dialog";
 /**
  * Shared DOM modals: interrupted-round resume, replay intro/finish, and the
  * RGS error toast. Styled to match the GTA V Settings Menu (full-screen pause menu
@@ -6,7 +8,7 @@
  * centralised in domain.ts.
  */
 
-const FONT = `'Archivo Narrow','Arial Narrow','Helvetica Neue',Helvetica,Arial,sans-serif`;
+const FONT = UI_FONT;
 
 let styleInjected = false;
 function injectStyle(): void {
@@ -62,9 +64,9 @@ function injectStyle(): void {
     color:#e6e6e6;font-family:${FONT};font-size:17px;font-weight:700;letter-spacing:1.5px;
     padding:14px 12px;cursor:pointer;text-transform:uppercase;transition:all .15s ease-out;outline:none;}
   .hc-modal-btn:hover{background:#f2f2f2;color:#000;border-color:#f2f2f2;box-shadow:0 4px 15px rgba(255,255,255,.2);}
-  .hc-modal-btn.primary{border-color:#9ae64e;background:rgba(154,230,78,.2);color:#ffffff;
-    box-shadow:0 0 14px rgba(154,230,78,.3);}
-  .hc-modal-btn.primary:hover{background:#9ae64e;color:#000;border-color:#9ae64e;box-shadow:0 0 20px rgba(154,230,78,.6);}
+  .hc-modal-btn.primary{border-color:#f5c8a9;background:rgba(245,200,169,.2);color:#ffffff;
+    box-shadow:0 0 14px rgba(245,200,169,.3);}
+  .hc-modal-btn.primary:hover{background:#f5c8a9;color:#000;border-color:#f5c8a9;box-shadow:0 0 20px rgba(245,200,169,.6);}
   
   .gta-modal-hints{display:flex;justify-content:flex-end;gap:20px;padding:8px var(--gx) 12px;flex-shrink:0;
     font-size:clamp(11px,2.2vw,12.5px);letter-spacing:1px;color:rgba(255,255,255,.6);text-transform:uppercase;
@@ -146,8 +148,13 @@ export function showChoiceModal(spec: ModalSpec, playClick?: () => void): Promis
     overlay.className = "hc-modal-overlay";
 
     const cancelKey = spec.buttons.find(b => !b.primary)?.key ?? spec.buttons[0]?.key ?? "cancel";
+    let closed = false;
+    let releaseFocus = () => {};
 
     const finish = (key: string): void => {
+      if (closed) return;
+      closed = true;
+      releaseFocus();
       openModals = Math.max(0, openModals - 1);
       overlay.classList.remove("show");
       window.setTimeout(() => overlay.remove(), 160);
@@ -240,6 +247,7 @@ export function showChoiceModal(spec: ModalSpec, playClick?: () => void): Promis
     overlay.appendChild(hints);
 
     document.body.appendChild(overlay);
+    releaseFocus = attachDialog(overlay, spec.title, () => finish(cancelKey));
     overlay.offsetHeight; // reflow for the transition
     overlay.classList.add("show");
   });

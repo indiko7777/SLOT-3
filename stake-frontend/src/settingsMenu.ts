@@ -1,3 +1,4 @@
+import { UI_FONT } from "./typography";
 /**
  * GTA V pause-menu styled full-screen game menu. Opened by the ☰ (burger)
  * button on the GAME tab, and by the ⓘ info button directly on the PAYTABLE
@@ -40,6 +41,7 @@ import {
   type SymbolId,
 } from "./domain";
 import { SYMBOL_ASSETS } from "./pixi/assets";
+import { COLLECTION_RULES, GETAWAY_RULES } from "./rules";
 
 export type TurboMode = "off" | "turbo" | "super";
 export type MenuTab = "game" | "modes" | "paytable" | "features" | "controls" | "info";
@@ -128,7 +130,7 @@ function symbolImgSrc(symId: SymbolId): string {
 // Chalet (the actual GTA V UI face) is proprietary; Archivo Narrow is the
 // closest free match and is loaded from index.html, with Arial Narrow as the
 // no-network fallback.
-const FONT = `'Archivo Narrow','Arial Narrow','Helvetica Neue',Helvetica,Arial,sans-serif`;
+const FONT = UI_FONT;
 
 let styleInjected = false;
 function injectStyle(): void {
@@ -616,10 +618,7 @@ export class SettingsMenu {
     );
     parent.appendChild(
       this.bodyText(
-        "Triggered by reaching a 5★ Wanted Level or by landing 3 or more Armored Trucks on one paid spin. " +
-          "The bonus starts with 4 respins on an empty 5x4 grid. Every spin that locks at least one new symbol grants +1 respin; " +
-          "a spin that locks nothing uses one respin. The bonus ends when no respins remain — all locked Gold Bar values are then paid out — " +
-          "or instantly when all 20 cells are filled, which awards the 5,000x MAX WIN.",
+        GETAWAY_RULES,
       ),
     );
 
@@ -643,12 +642,7 @@ export class SettingsMenu {
     parent.appendChild(this.sep("Collection & Head-Start"));
     parent.appendChild(
       this.bodyText(
-        "Every Beach Girl Wild that lands reveals one gallery piece (tap the card next to the reels to view the gallery). " +
-          "Completing a gallery girl arms one gold Wanted star for future spins; collecting points unlocks Head-Start levels " +
-          "that route standard spins to the Head-Start modes listed on the MODES tab. Head-Start modes cost the same as the base game and " +
-          "return the same 96.00% — The Getaway simply appears more often in them. The Collection is a free extra: it never " +
-          "changes the price of a spin and never adds extra value beyond the listed modes. A natural 5★ Getaway consumes the " +
-          "armed gold stars; the highest Head-Start level resets the gallery when used.",
+        COLLECTION_RULES,
       ),
     );
   }
@@ -693,8 +687,8 @@ export class SettingsMenu {
     parent.appendChild(
       this.bodyText(
         social
-          ? "Heat Chase: Grand Escape — cluster-pays game on a 6x5 grid with cascading wins, a Wanted Level meter and The Getaway Hold & Spin bonus. Every mode returns an expected 96.00% over many plays; wins are capped at 5,000x the base play amount."
-          : "Heat Chase: Grand Escape — cluster-pays slot on a 6x5 grid with cascading wins, a Wanted Level meter and The Getaway Hold & Spin bonus. Every mode returns an expected 96.00% RTP over many plays; wins are capped at 5,000x the base bet.",
+          ? "Heat Chase: Grand Escape — cluster-pays game on a 5x4 grid with cascading wins, a Wanted Level meter and The Getaway Hold & Spin bonus. Every mode returns an expected 96.00% over many plays; wins are capped at 5,000x the base play amount."
+          : "Heat Chase: Grand Escape — cluster-pays slot on a 5x4 grid with cascading wins, a Wanted Level meter and The Getaway Hold & Spin bonus. Every mode returns an expected 96.00% RTP over many plays; wins are capped at 5,000x the base bet.",
       ),
     );
 

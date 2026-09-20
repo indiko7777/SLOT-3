@@ -48,6 +48,7 @@ export interface SceneRuntime {
   collectWild(): PieceGain | null;
   /** Full persistent-gallery progress for the HUD. */
   getGalleryProgress(): GalleryProgress;
+  getCosmeticTheme?(): "neon" | "gold" | "diamond" | null;
   /** Head-start Power Level unlocked (0..3), regardless of the current bet. */
   getActiveTier?(): number;
   /** Head-start stars in effect for the CURRENT bet (0..3): the active tier when
@@ -118,6 +119,7 @@ export interface LayoutMetrics {
   artPanel: Rect | null;
   /** Portrait-only: strip above the reel grid reserved for the 5 wanted stars. */
   starsBar: Rect | null;
+  collectionBar: Rect | null;
   machine: Rect;
   boardFrame: Rect;
   board: Rect;

@@ -1965,6 +1965,8 @@ export class BonusView extends Container {
       strip.y = -travel * (1 - reelPos(p));
       blur.strengthY = blurMax * reelVel(p);   // blurry while fast, razor sharp at rest
     }, linear).then(() => {
+      strip.filters = null;
+      blur.destroy();
       strip.destroy({ children: true });
       mask.destroy();
       let landDelay = 0;

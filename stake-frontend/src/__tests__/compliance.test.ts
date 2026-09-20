@@ -1,7 +1,37 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { displayCurrency, uiStrings } from "../domain";
-import { formatBalance, formatWin } from "../rgs/client";
+import { formatBalance, formatWin, RgsClient } from "../rgs/client";
 import { parseLaunch } from "../rgs/session";
+
+describe("public replay requests", () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+  const client = () => new RgsClient(parseLaunch(new URLSearchParams("replay=true&rgs_url=rgs.example.com"), "game.example.com", false));
+  it("requests the supplied event without authenticating", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ state: [{ type: "round_end" }], payoutMultiplier: 0 })));
+    vi.stubGlobal("fetch", fetchMock);
+    await client().getReplayData("my game", "7", "base", "42");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith("https://rgs.example.com/bet/replay/my%20game/7/base/42?lang=en", { signal: expect.any(AbortSignal) });
+  });
+  it("rejects HTTP errors even when the body is JSON", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "not found" }), { status: 404 })));
+    await expect(client().getReplayData("game", "1", "base", "42")).rejects.toThrow("404");
+  });
+  it("rejects empty event lists instead of entering a dead replay screen", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ state: [] }))));
+    await expect(client().getReplayData("game", "1", "base", "42")).rejects.toThrow("no events");
+  });
+  it("times out when headers arrive but the response body stalls", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn().mockImplementation((_url, init) => Promise.resolve({
+      ok: true,
+      json: () => new Promise((_resolve, reject) => init.signal.addEventListener("abort", () => reject(new Error("aborted body")))),
+    })));
+    const result = expect(client().getReplayData("game", "1", "base", "42")).rejects.toThrow("aborted body");
+    await vi.advanceTimersByTimeAsync(15000);
+    await result;
+  });
+});
 
 describe("win/balance display precision", () => {
   it("balance is always exactly 2 decimals", () => {
@@ -47,6 +77,20 @@ describe("social terminology", () => {
 describe("launch parsing", () => {
   const parse = (qs: string, isDev = false) =>
     parseLaunch(new URLSearchParams(qs), "game.example.com", isDev);
+
+  it("supports public HTTPS replays without a wallet session", () => {
+    const s = parse("replay=true&game=studio-game&version=7&event=42&rgs_url=rgs.example.com&social=true");
+    expect(s.rgsBase).toBe("https://rgs.example.com");
+    expect(s.isLocal).toBe(false);
+    expect(s.sessionID).toBe("");
+    expect(s.replayGame).toBe("studio-game");
+    expect(s.replayVersion).toBe("7");
+    expect(s.social).toBe(true);
+  });
+
+  it("does not enter replay when replay=false", () => {
+    expect(parse("sessionID=a&rgs_url=rgs.example.com&replay=false").isReplayMode).toBe(false);
+  });
 
   it("uses the rgs_url query parameter for the API base", () => {
     const s = parse("sessionID=abc&rgs_url=rgs.custom-host.io&lang=en&currency=EUR");
