@@ -439,7 +439,9 @@ async function boot(): Promise<void> {
     getawayResultOpen: () => audioBus.openGetawayResult(),
     getawayResultStart: () => audioBus.startGetawayResultCount(),
     getawayResultProgress: (p) => audioBus.updateGetawayResultCount(p),
+    getawayResultTier: (level) => audioBus.getawayResultTier(level),
     getawayResultEnd: () => audioBus.endGetawayResultCount(),
+    getawayResultExit: () => audioBus.getawayResultExit(),
     getawayResultCancel: () => audioBus.cancelGetawayResult(),
     playWinTick: (level) => { if (!muted) audioBus.playWinTick(level); },
     previewRecord: PREVIEW_RECORD

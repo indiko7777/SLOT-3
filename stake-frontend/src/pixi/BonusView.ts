@@ -1184,13 +1184,63 @@ export class BonusView extends Container {
     const o = this.opening();
     this.aperture.clear().rect(o.x - 1, o.y - 1, o.width + 2, o.height + 2).fill(REEL_BG);
     this.apertureMask.clear().rect(o.x, o.y, o.width, o.height).fill(0xffffff);
-    // Cover the tinted bitmap recess with the exact reel-surface color. The
-    // trim lives outside the grid; no inset shadow darkens the outer cells.
+    this.dividerLayer.addChild(this.buildApertureTrim(o));
+  }
+
+  /**
+   * The seam where the grid meets the truck.
+   *
+   * The grid is a flat REEL_BG rectangle; the truck around it is painted art. A
+   * hard-edged black ring laid over that art reads as a pasted-on rectangle —
+   * a lip in a colour that belongs to neither side, which is exactly what made
+   * the bonus grid's edges look wrong. The rectangle also cannot be aligned to
+   * the painted opening on every screen size, so the lip is a different width
+   * on each side.
+   *
+   * So the ring is not hard-edged any more. Going outward from the grid the
+   * reel colour FADES to nothing over `FEATHER` px, which leaves no seam to
+   * misalign: wherever the edge lands it is the grid's own colour dissolving
+   * into the art. Going inward, a matching soft shadow seats the grid INSIDE
+   * the cargo bay instead of floating on top of it, and a single warm hairline
+   * — the game's gold, not a stray grey-green — draws the aperture itself.
+   */
+  private buildApertureTrim(o: Rect): Graphics {
     const trim = new Graphics();
-    trim.rect(o.x - 8, o.y - 8, o.width + 16, o.height + 16).fill(REEL_BG);
-    trim.rect(o.x, o.y, o.width, o.height).cut();
-    trim.rect(o.x - 8, o.y - 8, o.width + 16, o.height + 16).stroke({ color: 0x74807a, width: 1, alpha: 0.4 });
-    this.dividerLayer.addChild(trim);
+    const FEATHER = 20;  // reel colour dissolving outward into the truck art
+    const SEAT = 9;      // inner shadow seating the grid into the opening
+    const steps = 14;
+    // Outward: rectangular bands, drawn as four strips each so no fill ever
+    // crosses into the opening. Bands do not overlap, so each one's alpha IS
+    // the coverage at that distance — no stacking to reason about, and the
+    // outer cells are never dimmed by their own trim.
+    for (let i = 1; i <= steps; i++) {
+      // A touch of inward bleed hides the antialiased seam between bands.
+      const inner = Math.max(0, (FEATHER * (i - 1)) / steps - 0.6);
+      const outer = (FEATHER * i) / steps;
+      // Saturated for the first few px so no truck art bleeds through right at
+      // the grid edge, then a smooth falloff to nothing.
+      const alpha = Math.min(1, Math.pow(1 - (i - 0.5) / steps, 1.6) * 1.18);
+      const x = o.x - outer;
+      const y = o.y - outer;
+      const w = o.width + outer * 2;
+      const h = o.height + outer * 2;
+      const t = outer - inner;
+      const paint = { color: REEL_BG, alpha };
+      trim.rect(x, y, w, t).fill(paint);
+      trim.rect(x, y + h - t, w, t).fill(paint);
+      trim.rect(x, y + t, t, h - t * 2).fill(paint);
+      trim.rect(x + w - t, y + t, t, h - t * 2).fill(paint);
+    }
+    // Inward: a soft contact shadow, drawn as bands so it never hides a symbol.
+    for (let i = 0; i < steps; i++) {
+      const inset = (SEAT * i) / steps;
+      trim
+        .rect(o.x + inset, o.y + inset, o.width - inset * 2, o.height - inset * 2)
+        .stroke({ color: 0x000000, width: SEAT / steps + 0.8, alpha: 0.06 * (1 - i / steps), alignment: 0 });
+    }
+    // One hairline for the aperture, in the same gold as the rest of the feature.
+    trim.rect(o.x, o.y, o.width, o.height).stroke({ color: GOLD, width: 1, alpha: 0.22, alignment: 0.5 });
+    return trim;
   }
 
   /** Procedural armored-truck frame: steel border with a transparent door window. */

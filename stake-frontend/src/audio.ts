@@ -1441,7 +1441,9 @@ export class EventAudioBus {
 
   startGetawayResultCount(): void { if (!this.silenced) this.getawayResultSound?.start(); }
   updateGetawayResultCount(progress: number): void { if (!this.silenced) this.getawayResultSound?.progress(progress); }
+  getawayResultTier(level: number): void { if (!this.silenced) this.getawayResultSound?.tier(level); }
   endGetawayResultCount(): void { if (!this.silenced) this.getawayResultSound?.end(); }
+  getawayResultExit(): void { if (!this.silenced) this.getawayResultSound?.exit(); }
   cancelGetawayResult(): void { this.getawayResultSound?.cancel(); }
 
   private stopBonusOutro(): void {

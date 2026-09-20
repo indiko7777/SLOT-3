@@ -478,7 +478,9 @@ export class PixiGameScene {
           open: () => this.runtime.getawayResultOpen?.(),
           start: () => this.runtime.getawayResultStart?.(),
           progress: (p) => this.runtime.getawayResultProgress?.(p),
+          tier: (level) => this.runtime.getawayResultTier?.(level),
           end: () => this.runtime.getawayResultEnd?.(),
+          exit: () => this.runtime.getawayResultExit?.(),
           cancel: () => this.runtime.getawayResultCancel?.(),
         });
         return;

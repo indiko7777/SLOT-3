@@ -103,7 +103,9 @@ export interface SceneRuntime {
   getawayResultOpen?(): void;
   getawayResultStart?(): void;
   getawayResultProgress?(progress: number): void;
+  getawayResultTier?(level: number): void;
   getawayResultEnd?(): void;
+  getawayResultExit?(): void;
   getawayResultCancel?(): void;
   /** Discrete escalating tick under a count-up (Getaway result total). */
   playWinTick?(level: "normal" | "medium" | "high"): void;
