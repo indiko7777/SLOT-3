@@ -84,7 +84,7 @@ const EXTRA_ASSETS: Record<string, string> = {
   "char_piece_7": "bodycharachter1/rightarm1.png.webp",
   "char_piece_8": "bodycharachter1/head1.png.webp",
   "char_full": "bodycharachter1/full_image1.png.webp",
-  "real_bill": "real_bill.png",
+  "real_bill": "real_bill.webp",
 
   "char2_silhouette": "bodycharachter2/silhouette.webp",
   "char2_piece_1": "bodycharachter2/right foot.webp",
@@ -225,7 +225,7 @@ export async function loadSymbolTextures(): Promise<void> {
               if (!r.ok) throw new Error(`${r.status}`);
               return r.text();
             }),
-            Assets.load<Texture>(`${BASE_PATH}${cfg.dir}/packed.png${CACHE_BUST}`),
+            Assets.load<Texture>(`${BASE_PATH}${cfg.dir}/packed.webp${CACHE_BUST}`),
           ]);
           if (texture instanceof Texture) {
             skelCache.set(id, { data, atlasText, texture, fitW: cfg.fitW, fitH: cfg.fitH });
