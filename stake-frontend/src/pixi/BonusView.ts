@@ -1027,14 +1027,23 @@ export class BonusView extends Container {
     const top = o.y, bot = o.y + o.height;
     const freeTop = projY(top), freeBot = projY(bot);
 
+    // Corner order note: setCorners maps texture (0,0),(1,0),(1,1),(0,1) onto the
+    // four points in order. The door plates are cut from brinks_truck_frame.webp in
+    // their NATURAL orientation — left plate has its free edge (latch rod) at
+    // texture-left and its hinge at texture-right; the right plate is the reverse.
+    // Feeding the hinge corner first would sample the plate mirrored, which flips
+    // the painted "6" badge into a backwards glyph. So each door lists its FREE
+    // corner first where the plate needs it. The quad itself is unchanged — only
+    // the texture's u direction differs.
+
     // Left door: hinged on the opening's left edge, free edge sweeping right.
     const lFreeX = cx + (o.x + reach - cx) * mag;
-    this.doorL.setCorners(o.x, top, lFreeX, freeTop, lFreeX, freeBot, o.x, bot);
+    this.doorL.setCorners(lFreeX, freeTop, o.x, top, o.x, bot, lFreeX, freeBot);
 
     // Right door: mirrored — hinged on the right edge, free edge sweeping left.
     const rHingeX = o.x + o.width;
     const rFreeX = cx + (rHingeX - reach - cx) * mag;
-    this.doorR.setCorners(rFreeX, freeTop, rHingeX, top, rHingeX, bot, rFreeX, freeBot);
+    this.doorR.setCorners(rHingeX, top, rFreeX, freeTop, rFreeX, freeBot, rHingeX, bot);
 
     // Surfaces turning off-axis catch less light.
     // CLAMPED: a negative angle makes sin() negative, which pushed the channel

@@ -1,26 +1,26 @@
 packed.webp
-size: 512,512
+size: 1024,1024
 format: RGBA8888
 filter: Linear,Linear
 repeat: none
 glow
   rotate: false
   xy: 2, 2
-  size: 303, 265
-  orig: 303, 265
+  size: 680, 590
+  orig: 680, 590
   offset: 0, 0
   index: -1
 body
   rotate: false
-  xy: 2, 269
-  size: 230, 193
-  orig: 230, 193
+  xy: 2, 594
+  size: 513, 428
+  orig: 513, 428
   offset: 0, 0
   index: -1
 shine
   rotate: false
-  xy: 234, 269
-  size: 214, 182
-  orig: 214, 182
+  xy: 517, 594
+  size: 471, 400
+  orig: 471, 400
   offset: 0, 0
   index: -1

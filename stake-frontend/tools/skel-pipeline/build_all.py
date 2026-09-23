@@ -16,6 +16,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from PIL import Image
+
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from make_parts_generic import build as build_parts  # noqa: E402
@@ -42,7 +44,7 @@ def run(*args) -> str:
     return r.stdout.strip()
 
 
-def build_symbol(name: str, max_side: int = 320) -> dict:
+def build_symbol(name: str, max_side: int = 712) -> dict:
     d = HERE / "symbols" / name
     canvas, art, nparts = build_parts(name, max_side)
 
@@ -66,10 +68,18 @@ def build_symbol(name: str, max_side: int = 320) -> dict:
 
     dst = PUBLIC_SKEL / name
     dst.mkdir(parents=True, exist_ok=True)
-    for f in (f"{name}.json", f"{name}.atlas", "packed.png"):
-        (dst / f).write_bytes((d / f).read_bytes())
+    (dst / f"{name}.json").write_bytes((d / f"{name}.json").read_bytes())
 
-    kb = sum((dst / f).stat().st_size for f in (f"{name}.json", f"{name}.atlas", "packed.png")) / 1024
+    # Ship the sheet as LOSSLESS WebP, not PNG. Pixel-identical, ~40% smaller,
+    # which is what pays for the 512px art. The runtime loads the texture from a
+    # hardcoded packed.webp path (assets.ts), so the .atlas header is rewritten
+    # to match purely for consistency with the file beside it.
+    Image.open(d / "packed.png").save(dst / "packed.webp", "WEBP", lossless=True, quality=100, method=6)
+    atlas = (d / f"{name}.atlas").read_text().splitlines()
+    atlas[0] = "packed.webp"
+    (dst / f"{name}.atlas").write_text(chr(10).join(atlas) + chr(10))
+
+    kb = sum((dst / f).stat().st_size for f in (f"{name}.json", f"{name}.atlas", "packed.webp")) / 1024
     return {"name": name, "canvas": canvas, "fit": art, "parts": nparts,
             "kb": kb, "validate": summary, "warns": warns}
 

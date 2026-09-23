@@ -29,12 +29,12 @@ from anim_lib import (bake, color, damped, damped_sin, ease_in_cubic, ease_in_qu
                       ease_out_cubic, ease_out_quad, hold, rot, scale, seg, trans)
 
 TAU = 2 * math.pi
-CANVAS_H = 352
+CANVAS_H = 578  # canvas height from manifest.json; scales the drop fall distance
 
 BODY = "body"
 GLOW = "glow"
 SHINE = "shine"
-SPARKS = ["sparkle_l", "sparkle_r", "sparkle_top"]
+SPARKS = ["sparkle_0", "sparkle_1", "sparkle_2"]  # 0=left 1=right 2=top, per SYMBOL_FX order
 ALL = [GLOW, BODY, SHINE] + SPARKS
 
 
@@ -115,7 +115,7 @@ def win_anim():
         bake(4, 16, lambda r: 0.45 + 0.55 * abs(math.sin(math.pi * 2.5 * r)) ** 0.5, 1),
         hold(18, 40, 1.0)))}
     # sparkle stars: staggered bursts, alternate spin, fly a touch outward
-    dirs = {"sparkle_l": (-1.0, -0.55), "sparkle_r": (1.0, 0.35), "sparkle_top": (0.15, 1.0)}
+    dirs = {"sparkle_0": (-1.0, -0.55), "sparkle_1": (1.0, 0.35), "sparkle_2": (0.15, 1.0)}
     for i, n in enumerate(SPARKS):
         d = 1 if i % 2 == 0 else -1
         st = 5 + i * 2
@@ -219,8 +219,8 @@ def destroy_anim():
     a["slots"][GLOW] = {"color": color(seg(
         hold(0, 6, 1.0), bake(6, 20, lambda r: 1 - ease_in_quad(r), 2), [(26, 0.0)]))}
     # shards: shine + sparkle stars fly outward with spin, staggered fade
-    frags = {SHINE: (0.2, 1.0, 150), "sparkle_l": (-1.0, -0.6, 260),
-             "sparkle_r": (1.0, -0.35, 300), "sparkle_top": (0.25, 1.0, 280)}
+    frags = {SHINE: (0.2, 1.0, 150), "sparkle_0": (-1.0, -0.6, 260),
+             "sparkle_1": (1.0, -0.35, 300), "sparkle_2": (0.25, 1.0, 280)}
     for i, (n, (ux, uy, dist)) in enumerate(frags.items()):
         d = 1 if i % 2 == 0 else -1
         st = i % 3

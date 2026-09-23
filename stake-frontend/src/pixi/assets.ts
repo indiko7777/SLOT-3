@@ -45,22 +45,26 @@ const SKEL_ASSETS: Partial<Record<SymbolId, { dir: string; fitW: number; fitH: n
   // Motion is authored per symbol in tools/skel-pipeline/symbol_motion.py —
   // the pistol recoils, the knife flips, the bike revs, the safe's dial whirls.
   // Regenerate with: python tools/skel-pipeline/build_all.py <name>
-  BRASS: { dir: "skel/brass_knuckles", fitW: 230, fitH: 205 }, // cel-shaded GTA silver/chrome, skeletal rebuilt
-  KNIFE: { dir: "skel/knife", fitW: 230, fitH: 208 }, // regenerated cel-shaded GTA art, skeletal rebuilt
-  PISTOL: { dir: "skel/pistol", fitW: 230, fitH: 191 }, // regenerated cel-shaded GTA art (was 3D), skeletal rebuilt
-  AMMO: { dir: "skel/ammo", fitW: 230, fitH: 193 },
-  DUFFEL: { dir: "skel/duffel", fitW: 230, fitH: 226 }, // brighter teal Miami loot bag, skeletal rebuilt
-  CASH: { dir: "skel/cash", fitW: 230, fitH: 168 }, // regenerated cel-shaded GTA money brick (simple stack), skeletal rebuilt
+  // fitW/fitH are the ART size inside the padded canvas. They are 513px on the
+  // long edge (was 230) since the pipeline canvas went 320 -> 712: at 230 the
+  // symbols were upscaled ~2.3x on a large retina display and read soft, which
+  // is what Stake reviewers flagged as low-quality assets.
+  BRASS: { dir: "skel/brass_knuckles", fitW: 513, fitH: 456 }, // cel-shaded GTA silver/chrome, skeletal rebuilt
+  KNIFE: { dir: "skel/knife", fitW: 513, fitH: 464 }, // regenerated cel-shaded GTA art, skeletal rebuilt
+  PISTOL: { dir: "skel/pistol", fitW: 513, fitH: 426 }, // regenerated cel-shaded GTA art (was 3D), skeletal rebuilt
+  AMMO: { dir: "skel/ammo", fitW: 513, fitH: 428 },
+  DUFFEL: { dir: "skel/duffel", fitW: 513, fitH: 503 }, // brighter teal Miami loot bag, skeletal rebuilt
+  CASH: { dir: "skel/cash", fitW: 513, fitH: 374 }, // regenerated cel-shaded GTA money brick (simple stack), skeletal rebuilt
   // DIAMOND: regenerated clean art (Gemini green-screen render → chroma-keyed),
   // then its skeletal bundle REBUILT from that clean art (make_parts → pack_atlas
   // → make_skeleton → gen_anim → validate PASS). Same idle luster / win burst as
   // before, now with no crop-halo or chromatic fringe. fitW/fitH = new body size.
-  DIAMOND: { dir: "skel/diamond", fitW: 280, fitH: 228 },
-  BIKE: { dir: "skel/bike", fitW: 230, fitH: 210 },
-  WILD: { dir: "skel/wild_symbole", fitW: 222, fitH: 230 },
-  CAR_WILD: { dir: "skel/cyan_car_wild", fitW: 207, fitH: 230 },
+  DIAMOND: { dir: "skel/diamond", fitW: 513, fitH: 417 },
+  BIKE: { dir: "skel/bike", fitW: 513, fitH: 468 },
+  WILD: { dir: "skel/wild_symbole", fitW: 492, fitH: 513 },
+  CAR_WILD: { dir: "skel/cyan_car_wild", fitW: 461, fitH: 513 },
   // The scatter: Brinks armored truck, art recovered from commit cc06ba2.
-  PHONE_SCATTER: { dir: "skel/burner_phone", fitW: 230, fitH: 169 },
+  PHONE_SCATTER: { dir: "skel/burner_phone", fitW: 513, fitH: 375 },
   // SAFE / MASTER_KEY / EMPTY still have no source art (deleted in 288e28d),
   // so they fall back to the static-sprite path.
 };

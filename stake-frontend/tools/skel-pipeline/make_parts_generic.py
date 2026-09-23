@@ -13,7 +13,7 @@ and animating it against glow/shine/sparkle layers stays seam-free, and the
 per-symbol motion in symbol_motion.py is what makes each one feel specific.
 
 Usage:
-  python make_parts_generic.py <symbol_name> [--max=320]
+  python make_parts_generic.py <symbol_name> [--max=712]
 """
 import math
 import sys
@@ -73,7 +73,7 @@ def star(size, colour, core=(255, 255, 255)):
     return im.filter(ImageFilter.GaussianBlur(s * 0.006)).resize((max(8, size),) * 2, Image.LANCZOS)
 
 
-def build(name: str, max_side: int = 320) -> tuple:
+def build(name: str, max_side: int = 712) -> tuple:
     src = SYMBOLS_SRC / f"{name}.webp"
     if not src.exists():
         # raise, don't sys.exit: build_all must be able to skip a missing symbol
@@ -147,7 +147,7 @@ def build(name: str, max_side: int = 320) -> tuple:
 
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    mx = 320
+    mx = 712
     for a in sys.argv[1:]:
         if a.startswith("--max="):
             mx = int(a.split("=")[1])

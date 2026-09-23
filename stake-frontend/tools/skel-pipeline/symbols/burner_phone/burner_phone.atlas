@@ -1,26 +1,26 @@
 packed.png
-size: 512,512
+size: 1024,1024
 format: RGBA8888
 filter: Linear,Linear
 repeat: none
 glow
   rotate: false
   xy: 2, 2
-  size: 298, 234
-  orig: 298, 234
+  size: 668, 520
+  orig: 668, 520
   offset: 0, 0
   index: -1
 body
   rotate: false
-  xy: 2, 238
-  size: 230, 169
-  orig: 230, 169
+  xy: 2, 524
+  size: 512, 375
+  orig: 512, 375
   offset: 0, 0
   index: -1
 shine
   rotate: false
-  xy: 234, 238
-  size: 221, 155
-  orig: 221, 155
+  xy: 516, 524
+  size: 485, 353
+  orig: 485, 353
   offset: 0, 0
   index: -1

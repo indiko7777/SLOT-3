@@ -1,8 +1,8 @@
 {
  "skeleton": {
   "spine": "3.8.75",
-  "width": 400,
-  "height": 352,
+  "width": 712,
+  "height": 578,
   "images": "./parts",
   "hash": "kf"
  },
@@ -17,38 +17,38 @@
   {
    "name": "glow",
    "parent": "symbol_anchor",
-   "x": 0.0,
-   "y": -1.5
+   "x": -1.0,
+   "y": -2.5
   },
   {
    "name": "body",
    "parent": "symbol_anchor",
-   "x": 0.0,
-   "y": 0.0
+   "x": -0.5,
+   "y": 0.5
   },
   {
    "name": "shine",
    "parent": "symbol_anchor",
    "x": -0.5,
-   "y": 1.5
+   "y": 4.0
   },
   {
-   "name": "sparkle_l",
+   "name": "sparkle_0",
    "parent": "symbol_anchor",
-   "x": -56.0,
-   "y": -36.0
+   "x": -104.0,
+   "y": -66.0
   },
   {
-   "name": "sparkle_r",
+   "name": "sparkle_1",
    "parent": "symbol_anchor",
-   "x": 67.0,
-   "y": 14.0
+   "x": 122.5,
+   "y": 26.5
   },
   {
-   "name": "sparkle_top",
+   "name": "sparkle_2",
    "parent": "symbol_anchor",
-   "x": 5.0,
-   "y": 78.0
+   "x": 9.0,
+   "y": 143.0
   }
  ],
  "slots": [
@@ -68,19 +68,19 @@
    "attachment": "shine"
   },
   {
-   "name": "sparkle_l",
-   "bone": "sparkle_l",
-   "attachment": "sparkle_l"
+   "name": "sparkle_0",
+   "bone": "sparkle_0",
+   "attachment": "sparkle_0"
   },
   {
-   "name": "sparkle_r",
-   "bone": "sparkle_r",
-   "attachment": "sparkle_r"
+   "name": "sparkle_1",
+   "bone": "sparkle_1",
+   "attachment": "sparkle_1"
   },
   {
-   "name": "sparkle_top",
-   "bone": "sparkle_top",
-   "attachment": "sparkle_top"
+   "name": "sparkle_2",
+   "bone": "sparkle_2",
+   "attachment": "sparkle_2"
   }
  ],
  "skins": {
@@ -89,48 +89,48 @@
     "glow": {
      "x": 0.0,
      "y": 0.0,
-     "width": 366,
-     "height": 301
+     "width": 674,
+     "height": 557
     }
    },
    "body": {
     "body": {
      "x": 0.0,
      "y": 0.0,
-     "width": 280,
-     "height": 228
+     "width": 513,
+     "height": 417
     }
    },
    "shine": {
     "shine": {
      "x": 0.0,
      "y": 0.0,
-     "width": 275,
-     "height": 221
+     "width": 499,
+     "height": 404
     }
    },
-   "sparkle_l": {
-    "sparkle_l": {
+   "sparkle_0": {
+    "sparkle_0": {
      "x": 0.0,
      "y": 0.0,
-     "width": 46,
-     "height": 46
+     "width": 136,
+     "height": 138
     }
    },
-   "sparkle_r": {
-    "sparkle_r": {
+   "sparkle_1": {
+    "sparkle_1": {
      "x": 0.0,
      "y": 0.0,
-     "width": 40,
-     "height": 38
+     "width": 117,
+     "height": 117
     }
    },
-   "sparkle_top": {
-    "sparkle_top": {
+   "sparkle_2": {
+    "sparkle_2": {
      "x": 0.0,
      "y": 0.0,
-     "width": 54,
-     "height": 54
+     "width": 164,
+     "height": 164
     }
    }
   }
@@ -756,7 +756,7 @@
       }
      ]
     },
-    "sparkle_l": {
+    "sparkle_0": {
      "rotate": [
       {
        "time": 0.0,
@@ -1227,7 +1227,7 @@
       }
      ]
     },
-    "sparkle_r": {
+    "sparkle_1": {
      "rotate": [
       {
        "time": 0.0,
@@ -1698,7 +1698,7 @@
       }
      ]
     },
-    "sparkle_top": {
+    "sparkle_2": {
      "rotate": [
       {
        "time": 0.0,
@@ -2379,7 +2379,7 @@
       }
      ]
     },
-    "sparkle_l": {
+    "sparkle_0": {
      "color": [
       {
        "time": 0.0,
@@ -2675,7 +2675,7 @@
       }
      ]
     },
-    "sparkle_r": {
+    "sparkle_1": {
      "color": [
       {
        "time": 0.0,
@@ -2971,7 +2971,7 @@
       }
      ]
     },
-    "sparkle_top": {
+    "sparkle_2": {
      "color": [
       {
        "time": 0.0,
@@ -3736,7 +3736,7 @@
       }
      ]
     },
-    "sparkle_l": {
+    "sparkle_0": {
      "scale": [
       {
        "time": 0.0,
@@ -4054,7 +4054,7 @@
       }
      ]
     },
-    "sparkle_r": {
+    "sparkle_1": {
      "scale": [
       {
        "time": 0.0,
@@ -4363,7 +4363,7 @@
       }
      ]
     },
-    "sparkle_top": {
+    "sparkle_2": {
      "scale": [
       {
        "time": 0.0,
@@ -4789,7 +4789,7 @@
       }
      ]
     },
-    "sparkle_l": {
+    "sparkle_0": {
      "color": [
       {
        "time": 0.0,
@@ -4837,7 +4837,7 @@
       }
      ]
     },
-    "sparkle_r": {
+    "sparkle_1": {
      "color": [
       {
        "time": 0.0,
@@ -4889,7 +4889,7 @@
       }
      ]
     },
-    "sparkle_top": {
+    "sparkle_2": {
      "color": [
       {
        "time": 0.0,
@@ -4954,27 +4954,27 @@
       {
        "time": 0.0,
        "x": 0,
-       "y": 316.8
+       "y": 520.2
       },
       {
        "time": 0.06667,
        "x": 0,
-       "y": 304.1
+       "y": 499.4
       },
       {
        "time": 0.13333,
        "x": 0,
-       "y": 266.1
+       "y": 437.0
       },
       {
        "time": 0.2,
        "x": 0,
-       "y": 202.8
+       "y": 332.9
       },
       {
        "time": 0.26667,
        "x": 0,
-       "y": 114.0
+       "y": 187.3
       },
       {
        "time": 0.33333,
@@ -5115,7 +5115,7 @@
       }
      ]
     },
-    "sparkle_l": {
+    "sparkle_0": {
      "translate": [
       {
        "time": 0.0,
@@ -5193,7 +5193,7 @@
       }
      ]
     },
-    "sparkle_r": {
+    "sparkle_1": {
      "translate": [
       {
        "time": 0.0,
@@ -5267,7 +5267,7 @@
       }
      ]
     },
-    "sparkle_top": {
+    "sparkle_2": {
      "translate": [
       {
        "time": 0.0,
@@ -5419,7 +5419,7 @@
       }
      ]
     },
-    "sparkle_l": {
+    "sparkle_0": {
      "color": [
       {
        "time": 0.0,
@@ -5455,7 +5455,7 @@
       }
      ]
     },
-    "sparkle_r": {
+    "sparkle_1": {
      "color": [
       {
        "time": 0.0,
@@ -5491,7 +5491,7 @@
       }
      ]
     },
-    "sparkle_top": {
+    "sparkle_2": {
      "color": [
       {
        "time": 0.0,
@@ -5967,7 +5967,7 @@
       }
      ]
     },
-    "sparkle_l": {
+    "sparkle_0": {
      "translate": [
       {
        "time": 0.0,
@@ -6146,7 +6146,7 @@
       }
      ]
     },
-    "sparkle_r": {
+    "sparkle_1": {
      "translate": [
       {
        "time": 0.0,
@@ -6325,7 +6325,7 @@
       }
      ]
     },
-    "sparkle_top": {
+    "sparkle_2": {
      "translate": [
       {
        "time": 0.0,
@@ -6630,7 +6630,7 @@
       }
      ]
     },
-    "sparkle_l": {
+    "sparkle_0": {
      "color": [
       {
        "time": 0.0,
@@ -6670,7 +6670,7 @@
       }
      ]
     },
-    "sparkle_r": {
+    "sparkle_1": {
      "color": [
       {
        "time": 0.0,
@@ -6710,7 +6710,7 @@
       }
      ]
     },
-    "sparkle_top": {
+    "sparkle_2": {
      "color": [
       {
        "time": 0.0,
