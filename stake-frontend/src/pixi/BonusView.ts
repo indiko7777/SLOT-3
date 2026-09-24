@@ -40,10 +40,13 @@ const CINEMA_BAR = 0x050507; // letterbox bar colour
 // to, so it must stay matched to the FRAME, never to the door art (basing it on
 // the doors made the grid stop fitting the frame). brinks_truck_no_doors.webp is
 // registered to the same canvas, so one mapping places both.
-// Cargo opening of truck_frame_open.webp, measured from its alpha by
-// tools/asset-pipeline/prep_truck_doors.py. The opening is transparent in that
-// art, so the reels show straight through it.
-const TRUCK_OPENING = { wFrac: 0.6317, hFrac: 0.6042, cxFrac: 0.4979, cyFrac: 0.4340, aspect: 1.1191 };
+// Cargo opening of truck_frame_open.webp, measured from its alpha as the longest
+// contiguous transparent run through the centre column and row (NOT first/last
+// transparent pixel - that swallows the empty space above the truck). The opening
+// is transparent in that art, so the reels show straight through it.
+// The 1048x983 plate replaced a 714x667 one that was drawn 2-4x upscaled and read
+// softer than the doors bolted to it; the opening aspect only moved 1.1191 -> 1.1163.
+const TRUCK_OPENING = { wFrac: 0.6412, hFrac: 0.6124, cxFrac: 0.4948, cyFrac: 0.4369, aspect: 1.1163 };
 // Legacy one-piece frame (doors already drawn open) — only used if the new
 // door-reveal art is missing.
 const TRUCK_OPENING_LEGACY = { wFrac: 0.3262, hFrac: 0.507, cxFrac: 0.5, cyFrac: 0.4441, aspect: 334 / 290 };
@@ -160,6 +163,9 @@ export class BonusView extends Container {
   private readonly doorLayer = new Container();
   private doorL: PerspectiveMesh | null = null;
   private doorR: PerspectiveMesh | null = null;
+  /** [left, right] door plates: what the door shows shut vs. swung past square. */
+  private doorOuter: [Texture, Texture] | null = null;
+  private doorInner: [Texture, Texture] | null = null;
   /** Contact shadow cast into the door frame at each hinge — without it the
    *  doors read as floating in front of the truck rather than hung on it. */
   private doorShadow: Graphics | null = null;
@@ -990,8 +996,13 @@ export class BonusView extends Container {
     // Doors start shut: 8 vertices across is plenty for a smooth projective warp.
     // The hinge shadow goes down first so it sits UNDER both doors.
     this.doorShadow = new Graphics();
-    this.doorL = new PerspectiveMesh({ texture: dl, verticesX: 8, verticesY: 8 });
-    this.doorR = new PerspectiveMesh({ texture: dr, verticesX: 8, verticesY: 8 });
+    // Inner faces (what the brinks plates actually show) plus the outer faces used
+    // while the doors are shut. setDoorAngle() swaps between them at square.
+    this.doorInner = [dl, dr];
+    this.doorOuter = [getExtraTexture("truck_door_outer_l") ?? dl,
+                      getExtraTexture("truck_door_outer_r") ?? dr];
+    this.doorL = new PerspectiveMesh({ texture: this.doorOuter[0], verticesX: 8, verticesY: 8 });
+    this.doorR = new PerspectiveMesh({ texture: this.doorOuter[1], verticesX: 8, verticesY: 8 });
     this.doorLayer.addChild(this.doorShadow, this.doorL, this.doorR);
     this.setDoorAngle(0);
   }
@@ -1027,23 +1038,45 @@ export class BonusView extends Container {
     const top = o.y, bot = o.y + o.height;
     const freeTop = projY(top), freeBot = projY(bot);
 
-    // Corner order note: setCorners maps texture (0,0),(1,0),(1,1),(0,1) onto the
-    // four points in order. The door plates are cut from brinks_truck_frame.webp in
-    // their NATURAL orientation — left plate has its free edge (latch rod) at
-    // texture-left and its hinge at texture-right; the right plate is the reverse.
-    // Feeding the hinge corner first would sample the plate mirrored, which flips
-    // the painted "6" badge into a backwards glyph. So each door lists its FREE
-    // corner first where the plate needs it. The quad itself is unchanged — only
-    // the texture's u direction differs.
+    // setCorners maps texture (0,0),(1,0),(1,1),(0,1) onto the four points in
+    // order, so the plate renders MIRRORED whenever the first corner sits to the
+    // right of the second. That matters here because the doors swing PAST square
+    // (DOOR_OPEN_DEG > 90): cos() turns negative, the free edge crosses over its
+    // own hinge and the quad flips horizontally halfway through the swing. Pinning
+    // a fixed corner order therefore gets the painted "6" badge right in one state
+    // and backwards in the other — closed or open, pick your poison.
+    //
+    // So the order is chosen per frame: whichever corner is further LEFT on screen
+    // is fed first. The plate is then never mirrored, the badge reads correctly at
+    // every angle, and the door looks the same coming and going. The cost is that
+    // past square the hardware (latch rod vs hinge plates) swaps sides — invisible
+    // on a slab of riveted steel, unlike a reversed glyph.
+    const plate = (
+      door: PerspectiveMesh,
+      hingeX: number, freeX: number
+    ): void => {
+      if (freeX >= hingeX) door.setCorners(hingeX, top, freeX, freeTop, freeX, freeBot, hingeX, bot);
+      else door.setCorners(freeX, freeTop, hingeX, top, hingeX, bot, freeX, freeBot);
+    };
+
+    // A door shut shows its OUTSIDE; past square you are looking at its INSIDE.
+    // The game re-uses one plate per door, so the plate itself has to change over
+    // — otherwise the closed doors display interior latch rods and lock boxes.
+    if (this.doorOuter && this.doorInner) {
+      const inside = deg > 90;
+      const [l, r] = inside ? this.doorInner : this.doorOuter;
+      if (this.doorL.texture !== l) this.doorL.texture = l;
+      if (this.doorR.texture !== r) this.doorR.texture = r;
+    }
 
     // Left door: hinged on the opening's left edge, free edge sweeping right.
     const lFreeX = cx + (o.x + reach - cx) * mag;
-    this.doorL.setCorners(lFreeX, freeTop, o.x, top, o.x, bot, lFreeX, freeBot);
+    plate(this.doorL, o.x, lFreeX);
 
     // Right door: mirrored — hinged on the right edge, free edge sweeping left.
     const rHingeX = o.x + o.width;
     const rFreeX = cx + (rHingeX - reach - cx) * mag;
-    this.doorR.setCorners(rHingeX, top, rFreeX, freeTop, rFreeX, freeBot, rHingeX, bot);
+    plate(this.doorR, rHingeX, rFreeX);
 
     // Surfaces turning off-axis catch less light.
     // CLAMPED: a negative angle makes sin() negative, which pushed the channel

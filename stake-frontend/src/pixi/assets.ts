@@ -151,6 +151,12 @@ const OPTIONAL_ASSETS: Record<string, string> = {
   // two doors are flat face-on plates that get swung open in 3D over the top.
   "truck_frame_open": "truck_frame_open.webp",
   "truck_door_l": "truck_door_l.webp",
+  // OUTER faces. The truck_door_l/r plates are cut from brinks_truck_frame.webp,
+  // where the doors hang open PAST square — so what is painted on them is the
+  // door's INSIDE. Correct once they swing open, wrong while they are shut.
+  // BonusView swaps to these outer plates below 90 degrees.
+  "truck_door_outer_l": "truck_door_outer_l.webp",
+  "truck_door_outer_r": "truck_door_outer_r.webp",
   "truck_door_r": "truck_door_r.webp",
   "gold_bar": "gold_bar.webp",
   "dynamite": "dynamite.webp",

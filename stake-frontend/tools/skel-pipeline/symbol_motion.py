@@ -211,6 +211,143 @@ def base_destroy(parts, canvas_max=320, spin=190, style="scatter"):
     return a
 
 
+def _destroy_shell(parts, canvas_max=320, shard_dist=0.5, shard_spin=170, anchor_pop=0.14):
+    """Everything a vanish SHARES: the anchor pop, the glow blow-out, the shards
+    flying off and - the part validate.py checks (E6) - every slot reaching alpha
+    00. The BODY timeline is deliberately left out; that is where each symbol's
+    character lives, and the caller fills it in.
+
+    Split out of base_destroy because every symbol was vanishing with the exact
+    same scatter, differing only by a spin rate nobody can see. The win pulse is
+    a 20px shove over 1.3s; the vanish is the big motion, so if the vanish is
+    shared the whole win reads identical across symbols.
+    """
+    parts = ["shine", *parts]
+    a = {"bones": {}, "slots": {}}
+    a["bones"]["symbol_anchor"] = {"scale": scale(seg(
+        bake(0, 4, lambda r: 1 + anchor_pop * ease_out_cubic(r), 1),
+        bake(4, 26, lambda r: 1 + anchor_pop + 0.10 * r, 4)))}
+    a["bones"]["glow"] = {"scale": scale(seg(
+        bake(0, 4, lambda r: 1 + 0.3 * ease_out_cubic(r), 1),
+        bake(4, 24, lambda r: 1.3 + 0.9 * ease_out_quad(r), 2)))}
+    a["slots"]["glow"] = {"color": color(seg(
+        hold(0, 6, 1.0), bake(6, 20, lambda r: 1 - ease_in_quad(r), 2), [(26, 0.0)]))}
+    for i, n in enumerate(parts):
+        d = 1 if i % 2 == 0 else -1
+        ang = i * 2.39996
+        ux, uy = math.cos(ang), math.sin(ang)
+        dist = canvas_max * shard_dist
+        st = i % 3
+        a["bones"][n] = {
+            "translate": trans(seg(hold(0, 3, (0, 0)), bake(
+                3, 26, lambda r, ux=ux, uy=uy, ds=dist: (ux * ds * ease_in_cubic(r), uy * ds * ease_in_cubic(r)), 2))),
+            "rotate": rot(seg(hold(0, 3), bake(3, 26, lambda r, d=d, s=shard_spin: s * d * ease_in_quad(r), 2))),
+            "scale": scale(seg(bake(0, 4, lambda r: 1 + 0.4 * ease_out_cubic(r), 2),
+                               bake(4, 26, lambda r: 1.4 - 0.9 * ease_in_quad(r), 4))),
+        }
+        a["slots"][n] = {"color": color(seg(
+            hold(0, 8 + st * 2, 1.0), bake(8 + st * 2, 20 + st * 2, lambda r: 1 - ease_in_quad(r), 2), [(26, 0.0)]))}
+    return a
+
+
+def _body_fade(start=10, end=22):
+    return {"color": color(seg(
+        hold(0, start, 1.0), bake(start, end, lambda r: 1 - ease_in_quad(r), 2), [(26, 0.0)]))}
+
+
+# ── per-symbol vanishes ───────────────────────────────────────────
+def _dst_brass(parts, cmax):
+    """Dead weight. Cast metal does not float away - it barely turns, drops out
+    of frame and squashes as it goes."""
+    a = _destroy_shell(parts, cmax, shard_dist=0.30, shard_spin=90)
+    a["bones"]["body"] = {
+        "rotate": rot(seg(hold(0, 4), bake(4, 26, lambda r: 14 * ease_in_quad(r), 2))),
+        "translate": trans(seg(hold(0, 4, (0, 0)),
+                               bake(4, 26, lambda r: (0, -cmax * 0.85 * ease_in_cubic(r)), 2))),
+        "scale": scale(seg(hold(0, 4, (1.0, 1.0)),
+                           bake(4, 26, lambda r: (1 + 0.18 * ease_in_quad(r),
+                                                  1 - 0.45 * ease_in_quad(r)), 2))),
+    }
+    a["slots"]["body"] = _body_fade(13, 23)
+    return a
+
+
+def _dst_knife(parts, cmax):
+    """Turns edge-on and is gone: a fast spin while scaleX collapses to nothing,
+    so the blade reads as slicing away rather than shrinking."""
+    a = _destroy_shell(parts, cmax, shard_dist=0.42, shard_spin=210)
+    a["bones"]["body"] = {
+        "rotate": rot(seg(hold(0, 4), bake(4, 26, lambda r: 540 * ease_in_quad(r), 1))),
+        "scale": scale(seg(hold(0, 4, (1.0, 1.0)),
+                           bake(4, 26, lambda r: (max(0.04, 1 - 0.97 * ease_in_quad(r)),
+                                                  1 + 0.12 * ease_out_cubic(r)), 1))),
+    }
+    a["slots"]["body"] = _body_fade(14, 24)
+    return a
+
+
+def _dst_pistol(parts, cmax):
+    """Ejected like a spent casing - kicks back and up, tumbling as it goes."""
+    a = _destroy_shell(parts, cmax, shard_dist=0.38, shard_spin=150)
+    a["bones"]["body"] = {
+        "rotate": rot(seg(hold(0, 4), bake(4, 26, lambda r: -430 * ease_in_quad(r), 1))),
+        "translate": trans(seg(hold(0, 4, (0, 0)),
+                               bake(4, 26, lambda r: (cmax * 0.34 * ease_in_cubic(r),
+                                                      cmax * 0.26 * ease_out_quad(r)), 2))),
+        "scale": scale(seg(hold(0, 4, 1.0),
+                           bake(4, 26, lambda r: max(0.08, 1 - 0.85 * ease_in_quad(r)), 2))),
+    }
+    a["slots"]["body"] = _body_fade(12, 23)
+    return a
+
+
+def _dst_cash(parts, cmax):
+    """Paper: the brick bursts and the bills FLOAT. Wide, slow shards and a lazy
+    upward drift instead of the usual hard scatter."""
+    a = _destroy_shell(parts, cmax, shard_dist=0.80, shard_spin=70, anchor_pop=0.20)
+    a["bones"]["body"] = {
+        "rotate": rot(seg(hold(0, 4), bake(4, 26, lambda r: 26 * ease_out_quad(r), 2))),
+        "translate": trans(seg(hold(0, 4, (0, 0)),
+                               bake(4, 26, lambda r: (0, cmax * 0.20 * ease_out_quad(r)), 2))),
+        "scale": scale(seg(hold(0, 4, (1.0, 1.0)),
+                           bake(4, 26, lambda r: (1 + 0.30 * ease_out_cubic(r),
+                                                  1 + 0.18 * ease_out_cubic(r)), 2))),
+    }
+    a["slots"]["body"] = _body_fade(8, 20)
+    return a
+
+
+def _dst_bike(parts, cmax):
+    """Rides off: leans hard, accelerates away to the left and shrinks into the
+    distance. The fastest exit on the board."""
+    a = _destroy_shell(parts, cmax, shard_dist=0.34, shard_spin=240)
+    a["bones"]["body"] = {
+        "rotate": rot(seg(hold(0, 4), bake(4, 26, lambda r: -30 * ease_out_cubic(r), 2))),
+        "translate": trans(seg(hold(0, 4, (0, 0)),
+                               bake(4, 26, lambda r: (-cmax * 0.95 * ease_in_cubic(r),
+                                                      cmax * 0.10 * ease_out_quad(r)), 1))),
+        "scale": scale(seg(hold(0, 4, 1.0),
+                           bake(4, 26, lambda r: max(0.06, 1 - 0.92 * ease_in_cubic(r)), 2))),
+    }
+    a["slots"]["body"] = _body_fade(11, 22)
+    return a
+
+
+def _dst_duffel(parts, cmax):
+    """Splits and dumps: the bag bursts WIDE and flattens as its contents go,
+    then drops. Soft, not brittle."""
+    a = _destroy_shell(parts, cmax, shard_dist=0.62, shard_spin=120)
+    a["bones"]["body"] = {
+        "rotate": rot(seg(hold(0, 4), bake(4, 26, lambda r: -10 * ease_out_quad(r), 2))),
+        "translate": trans(seg(hold(0, 4, (0, 0)),
+                               bake(4, 26, lambda r: (0, -cmax * 0.42 * ease_in_quad(r)), 2))),
+        "scale": scale(seg(hold(0, 4, (1.0, 1.0)),
+                           bake(4, 26, lambda r: (1 + 0.42 * ease_out_cubic(r),
+                                                  max(0.10, 1 - 0.72 * ease_in_quad(r))), 2))),
+    }
+    a["slots"]["body"] = _body_fade(10, 21)
+    return a
+
 # ── per-symbol idle + win ────────────────────────────────────────────────────
 def _idle(anchor_scale=0.012, anchor_bob=0.0, body=None, glow=(0.07, 0.45),
           shine=(2, 2.0, 0.65, 0.08), sparks=(), spark_cycles=2, spark_amp=0.55, spark_spin=12):
@@ -281,7 +418,7 @@ def _brass(sparks, ch, cmax):
                          bake(11, 38, lambda r: -8 * damped(r, 1.5, 3.8), 2),
                          [(40, 0.0)]))},
                glow=0.45, sparks=sparks, dirs={sparks[0]: (1.0, -0.5)} if sparks else None, spin=30, dist=16)
-    return idle, win, base_drop(2.5, ch, (1.16, 0.84), sparks), base_destroy(sparks, cmax, 170, "scatter")
+    return idle, win, base_drop(2.5, ch, (1.16, 0.84), sparks), _dst_brass(sparks, cmax)
 
 
 @motion("knife")
@@ -298,7 +435,7 @@ def _knife(sparks, ch, cmax):
                          bake(22, 38, lambda r: 360 + 8 * damped(r, 1.2, 3.4), 2),
                          [(40, 360.0)]))},
                glow=0.40, shine_start=14, sparks=sparks, spin=25, dist=14)
-    return idle, win, base_drop(3.0, ch, (1.12, 0.88), sparks), base_destroy(sparks, cmax, 210, "scatter")
+    return idle, win, base_drop(3.0, ch, (1.12, 0.88), sparks), _dst_knife(sparks, cmax)
 
 
 # ---- MID TIER --------------------------------------------------------------
@@ -321,7 +458,7 @@ def _pistol(sparks, ch, cmax):
                          [(40, 0.0)]))},
                glow=0.55, shine_start=4,
                sparks=sparks, dirs={sparks[0]: (-1.0, 0.35)} if sparks else None, spin=20, dist=20)
-    return idle, win, base_drop(2.2, ch, (1.15, 0.85), sparks), base_destroy(sparks, cmax, 160, "scatter")
+    return idle, win, base_drop(2.2, ch, (1.15, 0.85), sparks), _dst_pistol(sparks, cmax)
 
 
 @motion("ammo")
@@ -365,7 +502,7 @@ def _duffel(sparks, ch, cmax):
                          bake(14, 38, lambda r: 6 * damped(r, 1.0, 2.6), 2),
                          [(40, 0.0)]))},
                glow=0.45, sparks=sparks, spin=35, dist=14)
-    return idle, win, base_drop(6.0, ch, (1.20, 0.80), sparks), base_destroy(sparks, cmax, 150, "scatter")
+    return idle, win, base_drop(6.0, ch, (1.20, 0.80), sparks), _dst_duffel(sparks, cmax)
 
 
 # ---- PREMIUM TIER ----------------------------------------------------------
@@ -388,7 +525,7 @@ def _cash(sparks, ch, cmax):
                          bake(12, 38, lambda r: 9 * damped(r, 1.3, 3.0), 2),
                          [(40, 0.0)]))},
                glow=0.55, sparks=sparks, spin=42, dist=16)
-    return idle, win, base_drop(5.0, ch, (1.17, 0.83), sparks), base_destroy(sparks, cmax, 200, "scatter")
+    return idle, win, base_drop(5.0, ch, (1.17, 0.83), sparks), _dst_cash(sparks, cmax)
 
 
 @motion("bike")
@@ -415,7 +552,7 @@ def _bike(sparks, ch, cmax):
                          bake(14, 38, lambda r: (6 * damped(r, 1.2, 2.8), 7 * damped(r, 1.2, 2.8)), 2),
                          [(40, (0, 0))]))},
                glow=0.55, sparks=sparks, spin=38, dist=17)
-    return idle, win, base_drop(3.2, ch, (1.16, 0.84), sparks), base_destroy(sparks, cmax, 230, "scatter")
+    return idle, win, base_drop(3.2, ch, (1.16, 0.84), sparks), _dst_bike(sparks, cmax)
 
 
 # ---- SPECIALS --------------------------------------------------------------
