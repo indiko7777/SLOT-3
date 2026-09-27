@@ -36,7 +36,6 @@
   transition: transform .4s cubic-bezier(.16, 1, .3, 1);
 }
 .hc-buy-overlay.show .hc-buy-card { transform: translateY(0) scale(1); }
-.hc-buy-card.super { --accent: #ffc27f; --warm: #ff928e; border-color: #dba78c77; }
 .hc-buy-scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #ffffff40 transparent; }
 .hc-buy-hero { position: relative; height: 280px; overflow: hidden; isolation: isolate; background: #11242f; }
 .hc-buy-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 54% 38%; z-index: -4; filter: saturate(.85) brightness(.65); }
@@ -55,7 +54,6 @@
   background: linear-gradient(110deg, transparent 45%, #44dff30d 60%, transparent 75%);
   animation: hc-chase-light 5s ease-in-out infinite alternate;
 }
-.hc-buy-card.super .hc-buy-hero::after { background: linear-gradient(110deg, transparent 40%, #ff907a15 64%, transparent 80%); }
 @keyframes hc-chase-light { from { opacity: .3; transform: translateX(-8%); } to { opacity: 1; transform: translateX(8%); } }
 .hc-buy-brand { position: absolute; top: 19px; left: 28px; display: flex; align-items: center; gap: 12px; }
 .hc-buy-logo { width: 66px; height: 48px; object-fit: contain; filter: drop-shadow(0 2px 3px #0008); }
@@ -85,6 +83,88 @@
 .hc-buy-disclosure { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 12px; color: #a8bdc7; font-size: 11px; font-weight: 600; line-height: 1.3; letter-spacing: .25px; }
 .hc-buy-disclosure b { font-weight: 700; color: #e6d6bd; }
 .hc-buy-close { position: absolute; }
+
+/* Super is the night pursuit: a stronger title reveal and illuminated cargo.
+   Keep the rules and the original action buttons as calm, readable anchors. */
+.hc-buy-card.super {
+  --accent: #ffcf7f;
+  --warm: #ffe5a3;
+  border-color: #ffc88c99;
+  background: #181d29;
+  box-shadow: 0 28px 100px #000b, 0 0 55px #ff744529, 0 1px 0 #ffebae66 inset;
+}
+.hc-buy-card.super::before {
+  content: ''; position: absolute; inset: 0 0 auto; height: 3px; z-index: 5; pointer-events: none;
+  background: linear-gradient(90deg, #ff497d, #ffb675 36%, #fff2b8 62%, #62e8ed);
+}
+.hc-buy-card.super .hc-buy-hero { height: 320px; background: #10172a; }
+.hc-buy-card.super .hc-buy-art { object-position: center 45%; filter: saturate(1.15) brightness(.82); }
+.hc-buy-card.super .hc-buy-scrim {
+  background: linear-gradient(90deg, #130f24e8, #19132d88 36%, transparent 70%), linear-gradient(0deg, #181d29, transparent 30%);
+}
+.hc-buy-card.super .hc-buy-hero::before {
+  content: ''; position: absolute; inset: 0; z-index: -3; pointer-events: none;
+  background: radial-gradient(ellipse at 7% 45%, #ff376b69, transparent 55%), radial-gradient(ellipse at 94% 20%, #29bcff55, transparent 55%);
+  animation: hc-super-pursuit 2.8s ease-in-out infinite alternate;
+}
+.hc-buy-card.super .hc-buy-hero::after {
+  background: linear-gradient(112deg, transparent 24%, #ffc67e36 48%, #fff3cc80 49%, transparent 52%);
+  animation: hc-super-light-pass 1.15s .12s cubic-bezier(.2,.7,.2,1) both;
+}
+.hc-buy-card.super .hc-buy-heading { bottom: 28px; }
+.hc-buy-card.super .hc-buy-title { font-size: 72px; line-height: 1; text-shadow: 0 3px 0 #a13d59, 0 7px 20px #09091bd9; }
+.hc-buy-card.super .hc-buy-title .lead {
+  font-size: 1.08em; line-height: .98; letter-spacing: 1.5px; margin-bottom: 6px;
+  color: #ffe89c;
+  background: linear-gradient(#fff9e1 8%, #ffe197 45%, #ffad68 83%, #ff7c7b);
+  background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 3px 0 #9b3c5b) drop-shadow(0 0 12px #ffab7038);
+  text-shadow: none;
+}
+.hc-buy-card.super .hc-buy-kicker { margin-bottom: 10px; color: #ffc899; }
+.hc-super-stars { display: flex; gap: 6px; margin: 0 0 12px; }
+.hc-super-stars svg { width: 21px; height: 21px; fill: #ffe5a0; stroke: #fff7d2; stroke-width: .7; filter: drop-shadow(0 0 5px #ffac5966); }
+.hc-buy-overlay.show .hc-super-stars svg { animation: hc-super-star-in .38s calc(.1s + var(--star)*.055s) cubic-bezier(.16,1,.3,1) both; }
+.hc-buy-overlay.show .super .hc-buy-heading { animation: hc-super-title-in .62s cubic-bezier(.16,1,.3,1) both; }
+.hc-buy-card.super .hc-buy-truck { width: 63%; right: -2%; bottom: -3px; }
+.hc-buy-card.super .hc-buy-cargo {
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 80%, #d79a46b3, #5846327a 52%, #101724 90%);
+  box-shadow: 0 0 20px #ffc06433 inset;
+}
+.hc-buy-card.super .hc-buy-cargo img { position: absolute; object-fit: contain; filter: drop-shadow(0 0 8px #ffc56950); }
+.hc-buy-card.super .hc-buy-loot { width: 83%; height: 80%; bottom: -4%; left: 10%; z-index: 1; }
+.hc-buy-card.super .hc-super-loot { width: 67%; height: 67%; bottom: 26%; }
+.hc-buy-card.super .hc-super-loot.left { left: -9%; transform: rotate(-9deg); }
+.hc-buy-card.super .hc-super-loot.right { right: -9%; transform: rotate(7deg); }
+.hc-buy-card.super .hc-buy-police-light {
+  inset: 10% 6% 0;
+  border-radius: 0;
+  background: radial-gradient(ellipse at 5% 45%, #24b8ff66, transparent 62%), radial-gradient(ellipse at 95% 45%, #ff365e77, transparent 62%);
+  mask-image: radial-gradient(ellipse at center, #000 26%, transparent 72%);
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 26%, transparent 72%);
+  animation-duration: 1.8s;
+}
+.hc-super-speed { position: absolute; inset: 0; z-index: -2; overflow: hidden; pointer-events: none; }
+.hc-super-speed i {
+  position: absolute; width: 36%; height: 2px; left: -42%; top: 22%;
+  background: linear-gradient(90deg, transparent, #ffaf6d99, #ffedbacc);
+  transform: rotate(-11deg); opacity: 0;
+  animation: hc-super-speed 1s .15s cubic-bezier(.1,.6,.3,1) both;
+}
+.hc-super-speed i:nth-child(2) { top: 57%; width: 24%; animation-delay: .23s; background: linear-gradient(90deg, transparent, #75ebf6aa); }
+.hc-super-speed i:nth-child(3) { top: 83%; width: 45%; animation-delay: .32s; }
+.hc-buy-card.super .hc-buy-body { background: linear-gradient(130deg, #181d29, #241d2b); }
+.hc-buy-card.super .hc-buy-desc strong { color: #ffdfab; }
+.hc-buy-card.super .hc-buy-variant { border-color: #ffb27f; color: #ffdda6; }
+.hc-buy-card.super .hc-buy-facts li { border-color: #eaba7d3b; }
+.hc-buy-card.super .hc-buy-footer { border-color: #ffce8545; background: linear-gradient(120deg, #252435, #35232e 70%, #372825); }
+@keyframes hc-super-title-in { from { opacity: 0; transform: translateX(-24px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes hc-super-star-in { from { opacity: 0; transform: translateY(7px) scale(.6); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes hc-super-pursuit { from { opacity: .4; } to { opacity: .95; } }
+@keyframes hc-super-light-pass { 0% { opacity: 0; transform: translateX(-65%); } 25% { opacity: .65; } 100% { opacity: 0; transform: translateX(70%); } }
+@keyframes hc-super-speed { 0% { opacity: 0; transform: translateX(0) rotate(-11deg); } 24% { opacity: .8; } 100% { opacity: 0; transform: translateX(390%) rotate(-11deg); } }
+
 @media(max-width: 600px) {
   .hc-buy-overlay { padding: 12px; }
   .hc-buy-card { max-height: calc(100dvh - 24px); border-radius: 12px; }
@@ -114,6 +194,14 @@
   .hc-buy-cost-val { font-size: 27px; }
   .hc-buy-cost-mult { font-size: 12px; text-align: right; }
   .hc-buy-disclosure { font-size: 10px; }
+  .hc-buy-card.super .hc-buy-hero { height: 270px; }
+  .hc-buy-card.super .hc-buy-truck { width: 108%; right: -23%; bottom: 13px; }
+  .hc-buy-card.super .hc-buy-heading { bottom: 18px; }
+  .hc-buy-card.super .hc-buy-title { font-size: clamp(46px, 12.5vw, 64px); }
+  .hc-buy-card.super .hc-buy-kicker { font-size: 9px; letter-spacing: 1.3px; margin-bottom: 8px; }
+  .hc-super-stars { gap: 5px; margin-bottom: 9px; }
+  .hc-super-stars svg { width: 17px; height: 17px; }
+  .hc-buy-card.super .hc-buy-scrim { background: linear-gradient(90deg, #161024bd, transparent 95%), linear-gradient(0deg, #181d29, transparent 75%); }
 }
 @media(max-height: 500px) {
   .hc-buy-overlay { padding: 8px; }
@@ -126,6 +214,12 @@
   .hc-buy-cost-val { font-size: 23px; }
   .hc-buy-cost-label { margin-bottom: 1px; font-size: 10px; }
   .hc-buy-disclosure { margin-top: 6px; font-size: 10px; }
+  .hc-buy-card.super .hc-buy-hero { height: 220px; }
+  .hc-buy-card.super .hc-buy-truck { width: auto; height: 100%; right: 0; bottom: -8px; }
+  .hc-buy-card.super .hc-buy-title { font-size: 53px; }
+  .hc-buy-card.super .hc-buy-heading { bottom: 18px; }
+  .hc-super-stars { margin-bottom: 7px; }
+  .hc-super-stars svg { width: 16px; height: 16px; }
 }
 @media(max-height: 340px) {
   .hc-buy-hero { height: 64px; }
@@ -135,8 +229,19 @@
   .hc-buy-title { font-size: 24px; }
   .hc-buy-title .lead { display: inline; font-size: 1em; letter-spacing: .4px; margin-right: 6px; }
   .hc-buy-truck { width: 165px; height: auto; right: 0; bottom: -22px; opacity: .45; }
+  .hc-buy-card.super .hc-buy-hero { height: 64px; }
+  .hc-buy-card.super .hc-buy-heading { top: 7px; bottom: auto; }
+  .hc-buy-card.super .hc-buy-title { font-size: 24px; }
+  .hc-buy-card.super .hc-buy-title .lead { display: inline; font-size: 1em; line-height: 1.05; letter-spacing: .4px; margin-bottom: 0; filter: none; }
+  .hc-buy-card.super .hc-buy-kicker { font-size: 8px; margin-bottom: 5px; }
+  .hc-buy-card.super .hc-buy-truck { width: 165px; height: auto; right: 0; bottom: -22px; }
+  .hc-super-stars, .hc-super-speed { display: none; }
 }
 @media(prefers-reduced-motion: reduce) {
   .hc-buy-card, .hc-buy-overlay { transition: none; }
   .hc-buy-hero::after, .hc-buy-police-light { animation: none; }
+  .hc-buy-card.super .hc-buy-hero::before, .hc-buy-card.super .hc-buy-hero::after,
+  .hc-buy-card.super .hc-buy-police-light, .hc-buy-overlay.show .super .hc-buy-heading,
+  .hc-buy-overlay.show .hc-super-stars svg, .hc-super-speed i { animation: none; }
+  .hc-buy-card.super .hc-buy-hero::after, .hc-super-speed { display: none; }
 }

@@ -38,7 +38,7 @@ export function showConfirmPopup(
     const unitWord = social ? "PLAY" : "BET";
     const confirmLabel = social ? "Confirm" : "Confirm Buy";
 
-    const variant = isSuper ? "HIGHEST GOLD BAR VALUE TABLE" : "INCREASED GOLD BAR VALUES";
+    const variant = isSuper ? "HIGHEST GOLD BAR VALUES" : "INCREASED GOLD BAR VALUES";
     const maxWin = MAX_WIN_MULTIPLIER.toLocaleString("en-US");
     const rtp = (BET_MODES[action].rtpTarget * 100).toFixed(0);
 
@@ -50,9 +50,13 @@ export function showConfirmPopup(
         <div class="hc-buy-scroll">
           <div class="hc-buy-hero">
             <button class="hc-buy-close" id="hc-btn-close" aria-label="Close"><span class="hc-buy-esc-tag">Esc</span> ✕</button>
-            <img class="hc-buy-art" src="assets/miami_daylight_gameplay_v2.webp" alt="" draggable="false" />
+            <img class="hc-buy-art" src="assets/${isSuper ? "getaway_highway.webp" : "miami_daylight_gameplay_v2.webp"}" alt="" draggable="false" />
+            ${isSuper ? '<div class="hc-super-speed" aria-hidden="true"><i></i><i></i><i></i></div>' : ""}
             <div class="hc-buy-truck" aria-hidden="true">
-              <div class="hc-buy-cargo"><img src="assets/gold_bar.webp" alt="" draggable="false" /></div>
+              <div class="hc-buy-cargo">
+                ${isSuper ? '<img class="hc-super-loot left" src="assets/gold_bar.webp" alt="" draggable="false" /><img class="hc-super-loot right" src="assets/gold_bar.webp" alt="" draggable="false" />' : ""}
+                <img class="hc-buy-loot" src="assets/gold_bar.webp" alt="" draggable="false" />
+              </div>
               <img class="hc-buy-truck-frame" src="assets/brinks_truck_frame.webp" alt="" draggable="false" />
               <div class="hc-buy-police-light"></div>
             </div>
@@ -62,13 +66,14 @@ export function showConfirmPopup(
               <span class="hc-buy-edition">GRAND<br />ESCAPE</span>
             </div>
             <div class="hc-buy-heading">
+              ${isSuper ? `<div class="hc-super-stars" aria-hidden="true">${Array.from({length:5}, (_,i) => `<svg viewBox="0 0 24 24" style="--star:${i}"><path d="m12 1 3.4 6.9 7.6 1.1-5.5 5.4 1.3 7.6-6.8-3.6L5.2 22l1.3-7.6L1 9l7.6-1.1z"/></svg>`).join("")}</div>` : ""}
               <div class="hc-buy-kicker">ARMORED TRUCK CHASE</div>
               <h2 class="hc-buy-title"><span class="lead">${titleLead} </span>${titleMain}</h2>
             </div>
           </div>
           <div class="hc-buy-body">
             <div class="hc-buy-intro">
-              <p class="hc-buy-desc"><strong>The chase starts here.</strong>Enter the Hold &amp; Spin feature directly. Lock the loot as the police close in.</p>
+              <p class="hc-buy-desc"><strong>${isSuper ? "The heat is on." : "The chase starts here."}</strong>Enter the Hold &amp; Spin feature directly. Lock the loot as the police close in.</p>
               <div class="hc-buy-variant">${variant}</div>
             </div>
             <ul class="hc-buy-facts">

@@ -26,12 +26,14 @@ The main-screen logo fits within the left control column instead of extending to
 
 ## Verification and remaining checks
 
+Super Getaway now has its own night-pursuit confirmation presentation: the existing bonus city backdrop, a large gold/coral SUPER title, staggered five-star entrance, brief light streaks, soft red/blue reflections and a fuller gold cargo composition. Regular Getaway retains its daylight card. The Super variant states “Highest Gold Bar Values”; costs, spins, RTP, max win and all button styles/labels/handlers are preserved. Checked at desktop, 390×844 portrait, 844×390 landscape and 320×240 mini-player. Short layouts keep cost/actions fixed and rules scrollable; reduced-motion settings suppress the entrance effects.
+
 Frontend: 153 tests, TypeScript and production build pass after the current cash/banner/popup revisions. Math: six tests pass; all seven published mode books verify at 96.0000% RTP with no math or RGS book changes. Existing Vite large-chunk advisory remains. Local RGS QA passes 19 scenarios across seven modes; results are recorded in LOCAL_RGS_QA.json. Selected presentation replays are in PRESENTATION_REPLAY_CASES.json.
 
 The production sessionless cascade/WILD/heat replay (base 22005) completed at 3 USD with no console errors, including a repeat at 844×390. Small-win replay (base 22003) completed at 3.8 USD in portrait. Mini-player loss replay (base 34076) completed at 0 USD. Getaway 1860 completed at 103.5 USD; its published sequence includes dead spins and dynamite. Muted Getaway 1 completed at the 5,000× cap / 500,000 USD on a 100 USD base amount in portrait. Prior developer Getaway checks covered truck-door opening, gold locking, live/dud dynamite, dead spins and result. Desktop/portrait screenshots and cash preview poses have been inspected during the revisions.
 
 Super Getaway 2247 completed at 1,933× / 1,933 USD in landscape. A muted repeat at a fixed 320×240 completed with the centered Grand Escape amount, multiplier and Collect action fully visible. A transient screenshot taken during viewport resizing initially appeared undersized; the fixed-size result confirmed the CSS layout was correct. No console warnings or errors were reported in the cascade and Super Getaway runs.
 
-Local release archives and SHA-256 file manifest: `release/2026-09-27T17-02-36Z/`. Frontend payload: 20,203,359 bytes. Includes the single-stream cash correction. No submission or hosted deployment was performed.
+Local release archives and SHA-256 file manifest: `release/2026-09-27T17-21-08Z/`. Frontend payload: 20,210,090 bytes. Includes the single-stream cash correction and distinct Super Getaway confirmation. No submission or hosted deployment was performed.
 
 Physical device/audio audition and an uninterrupted watch of every scenario in both audio states remain incomplete. Audio callback routing and throttling are covered by tests; these are not a substitute for listening. This document does not claim Stake certification, a three-star rating or hosted integration approval.
