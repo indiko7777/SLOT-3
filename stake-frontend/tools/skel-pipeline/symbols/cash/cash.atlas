@@ -1,82 +1,61 @@
 packed.png
-size: 1024,2048
+size: 1024,1024
 format: RGBA8888
 filter: Linear,Linear
 repeat: none
 glow
   rotate: false
   xy: 2, 2
-  size: 626, 460
-  orig: 626, 460
+  size: 649, 468
+  orig: 649, 468
   offset: 0, 0
   index: -1
-bill_0
+wad
   rotate: false
-  xy: 2, 790
-  size: 343, 278
-  orig: 343, 278
-  offset: 0, 0
-  index: -1
-bill_1
-  rotate: false
-  xy: 449, 464
-  size: 313, 311
-  orig: 313, 311
-  offset: 0, 0
-  index: -1
-bill_2
-  rotate: false
-  xy: 2, 464
-  size: 280, 324
-  orig: 280, 324
-  offset: 0, 0
-  index: -1
-bill_3
-  rotate: false
-  xy: 630, 2
-  size: 253, 347
-  orig: 253, 347
-  offset: 0, 0
-  index: -1
-bill_4
-  rotate: false
-  xy: 284, 464
-  size: 163, 316
-  orig: 163, 316
+  xy: 2, 472
+  size: 513, 346
+  orig: 513, 346
   offset: 0, 0
   index: -1
 throw_0
   rotate: false
-  xy: 347, 790
-  size: 83, 175
-  orig: 83, 175
+  xy: 517, 472
+  size: 219, 122
+  orig: 219, 122
   offset: 0, 0
   index: -1
 throw_1
   rotate: false
-  xy: 432, 790
-  size: 83, 175
-  orig: 83, 175
+  xy: 738, 472
+  size: 219, 122
+  orig: 219, 122
   offset: 0, 0
   index: -1
 throw_2
   rotate: false
-  xy: 517, 790
-  size: 83, 175
-  orig: 83, 175
+  xy: 2, 820
+  size: 219, 122
+  orig: 219, 122
   offset: 0, 0
   index: -1
 throw_3
   rotate: false
-  xy: 602, 790
-  size: 83, 175
-  orig: 83, 175
+  xy: 223, 820
+  size: 219, 122
+  orig: 219, 122
   offset: 0, 0
   index: -1
-clip
+throw_4
   rotate: false
-  xy: 687, 790
-  size: 160, 60
-  orig: 160, 60
+  xy: 444, 820
+  size: 219, 122
+  orig: 219, 122
+  offset: 0, 0
+  index: -1
+throw_5
+  rotate: false
+  xy: 665, 820
+  size: 219, 122
+  orig: 219, 122
   offset: 0, 0
   index: -1

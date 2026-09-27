@@ -1,0 +1,29 @@
+.hc-sound-toggle {
+  position: fixed;
+  top: max(10px, env(safe-area-inset-top));
+  left: max(10px, env(safe-area-inset-left));
+  z-index: 50;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  border: 1px solid #f5d8b784;
+  border-radius: 50%;
+  background: #0a1a29cc;
+  color: #fff0d5;
+  box-shadow: 0 2px 9px #0005;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.hc-sound-toggle[hidden] { display: none; }
+.hc-sound-toggle:hover { background: #233a4be6; }
+.hc-sound-toggle:focus-visible { outline: 2px solid #9cf7e5; outline-offset: 3px; }
+.hc-sound-toggle svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.hc-sound-toggle .hc-sound-slash { display: none; }
+.hc-sound-toggle.muted .hc-sound-slash { display: block; }
+.hc-sound-toggle.muted .hc-sound-waves { display: none; }
+/* Leave the portrait collection/replay header unobstructed. */
+@media (max-width: 600px) and (min-height: 500px) {
+  .hc-sound-toggle { top: max(55px, env(safe-area-inset-top)); }
+}

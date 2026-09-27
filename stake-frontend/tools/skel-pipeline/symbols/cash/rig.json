@@ -1,34 +1,19 @@
 {
- "groups": [
-  {
-   "name": "fan",
-   "parent": "symbol_anchor",
-   "pivot": [
-    359.7186271450858,
-    335.51588143525737
-   ]
-  }
- ],
- "parents": {
-  "glow": "fan",
-  "clip": "fan",
-  "bill_0": "fan",
-  "bill_1": "fan",
-  "bill_2": "fan",
-  "bill_3": "fan",
-  "bill_4": "fan"
- },
  "hidden": [
   "throw_0",
   "throw_1",
   "throw_2",
-  "throw_3"
+  "throw_3",
+  "throw_4",
+  "throw_5"
  ],
  "lowres": {
-  "throw_0": 0.6,
-  "throw_1": 0.6,
-  "throw_2": 0.6,
-  "throw_3": 0.6
+  "throw_0": 0.5,
+  "throw_1": 0.5,
+  "throw_2": 0.5,
+  "throw_3": 0.5,
+  "throw_4": 0.5,
+  "throw_5": 0.5
  },
  "shipLossy": true
 }

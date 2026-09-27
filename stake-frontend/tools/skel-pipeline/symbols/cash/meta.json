@@ -1,59 +1,11 @@
 {
- "pivot": [
-  3.72,
-  -98.52
- ],
- "bills": [
-  {
-   "name": "bill_0",
-   "fan": 54,
-   "centre": [
-    -91.78,
-    -29.13
-   ]
-  },
-  {
-   "name": "bill_1",
-   "fan": -53,
-   "centre": [
-    97.99,
-    -27.48
-   ]
-  },
-  {
-   "name": "bill_2",
-   "fan": 27,
-   "centre": [
-    -49.87,
-    6.66
-   ]
-  },
-  {
-   "name": "bill_3",
-   "fan": -26,
-   "centre": [
-    55.47,
-    7.58
-   ]
-  },
-  {
-   "name": "bill_4",
-   "fan": -1,
-   "centre": [
-    5.78,
-    19.51
-   ]
-  }
- ],
  "throws": [
   "throw_0",
   "throw_1",
   "throw_2",
-  "throw_3"
+  "throw_3",
+  "throw_4",
+  "throw_5"
  ],
- "throwCentre": [
-  5.78,
-  19.51
- ],
- "length": 287.9
+ "unit": 0.8009999999999999
 }

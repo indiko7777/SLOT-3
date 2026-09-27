@@ -72,6 +72,7 @@ function burst(ctx: AudioContext, out: AudioNode, t: number, dur: number, peak: 
   if (f1 !== f0) flt.frequency.exponentialRampToValueAtTime(f1, t + dur);
   const g = env(ctx, t, peak, 0.004, dur);
   src.connect(flt).connect(g).connect(out);
+  src.onended = () => { src.disconnect(); flt.disconnect(); g.disconnect(); };
   src.start(t);
   src.stop(t + dur + 0.03);
 }
@@ -84,6 +85,7 @@ function ring(ctx: AudioContext, out: AudioNode, t: number, freqs: number[], pea
     o.frequency.setValueAtTime(f, t);
     const g = env(ctx, t, peak / (i + 1), 0.003, decay * (1 - i * 0.18));
     o.connect(g).connect(out);
+    o.onended = () => { o.disconnect(); g.disconnect(); };
     o.start(t);
     o.stop(t + decay + 0.05);
   });
@@ -97,6 +99,7 @@ function thump(ctx: AudioContext, out: AudioNode, t: number, f0: number, f1: num
   o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
   const g = env(ctx, t, peak, 0.004, dur);
   o.connect(g).connect(out);
+  o.onended = () => { o.disconnect(); g.disconnect(); };
   o.start(t);
   o.stop(t + dur + 0.05);
 }
@@ -109,6 +112,7 @@ function rev(ctx: AudioContext, out: AudioNode, t: number, f0: number, f1: numbe
   lp.frequency.exponentialRampToValueAtTime(1800, t + dur * 0.7);
   const g = env(ctx, t, peak, 0.05, dur);
   lp.connect(g).connect(out);
+  let remaining = 2;
   for (const det of [-9, 7]) {
     const o = ctx.createOscillator();
     o.type = "sawtooth";
@@ -116,6 +120,10 @@ function rev(ctx: AudioContext, out: AudioNode, t: number, f0: number, f1: numbe
     o.frequency.exponentialRampToValueAtTime(f1, t + dur * 0.8);
     o.detune.value = det * 3;
     o.connect(lp);
+    o.onended = () => {
+      o.disconnect();
+      if (--remaining === 0) { lp.disconnect(); g.disconnect(); }
+    };
     o.start(t);
     o.stop(t + dur + 0.05);
   }

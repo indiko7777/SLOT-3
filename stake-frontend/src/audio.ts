@@ -1,5 +1,6 @@
 import type { GameEvent } from "./domain";
 import { GetawayResultSound } from "./audio/GetawayResultSound";
+import { FoleyGate, hasFoley, playFoley } from "./audio/SymbolFoley";
 
 /* ═══════════════════════════════════════════════════
    Layered Audio Bus – GTA 6 Miami Heist theme
@@ -183,6 +184,14 @@ interface ActiveLoop {
 /* ═══════════════════════════════════════════════════ */
 
 export class EventAudioBus {
+  private readonly symbolFoleyGate = new FoleyGate(90, 4, 140);
+
+  /** Called by skeletal event timelines, at the visual contact frame. */
+  symbolFoley(id: string, cue: string, turbo: boolean): void {
+    if (!this.ctx || !this.master || this.silenced || document.hidden || this.ctx.state !== "running") return;
+    if (!hasFoley(id, cue) || !this.symbolFoleyGate.allow(cue, turbo, performance.now())) return;
+    playFoley(this.ctx, this.output, id, cue, turbo ? .24 : .38);
+  }
   private ctx: AudioContext | null = null;
   private rawData = new Map<TrackName, ArrayBuffer>();    // pre-fetched
   private buffers = new Map<TrackName, AudioBuffer>();    // decoded
@@ -689,8 +698,7 @@ export class EventAudioBus {
 
       /* ── wins ────────────────────────────────── */
       case "cluster_win":
-        // Combination sound = reel stop sound (per user request)
-        this.fire("new_reel_stop", vol);
+        // Physical accents are emitted by the symbols at their action frames.
         break;
 
       /* ── heat system ─────────────────────────── */

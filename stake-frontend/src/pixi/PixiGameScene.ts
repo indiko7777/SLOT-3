@@ -112,9 +112,10 @@ export class PixiGameScene {
 
     // Every win banner (like NICE WIN) fires a banner_impact.
     this.effects.on("banner_impact", (intensity: "low" | "mid" | "high" | "grand") => {
-      if (this.runtime.playAudio) {
-        if (intensity === "low") this.runtime.playAudio("win_big_lowest");
-      }
+      if (intensity === "low") this.runtime.playAudio?.("win_big_lowest");
+      // The entrance has its own contact before the count crosses a tier.
+      // Keep it lighter than the existing big/mega/grand/max tier stingers.
+      else this.runtime.bannerImpact?.("low");
     });
 
     // Continuous money-counter roller, locked to the rising total.
@@ -149,6 +150,7 @@ export class PixiGameScene {
    *  right end of the wanted-stars strip (on top of the reel frame). */
   private layoutBoard(): void {
     this.board.layout(this.layout.board);
+    this.effects.resize(this.layout.board, this.layout);
     const bar = this.layout.starsBar;
     const g = bar ? wantedStarsGeometry(bar) : null;
     this.board.setCounterSlot(g ? { x: g.counterX, y: g.counterY } : null);
@@ -178,6 +180,7 @@ export class PixiGameScene {
     this.collectedWilds.clear();
     this.currentSnapshot = snapshot;
     this.bonus.hide();
+    this.board.visible = true;
     // DON'T rebuild the board here — the spin animation will handle it.
     // Only update the HUD status text.
     this.hud.draw(this.layout, snapshot);
@@ -213,6 +216,7 @@ export class PixiGameScene {
     // Ensure HUD and cardPeek visibility matches bonus state
     // (e.g. window resize while bonus is running must not reveal the HUD).
     this.hud.visible = !(this.bonusActive || isBonusActive);
+    this.board.visible = !(this.bonusActive || isBonusActive);
     // Only rebuild the board if we don't already have one showing.
     // After a spin/tumble round the board is already in the correct state
     // from the animations — rebuilding would cause a visible flash.
@@ -429,6 +433,7 @@ export class PixiGameScene {
           ]);
           // Hide the entire HUD so the bonus board has the full screen.
           this.hud.visible = false;
+          this.board.visible = false;
           await this.bonus.intro(
             turbo,
             this.runtime.onTypewriterStart,
@@ -449,6 +454,7 @@ export class PixiGameScene {
           this.triggerWhiteout(turbo);
           void this.effects.screenShake(this.root, turbo);
           this.hud.visible = false;
+          this.board.visible = false;
           await this.bonus.intro(
             turbo,
             this.runtime.onTypewriterStart,

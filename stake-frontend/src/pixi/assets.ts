@@ -59,7 +59,7 @@ const SKEL_ASSETS: Partial<Record<SymbolId, { dir: string; fitW: number; fitH: n
   PISTOL: { dir: "skel/pistol", fitW: 513, fitH: 426 }, // slide cut on its seam, barrel/spring painted beneath
   AMMO: { dir: "skel/ammo", fitW: 513, fitH: 388 }, // re-authored vector rounds, one layer per cartridge
   DUFFEL: { dir: "skel/duffel", fitW: 513, fitH: 503 }, // loot / pocket bills / handle / zipper tab cut out, insides painted
-  CASH: { dir: "skel/cash", fitW: 513, fitH: 341 }, // fan of real Los Santos $1000 notes (real_bill art) in a gold money clip
+  CASH: { dir: "skel/cash", fitW: 513, fitH: 346 }, // one wad at rest; separate sheets for the throwing animation
   // DIAMOND: the baked cartoon twinkle-stars are painted out (facet lines
   // rebuilt through them); the stone is split into its own facets for
   // refraction light and angular shards.
@@ -93,6 +93,8 @@ const EXTRA_ASSETS: Record<string, string> = {
   "char_piece_8": "bodycharachter1/head1.png.webp",
   "char_full": "bodycharachter1/full_image1.png.webp",
   "real_bill": "real_bill.webp",
+  "getaway_palm": "getaway_palm.webp",
+  "getaway_building": "getaway_building.webp",
 
   "char2_silhouette": "bodycharachter2/silhouette.webp",
   "char2_piece_1": "bodycharachter2/right foot.webp",

@@ -2,8 +2,8 @@ import { UI_FONT } from "./typography";
 import { attachDialog } from "./dialog";
 /**
  * Shared DOM modals: interrupted-round resume, replay intro/finish, and the
- * RGS error toast. Styled to match the GTA V Settings Menu (full-screen pause menu
- * layout, translucent black bars, white accent lines, desaturated backdrop blur).
+ * RGS error toast. Heat Chase typography with a quiet midnight backdrop,
+ * warm highlights and compact layouts for embedded players.
  * All strings are passed in by the caller so social-mode terminology stays
  * centralised in domain.ts.
  */
@@ -18,9 +18,9 @@ function injectStyle(): void {
   s.textContent = `
   .hc-modal-overlay{position:fixed;inset:0;z-index:100002;display:flex;flex-direction:column;
     --gx:clamp(16px,6vw,110px);
-    background:linear-gradient(180deg,rgba(0,0,0,.55) 0%,rgba(0,0,0,.78) 100%);
-    backdrop-filter:blur(7px) saturate(.25) brightness(.8);
-    -webkit-backdrop-filter:blur(7px) saturate(.25) brightness(.8);
+    background:linear-gradient(135deg,rgba(12,26,38,.9),rgba(29,19,37,.94));
+    backdrop-filter:blur(7px) saturate(.7) brightness(.8);
+    -webkit-backdrop-filter:blur(7px) saturate(.7) brightness(.8);
     opacity:0;transition:opacity .15s ease-out;
     font-family:${FONT};color:#fff;user-select:none;-webkit-user-select:none;}
   .hc-modal-overlay.show{opacity:1;}
@@ -33,7 +33,7 @@ function injectStyle(): void {
   .gta-modal-title{font-size:clamp(28px,5.5vw,46px);font-weight:700;line-height:1;
     text-transform:uppercase;letter-spacing:.5px;text-shadow:0 2px 10px rgba(0,0,0,.8);}
   
-  .gta-modal-bar{display:flex;gap:clamp(16px,3.5vw,30px);border-bottom:2px solid rgba(255,255,255,.95);
+  .gta-modal-bar{display:flex;gap:clamp(16px,3.5vw,30px);border-bottom:2px solid rgba(245,200,169,.7);
     padding:0 var(--gx);flex-shrink:0;height:4px;}
   
   .gta-modal-scroll{flex:1;overflow-y:auto;overflow-x:hidden;padding:14px 0 24px;
@@ -41,11 +41,11 @@ function injectStyle(): void {
   .gta-modal-scroll::-webkit-scrollbar{display:none;}
   
   .gta-modal-sep{font-size:clamp(11.5px,2.4vw,13px);letter-spacing:2.5px;text-transform:uppercase;font-weight:600;
-    color:rgba(255,255,255,.6);background:rgba(0,0,0,.72);padding:8px var(--gx);margin-top:12px;}
+    color:#f5c8a9;background:rgba(245,200,169,.06);padding:8px var(--gx);margin-top:12px;}
   .gta-modal-scroll > .gta-modal-sep:first-child{margin-top:0;}
   
   .gta-modal-row{display:flex;align-items:center;justify-content:space-between;gap:16px;
-    background:rgba(0,0,0,.52);padding:12px var(--gx);margin-top:2px;
+    background:rgba(8,20,30,.2);padding:12px var(--gx);margin-top:2px;
     font-size:clamp(15px,3vw,17.5px);font-weight:500;color:#e6e6e6;letter-spacing:.2px;}
   
   .gta-modal-stat{font-size:clamp(16px,3vw,20px);font-weight:700;letter-spacing:.5px;text-align:right;flex-shrink:0;}
@@ -85,6 +85,20 @@ function injectStyle(): void {
     transition:opacity .25s ease,transform .25s ease;pointer-events:none;max-width:86vw;text-align:center;
     box-shadow:0 12px 30px rgba(0,0,0,.8),0 0 24px rgba(255,82,82,.3);}
   .hc-toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  @media(max-height:400px){
+    .hc-modal-overlay{--gx:12px;}
+    .gta-modal-head{padding:6px var(--gx);}
+    .gta-modal-title{font-size:23px;}
+    .gta-modal-close-btn{padding:4px 8px;font-size:11px;}
+    .gta-modal-scroll{padding:3px 0;}
+    .gta-modal-sep{padding:4px var(--gx);font-size:11px;}
+    .gta-modal-row{padding:4px var(--gx);font-size:13px;gap:8px;}
+    .gta-modal-stat{font-size:14px;}
+    .gta-modal-text{padding:6px var(--gx);font-size:12px;line-height:1.35;}
+    .gta-modal-actions{padding:5px var(--gx);gap:8px;}
+    .hc-modal-btn{padding:7px 6px;font-size:13px;letter-spacing:.6px;}
+    .gta-modal-hints{display:none;}
+  }
   `;
   document.head.appendChild(s);
 }
@@ -139,7 +153,7 @@ function getValueColor(valStr: string): string {
   return "#ffffff";
 }
 
-/** Show a blocking choice modal in full-screen GTA V Pause Menu style; resolves with picked button key. */
+/** Show a blocking choice modal; resolves with the selected button key. */
 export function showChoiceModal(spec: ModalSpec, playClick?: () => void): Promise<string> {
   injectStyle();
   openModals += 1;
@@ -214,11 +228,8 @@ export function showChoiceModal(spec: ModalSpec, playClick?: () => void): Promis
     }
     overlay.appendChild(scroll);
 
-    // 4) GTA-style description box
-    const desc = document.createElement("div");
-    desc.className = "gta-modal-desc";
-    desc.textContent = spec.text ? spec.text : spec.title;
-    overlay.appendChild(desc);
+    // Title and explanation already appear in the scroll region. Repeating
+    // them in a fixed footer used to hide the required costs in mini-player.
 
     // 5) Action buttons container
     const actions = document.createElement("div");

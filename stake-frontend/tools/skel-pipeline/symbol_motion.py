@@ -871,147 +871,83 @@ def _tint(shade):
 
 @motion("cash")
 def _cash(sparks, ch, cmax, ctx):
-    """A fan of real $1000 notes in a gold money clip. Rig: `fan` (pivot at the
-    clip) > bill_0..4 (each pivots at the clip, so fanning is a rotation about
-    the grip) + clip; throw_0..3 are hidden copies lying on the front note.
-
-    win      the fan pinches, then SNAPS open (outer notes first, springy
-             paper overshoot); three notes are thumb-flicked off the front —
-             "make it rain" — each a simulated sheet of paper: fast off the
-             hand, drag, then a slow swaying tumble down past the fan.
-    land     the notes' tips carry on after the fan stops: they flare open and
-             spring back, outer notes lagging; the clip clacks.
-    destroy  the clip pops off and the whole fan bursts into falling notes."""
-    meta, slots = ctx["meta"], ctx["slots"]
-    bills = meta["bills"]
-    throws = meta["throws"]
+    """One wad feeds a single short stream of notes, like a money gun.
+    Sheets leave its top face together in direction, then separate under drag.
+    Removal is a quiet fall of the remaining wad, never another paper burst."""
+    throws, slots = ctx["meta"]["throws"], ctx["slots"]
+    unit = ctx["meta"].get("unit", 1.0)
     out = {}
-
-    def dirn(b):
-        return 1.0 if b["fan"] > 0 else -1.0 if b["fan"] < 0 else 0.0
-
-    def outer(b):
-        return abs(b["fan"]) / 54.0                     # 0 centre .. 1 outermost
-
-    # ── idle 72f: the notes breathe apart and together ──
     idle = blank_anim()
-    idle["bones"]["symbol_anchor"] = {"scale": scale(bake(0, 72, lambda r: 1 + 0.008 * math.sin(TAU * r), 3))}
-    for k, b in enumerate(bills):
-        d, o = dirn(b), outer(b)
-        idle["bones"][b["name"]] = {"rotate": rot(bake(0, 72, loopy(
-            lambda r, d=d, o=o, k=k: d * o * 1.6 * math.sin(TAU * r + 0.5) + 0.35 * math.sin(TAU * 2 * r + k)), 2))}
-    glow_breathe(idle, 0.06, 0.42)
+    idle["bones"]["wad"] = {"translate": TR(lambda f: (0.0, 0.0), 72, 3)}
+    idle["slots"]["glow"] = {"color": color(bake(0,72,lambda r:.16+.025*math.sin(math.pi*r)**2,3))}
     out["idle"] = idle
 
-    # ── win 40f ──
-    N, OPEN = 40, 5
-    HOLD_GLOW = 1.04
-    win = blank_anim()
-    win["bones"]["clip"] = {"scale": SC(pw(
-        (0, OPEN, lambda r: (1 + 0.03 * ease_in_quad(r), 1 - 0.07 * ease_in_quad(r))),
-        (OPEN, OPEN + 3, lambda r: (lerp(1.03, 0.98, ease_out_quad(r)), lerp(0.93, 1.05, ease_out_quad(r)))),
-        (OPEN + 3, 18, lambda r: (1 - 0.02 * damped(r, 1.2, 4) * (1 - r), 1 + 0.05 * damped(r, 1.2, 4) * (1 - r))),
-        (18, N, lambda r: (1.0, 1.0))), N)}
-    for k, b in enumerate(bills):
-        d, o = dirn(b), outer(b)
-        st = OPEN + round((1 - o) * 2)                  # outer notes lead
-        spread = d * (6 + 9 * o)
+    def flight(anim, name, start, end, seed, vx, vy):
+        path = _paper(end-start, vx, vy, seed, g=2.0, drag=.065,
+                      sway=8+seed%3*2, sway_hz=.85+seed*.07,
+                      spin0=(-1 if seed%2 else 1)*.65,
+                      tilt=1.55, flip_hz=.43+seed*.045)
+        def pos(f): return path[max(0,min(len(path)-1,f-start))]
+        # Leave flat against the top of the wad, then catch air AFTER clearing
+        # its edge. Starting every sheet face-on looked like cards appearing.
+        def air(f): return smoothstep(min(1,max(0,(f-start-3)/9)))
+        def depth(f): return 1/(1+max(0,f-start-3)*.016)
+        anim["bones"][name] = {
+            "translate": TR(lambda f:(unit*(-12+pos(f)[0]),unit*(3+pos(f)[1])) if f>=start else (0,0),end),
+            "rotate": R(lambda f:lerp(-13,pos(f)[2]+(seed-2)*5,air(f)),end),
+            "scale": SC(lambda f:(depth(f)*lerp(.96,.28+.62*pos(f)[3],air(f)),
+                                   depth(f)*lerp(.55,.74+.035*math.sin((f-start)*.18+seed),air(f))),end)}
+        keys=[{"time":T(0),"color":"ffffff00"},{"time":T(start-1),"color":"ffffff00"}]
+        for f in range(start,end+1):
+            alpha=min(1,(f-start+1)/2)*min(1,max(0,(end-f)/6))
+            keys.append({"time":T(f),"color":(_tint(pos(f)[4]) if alpha>0 else "ffffff")+format(round(alpha*255),'02x')})
+        anim["slots"][name]={"color":keys}
 
-        def ang(f, d=d, o=o, st=st, spread=spread):
-            if f <= OPEN:
-                return -d * 5 * o * ease_in_quad(f / OPEN)          # pinch closed
-            if f <= st:
-                return -d * 5 * o
-            if f <= st + 4:
-                return lerp(-d * 5 * o, spread, ease_out_cubic((f - st) / 4))
-            r = min(1.0, (f - st - 4) / (30 - st - 4))
-            return spread * damped(r, 1.5, 3.3) * (1 - r)
-        win["bones"][b["name"]] = {"rotate": R(ang, N)}
-    # three notes flicked off the front
-    flicks = ((throws[0], 9, -1), (throws[1], 13, 1), (throws[2], 17, -1))
-    for j, (name, st, side) in enumerate(flicks):
-        path = _paper(N - st, side * (13 + 2 * j), 27 - 2 * j, seed=j + 1, spin0=-side * 8, drag=0.105, sway=13)
-        T_ = lambda f, st=st, path=path: path[max(0, min(len(path) - 1, f - st))]
-        win["bones"][name] = {
-            "translate": TR(lambda f, T_=T_, st=st: (T_(f)[0], T_(f)[1]) if f >= st else (0.0, 0.0), N),
-            "rotate": R(lambda f, T_=T_, st=st: T_(f)[2] if f >= st else 0.0, N),
-            "scale": SC(lambda f, T_=T_, st=st: (T_(f)[3], 1.0) if f >= st else (1.0, 1.0), N)}
-        # visible from its release, tinted darker as it turns edge-on, gone
-        # just before the clip ends (the hold starts with it hidden)
-        keys = [{"time": T(0), "color": "ffffff00"}, {"time": T(st - 1), "color": "ffffff00"}]
-        for f in range(st, N + 1):
-            a = 0.0 if f >= N - 1 else (1.0 if f < N - 7 else (N - 1 - f) / 6.0)
-            keys.append({"time": T(f), "color": (_tint(T_(f)[4]) if a > 0 else "ffffff") + format(round(a * 255), "02x")})
-        win["slots"][name] = {"color": keys}
-    win["bones"]["glow"] = {"scale": SC(pw(
-        (0, OPEN, lambda r: 1 - 0.04 * r), (OPEN, OPEN + 5, lambda r: lerp(0.96, 1.12, ease_out_quad(r))),
-        (OPEN + 5, 30, lambda r: lerp(1.12, HOLD_GLOW, ease_in_out(r))), (30, N, lambda r: HOLD_GLOW)), N, 2)}
-    win["slots"]["glow"] = {"color": color([(0, 1.0), (OPEN, 0.65), (OPEN + 4, 0.85), (N, 0.85)])}
-    win["events"] = events((OPEN, "riffle"), (9, "flick"), (13, "flick"), (17, "flick"))
-    out["win"] = win
+    N=48
+    win=blank_anim()
+    recoil=pw((0,4,lambda r:4*unit*ease_in_quad(r)),
+              (4,9,lambda r:unit*lerp(4,7,ease_out_cubic(r))),
+              (9,19,lambda r:7*unit),
+              (19,34,lambda r:7*unit*(1-ease_out_cubic(r))),
+              (34,N,lambda r:0.0))
+    win["bones"]["wad"]={
+        "translate":TR(lambda f:(-recoil(f),-recoil(f)*.45),N),
+        "rotate":R(lambda f:-recoil(f)/(7*unit)*1.8,N)}
+    # Four sheets are enough to read as a burst at reel size without clutter.
+    # All bills follow the same upper-right exit.
+    # Their velocities and flutter phases differ without a symmetric fan.
+    releases=(5,8,10,14)
+    velocities=((56,42),(53,47),(58,44),(54,39))
+    for j,name in enumerate(throws[:4]):
+        flight(win,name,releases[j],N-1,j+1,*velocities[j])
+    win["slots"]["glow"]={"color":color([(0,.16),(4,.12),(9,.30),(34,.22),(N,.22)])}
+    win["events"]=events((5,"riffle"),(12,"flick"),(24,"flutter"))
+    out["win"]=win
 
-    # ── hold 30f ──
-    hold_ = blank_anim()
-    for k, b in enumerate(bills):
-        d, o = dirn(b), outer(b)
-        hold_["bones"][b["name"]] = {"rotate": rot(bake(0, 30, lambda r, d=d, o=o: d * o * 1.4 * math.sin(math.pi * r) ** 2, 2))}
-    hold_["bones"]["glow"] = {"scale": scale(bake(0, 30, lambda r: HOLD_GLOW + 0.03 * math.sin(math.pi * r) ** 2, 2))}
-    hold_["slots"]["glow"] = {"color": color(bake(0, 30, lambda r: 0.85 - 0.14 * math.sin(math.pi * r) ** 2, 2))}
-    out["hold"] = hold_
+    hold_=blank_anim()
+    hold_["bones"]["wad"]={"translate":TR(lambda f:(0,0),30,3)}
+    hold_["slots"]["glow"]={"color":color([(0,.22),(30,.22)])}
+    out["hold"]=hold_
 
-    # ── land 14f: the tips carry on, flare open, spring back ──
-    L = 14
-    land = blank_anim()
-    land["bones"]["clip"] = {"scale": SC(lambda f: (1 + 0.04 * damped_sin(f / L, 1.2, 6) * (1 - f / L),
-                                                    1 - 0.08 * damped_sin(f / L, 1.2, 6) * (1 - f / L)), L)}
-    for k, b in enumerate(bills):
-        d, o = dirn(b), outer(b)
-        dl = 1 + round(o * 2)
-        land["bones"][b["name"]] = {"rotate": R(lambda f, d=d, o=o, dl=dl: 0.0 if f <= dl or f >= L else
-                                                d * (1.5 + 5 * o) * damped_sin((f - dl) / (L - dl), 1.3, 3.2) * (1 - (f - dl) / (L - dl)), L)}
-    land["events"] = events((0, "impact"))
-    out["land"] = land
+    land=blank_anim()
+    land["bones"]["wad"]={
+        "translate":TR(lambda f:(0,2*unit*math.sin(math.pi*f/14)*(1-f/14)**2),14),
+        "rotate":R(lambda f:.7*damped_sin(f/14,1.1,5)*(1-f/14),14),
+        "scale":SC(lambda f:(1+.012*math.sin(math.pi*f/14)**2,1-.026*math.sin(math.pi*f/14)**2),14)}
+    land["events"]=events((0,"impact"))
+    out["land"]=land
 
-    # ── destroy 28f: clip pops, the fan bursts into falling notes ──
-    N2, POP = 28, 3
-    dst = blank_anim()
-    dst["bones"]["clip"] = {
-        "translate": TR(pw((0, POP, lambda r: (0.0, 3 * r)), (POP, N2, lambda r: (60 * ease_out_quad(r), 3 + 40 * r - 190 * r * r))), N2),
-        "rotate": R(pw((0, POP, lambda r: 0.0), (POP, N2, lambda r: -140 * ease_out_quad(r))), N2)}
-    dst["slots"]["clip"] = {"color": color([(0, 1.0), (POP + 8, 1.0), (POP + 15, 0.0), (N2, 0.0)])}
-    pivot = meta["pivot"]
-    for k, b in enumerate(bills):
-        d, o = dirn(b), outer(b)
-        st = POP + (k % 3)
-        a = math.radians(b["fan"])                       # Spine CCW from up
-        ux, uy = -math.sin(a), math.cos(a)               # direction the note points
-        path = _paper(N2 - st, ux * 30 + d * 4, 16 + uy * 18, seed=k + 3, spin0=d * 7, sway=15, drag=0.1)
-        c = b["centre"]
-        T_ = lambda f, st=st, path=path: path[max(0, min(len(path) - 1, f - st))]
-        dst["bones"][b["name"]] = {
-            # the note pivots at the clip: pin its CENTRE to the paper path
-            "translate": TR(lambda f, T_=T_, st=st, c=c: pinned(c, pivot, T_(f)[2], T_(f)[3], 1.0, (T_(f)[0], T_(f)[1])) if f >= st else (0.0, 0.0), N2),
-            "rotate": R(lambda f, T_=T_, st=st: T_(f)[2] if f >= st else 0.0, N2),
-            "scale": SC(lambda f, T_=T_, st=st: (T_(f)[3], 1.0) if f >= st else (1.0, 1.0), N2)}
-        dst["slots"][b["name"]] = {"color": [{"time": T(f), "color": _tint(T_(f)[4] if f >= st else 1.0)
-                                              + format(round(255 * (1.0 if f < N2 - 7 else max(0.0, (N2 - 1 - f) / 6.0))), "02x")}
-                                             for f in range(0, N2 + 1)]}
-    for j, name in enumerate(throws):
-        st = POP + 1 + j
-        side = -1 if j % 2 == 0 else 1
-        path = _paper(N2 - st, side * (9 + 5 * j), 32 - 3 * j, seed=j + 9, spin0=-side * 9, sway=15, drag=0.1)
-        T_ = lambda f, st=st, path=path: path[max(0, min(len(path) - 1, f - st))]
-        dst["bones"][name] = {
-            "translate": TR(lambda f, T_=T_, st=st: (T_(f)[0], T_(f)[1]) if f >= st else (0.0, 0.0), N2),
-            "rotate": R(lambda f, T_=T_, st=st: T_(f)[2] if f >= st else 0.0, N2),
-            "scale": SC(lambda f, T_=T_, st=st: (T_(f)[3], 1.0) if f >= st else (1.0, 1.0), N2)}
-        dst["slots"][name] = {"color": [{"time": T(f), "color": _tint(T_(f)[4] if f >= st else 1.0)
-                                         + format(round(255 * (0.0 if f < st or f >= N2 - 1 else (1.0 if f < N2 - 7 else (N2 - 1 - f) / 6.0))), "02x")}
-                                        for f in range(0, N2 + 1)]}
-    dst["slots"]["glow"] = {"color": color([(0, 1.0), (7, 0.0), (N2, 0.0)])}
-    dst["events"] = events((POP, "snap"), (POP + 2, "flutter"))
-    seal_destroy(dst, slots, N2)
-    out["destroy"] = dst
+    N2=12
+    dst=blank_anim()
+    dst["bones"]["wad"]={
+        "translate":TR(lambda f:(6*unit*ease_in_quad(f/N2),-50*unit*ease_in_quad(f/N2)),N2),
+        "rotate":R(lambda f:-5*ease_in_quad(f/N2),N2)}
+    dst["slots"]["wad"]={"color":color([(0,1),(3,.9),(10,0),(N2,0)])}
+    for name in throws:
+        dst["slots"][name]={"color":color([(0,0),(N2,0)])}
+    dst["slots"]["glow"]={"color":color([(0,.22),(6,.08),(10,0),(N2,0)])}
+    seal_destroy(dst,slots,N2)
+    out["destroy"]=dst
     return out
 
 
@@ -1379,8 +1315,8 @@ def _brass(sparks, ch, cmax, ctx):
                        (19, N, lambda r: 0.0)), N)}
     win["bones"]["base"] = {"scale": SC(pw((0, 5, lambda r: (1 - 0.025 * ease_in_quad(r), 1 + 0.02 * ease_in_quad(r))),
                                           (5, HIT, lambda r: (lerp(0.975, 1.0, r), lerp(1.02, 1.0, r))),
-                                          (HIT, HIT + 1, lambda r: (lerp(1.0, 1.09, r), lerp(1.0, 0.92, r))),
-                                          (HIT + 1, HIT + 5, lambda r: (lerp(1.09, 1.0, ease_out_quad(r)), lerp(0.92, 1.0, ease_out_quad(r)))),
+                                          (HIT, HIT + 1, lambda r: (lerp(1.0, 1.035, r), lerp(1.0, 0.975, r))),
+                                          (HIT + 1, HIT + 5, lambda r: (lerp(1.035, 1.0, ease_out_quad(r)), lerp(0.975, 1.0, ease_out_quad(r)))),
                                           (HIT + 5, N, lambda r: (1.0, 1.0))), N)}
     win["bones"]["glow"] = {"scale": SC(pw((0, HIT, lambda r: 1 - 0.04 * r), (HIT, HIT + 3, lambda r: lerp(0.96, 1.12, ease_out_quad(r))),
                                            (HIT + 3, 22, lambda r: lerp(1.12, HOLD_GLOW, ease_in_out(r))), (22, N, lambda r: HOLD_GLOW)), N, 2)}
@@ -1398,9 +1334,9 @@ def _brass(sparks, ch, cmax, ctx):
     # ── land 10f: hard compression, little rebound ──
     L = 10
     land = blank_anim()
-    land["bones"]["base"] = {"scale": SC(pw((0, 2, lambda r: (lerp(1, 1.1, ease_out_quad(r)), lerp(1, 0.86, ease_out_quad(r)))),
-                                          (2, 6, lambda r: (lerp(1.1, 0.99, ease_in_out(r)), lerp(0.86, 1.012, ease_in_out(r)))),
-                                          (6, L, lambda r: (lerp(0.99, 1.0, r), lerp(1.012, 1.0, r)))), L)}
+    land["bones"]["base"] = {"scale": SC(pw((0, 2, lambda r: (lerp(1, 1.025, ease_out_quad(r)), lerp(1, 0.97, ease_out_quad(r)))),
+                                          (2, 6, lambda r: (lerp(1.025, 0.997, ease_in_out(r)), lerp(0.97, 1.004, ease_in_out(r)))),
+                                          (6, L, lambda r: (lerp(0.997, 1.0, ease_in_out(r)), lerp(1.004, 1.0, ease_in_out(r))))), L)}
     land["bones"]["body"] = {"rotate": R(lambda f: 1.3 * damped_sin(f / L, 1.2, 6) * (1 - f / L), L)}
     land["events"] = events((0, "thud"))
     out["land"] = land

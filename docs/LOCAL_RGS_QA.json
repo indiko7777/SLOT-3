@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-09-20T16:46:07.314Z",
+  "checkedAt": "2026-09-27T16:31:52.790Z",
   "server": "http://127.0.0.1:8787",
   "modes": [
     {
@@ -29,7 +29,7 @@
         }
       ],
       "wallet": "pass",
-      "resume": "pass"
+      "resume": "not-active"
     },
     {
       "mode": "ante",
@@ -131,7 +131,7 @@
         }
       ],
       "wallet": "pass",
-      "resume": "pass"
+      "resume": "not-active"
     },
     {
       "mode": "base_tier2",
@@ -189,7 +189,7 @@
         }
       ],
       "wallet": "pass",
-      "resume": "not-active"
+      "resume": "pass"
     }
   ]
 }

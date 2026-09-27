@@ -15,3 +15,15 @@ Font sources:
 - `stake-frontend/public/assets/fonts/OFL-BarlowSemiCondensed.txt`
 
 Every packaged file is recorded by relative path, byte size and SHA-256 in the release directory's `manifest.json`. This identifies exactly which assets are in the candidate; a checksum is not evidence of a license.
+
+## Presentation assets added 27 September 2026
+
+| Asset | Source / evidence | Handling |
+|---|---|---|
+| `getaway_highway.webp` | Original image-tool night Miami boulevard illustration; generated 27 September. | Quiet background behind the original truck. |
+| `getaway_building.webp`, `getaway_palm.webp` | Original isolated Art Deco building and royal palm, generated for this task. | Recycled side scenery; original truck untouched. |
+| `symbols/cash.webp`, cash atlas | Original unbound wad with fictional palm banknote design. Source `cash-wad.source.png`; six airborne sheets use `cash-note.source.png`. | Idle shows only one wad. Reproducible semantic generator and motion authoring included. |
+| `real_bill.webp` | Original fictional palm note source, generated in this task. | Replaces earlier money-rain artwork. |
+| Anton Regular | Official Google Fonts `ofl/anton`, SIL Open Font License. | Bundled as Heat Display with `OFL-Anton.txt`. |
+
+Previous banded-bundle source is retained for provenance but is not used by the current CASH symbol. New assets were generated from textual art direction without supplied franchise artwork, logos, screenshots or characters.

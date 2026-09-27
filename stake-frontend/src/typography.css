@@ -17,3 +17,10 @@ button:focus-visible, [role='button']:focus-visible {
   outline: 2px solid #f5c8a9;
   outline-offset: 4px;
 }
+@font-face {
+  font-family: 'Heat Display';
+  src: url('/assets/fonts/Anton-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}

@@ -12,7 +12,7 @@ export interface RadioStation {
 
 /** Wheel order is clockwise from the top. */
 export const RADIO_STATIONS: RadioStation[] = [
-  { id: "heat",      name: "LOS SANTOS HEAT", tag: "Lo-fi Miami groove", icon: "🌴", color: "#ff5ea8" },
+  { id: "heat",      name: "COASTAL HEAT",    tag: "Lo-fi Miami groove", icon: "🌴", color: "#ff5ea8" },
   { id: "vault",     name: "VAULT FM",        tag: "Heist tension",      icon: "💰", color: "#ffd95c" },
   { id: "neon",      name: "NEON NIGHTS",     tag: "Synthwave",          icon: "🌆", color: "#36d7ff" },
   { id: "vice",      name: "VICE 95.6",       tag: "Retro synth-pop",    icon: "📼", color: "#b56bff" },

@@ -74,7 +74,32 @@ describe("semantic skeletal bundles", () => {
     const lowMax = Math.max(...LOW.map(dur));
     const premiumMin = Math.min(...PREMIUM.map(dur));
     expect(lowMax).toBeLessThan(premiumMin);
-    for (const n of SEMANTIC) expect(dur(n)).toBeLessThanOrEqual(1.4);
+    // Cash has a brief feed followed by a paper fall. Other symbols retain
+    // the snappy 1.4s ceiling.
+    for (const n of SEMANTIC) expect(dur(n)).toBeLessThanOrEqual(n === "cash" ? 2 : 1.4);
+  });
+
+  it("cash sprays once during the win and never repeats it during removal", () => {
+    const { data, atlas } = load("cash");
+    const player = new SkelPlayer(data, atlas, Texture.WHITE);
+    const notes = data.slots.flatMap((slot, i) => slot.name.startsWith("throw_") ? [player.children[i] as Sprite] : []);
+    const cues: string[] = [];
+    let visibleDuringWin = false;
+    player.play("win", { onEvent: cue => cues.push(cue) });
+    for (let t = 0; t < player.duration("win") + .05; t += 1 / 60) {
+      player.update(1 / 60);
+      visibleDuringWin ||= notes.some(note => note.visible && note.alpha > 0);
+    }
+    expect(visibleDuringWin).toBe(true);
+    player.play("hold", { loop: true });
+    player.update(.1);
+    player.play("destroy", { mix: .05, onEvent: cue => cues.push(cue) });
+    for (let t = 0; t < player.duration("destroy") + .05; t += 1 / 60) {
+      player.update(1 / 60);
+      expect(notes.every(note => !note.visible || note.alpha === 0)).toBe(true);
+    }
+    expect(cues.filter(cue => cue === "riffle")).toHaveLength(1);
+    expect(player.children.every(child => !child.visible || child.alpha === 0)).toBe(true);
   });
 
   it("the armored truck gained a landing without touching its other clips", () => {

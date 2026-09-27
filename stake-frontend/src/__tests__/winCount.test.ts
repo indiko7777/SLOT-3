@@ -1,5 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createWinCount } from "../pixi/winCount";
+import { createWinCount, winCountFormatter } from "../pixi/winCount";
+
+describe("win counter readability", () => {
+  it("keeps ordinary cash amounts at two decimals throughout the roll", () => {
+    const format = winCountFormatter(800);
+    expect([0, 290.455, 799.9999, 800].map(format)).toEqual(["0.00", "290.45", "800.00", "800.00"]);
+  });
+  it("preserves sub-cent payouts and clamps a visual overshoot to the result", () => {
+    const format = winCountFormatter(.0125);
+    expect([0, .0125, .02].map(format)).toEqual(["0.0000", "0.0125", "0.0125"]);
+    expect(winCountFormatter(.1 + .2)(.1 + .2)).toBe("0.30");
+  });
+});
 
 afterEach(() => vi.unstubAllGlobals());
 

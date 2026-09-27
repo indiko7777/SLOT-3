@@ -1,3 +1,4 @@
+import { MiamiStreet } from "./MiamiStreet";
 import { BlurFilter, Container, Graphics, PerspectiveMesh, Sprite, Text, TextStyle, Texture } from "pixi.js";
 import { BONUS_START_RESPINS, GRID_COLUMNS, GRID_ROWS, type BonusCell, type Position } from "../domain";
 import { getExtraTexture } from "./assets";
@@ -85,31 +86,12 @@ const START_RESPINS = BONUS_START_RESPINS;
 // rushes past AROUND the truck, never behind the grid symbols.
 const REEL_BG = 0x0c0c0f;
 
-// ── The "driving off" highway backdrop ───────────────────────────────────
-// The night-highway still (perspective + motion-blur baked into the art) is
-// flown FORWARD with a radial dolly-zoom that RADIATES from the vanishing point,
-// so the road, walls and city rush outward past the camera. Two things make it
-// read as continuously ACCELERATING down a freeway instead of a sickening
-// in-out throb:
-//   • EXPONENTIAL zoom → a CONSTANT optical-flow speed. A linear zoom actually
-//     reads as fast-then-slow within every pass; exponential is the standard
-//     "infinite forward motion" curve, and its loop seam is velocity-continuous
-//     (both copies share the same flow speed), so there is NO speed dip at the
-//     reset — the motion never stutters fast→slow→fast.
-//   • an ACCELERATION ramp → the flow launches slow and builds to a fast cruise
-//     over the first few seconds of the feature, then each spin surges on top:
-//     slow, fast, faster, faster.
-// Two copies cross-dissolve half a cycle apart (triangle alpha → a clean single
-// image twice per cycle); the small zoom RANGE keeps the crossfade double subtle
-// (it reads as zoom-blur, not a ghost).
-const HW_ZOOM_MIN = 1.0;      // fully-out framing (whole scene visible)
-const HW_ZOOM_MAX = 1.35;      // pushed-in framing; small range keeps the seam subtle
-const HW_RATE_START = 0.16;   // dolly cycles / sec at launch (slow roll-out)
-const HW_RATE_CRUISE = 0.48;   // dolly cycles / sec once up to speed (fast)
-const HW_RAMP_SECS = 7;       // seconds of continuous acceleration to reach cruise
+// Perspective road and roadside layers accelerate independently of the skyline.
+const HW_RATE_START = 0.85;   // chase speed immediately on entry
+const HW_RATE_CRUISE = 1.1;   // sustained city passing speed
+const HW_RAMP_SECS = 2;       // seconds of continuous acceleration to reach cruise
 const HW_RATE_SURGE = 0.2;    // extra cycles / sec while the reels spin — flooring it
 const HW_HEAT = 0.05;         // extra cycles / sec per heat level (the chase tightening)
-const HW_COVER_MARGIN = 1.2;  // over-scale so the pivot offset + lane weave never gap
 const HW_VP_FRAC_Y = 0.4;     // art's vanishing point: horizontal centre, ~40% down
 
 // Reel spin motion profile: a quick ramp to full speed, a long stretch of
@@ -184,14 +166,10 @@ export class BonusView extends Container {
   private rect: Rect = { x: 0, y: 0, width: 100, height: 100 };
   private ambientCb: ((dt: number, elapsed: number) => void) | null = null;
 
-  // The two cross-dissolving highway sprites + the dolly-zoom loop state.
-  private highwayA: Sprite | null = null;
-  private highwayB: Sprite | null = null;
-  private highwayBase = 1;              // cover scale at zoom = 1
-  private highwayPhase = 0;             // 0..1 dolly-loop phase
+  // Background scene lifetime and continuous acceleration state.
+  private miamiStreet: MiamiStreet | null = null;
   private highwaySpeed = 0;             // eased phase-advance (cycles/sec)
   private highwayAge = 0;               // seconds since this feature's highway was built (drives the accel ramp)
-  private highwayVP = { x: 0, y: 0 };   // vanishing-point pivot, screen coords
   private truck: Container | null = null;
   private stars: Graphics | null = null;
   private collectedText: Text | null = null;
@@ -1106,10 +1084,10 @@ export class BonusView extends Container {
     this.fxLayer.removeChildren();
     this.hudLayer.removeChildren();
     this.truckLayer.removeChildren();
-    this.bgLayer.removeChildren();
+    this.bgLayer.removeChildren().forEach(child => child.destroy({ children: true }));
+    this.miamiStreet = null;
     this.doorLayer.removeChildren().forEach((child) => child.destroy({ children: true }));
     this.cells.clear();
-    this.highwayA = this.highwayB = null;
     this.truck = this.stars = null;
     this.collectedText = this.collectedUsdText = this.spinsLabel = this.spinsText = null;
     this.spinsBox = null;
@@ -1118,11 +1096,10 @@ export class BonusView extends Container {
 
   // ── layer builders ───────────────────────────────────────────────────
   private buildHighway(): void {
-    this.bgLayer.removeChildren();
-    this.highwayA = this.highwayB = null;
-    this.highwayPhase = 0;
-    this.highwaySpeed = 0;
-    this.highwayAge = 0;   // each getaway launches from the slow roll-out and accelerates
+    this.bgLayer.removeChildren().forEach(child => child.destroy({ children: true }));
+    this.miamiStreet = null;
+    this.highwaySpeed = HW_RATE_START;
+    this.highwayAge = 0;   // enter the chase already travelling at speed
     const W = this.rect.width;
     const H = this.rect.height;
 
@@ -1138,67 +1115,20 @@ export class BonusView extends Container {
       return;
     }
 
-    // Pin the art's vanishing point to the horizon line on screen and scale the
-    // sprites to COVER the whole view at zoom = 1 (they only ever zoom IN from
-    // there, so no gap can ever open at the edges).
-    this.highwayVP = { x: W / 2, y: H * HW_VP_FRAC_Y };
-    this.highwayBase = Math.max(W / tex.width, H / tex.height) * HW_COVER_MARGIN;
-    const mk = (): Sprite => {
-      const s = new Sprite(tex);
-      s.anchor.set(0.5, HW_VP_FRAC_Y);          // pivot on the vanishing point
-      s.position.set(this.highwayVP.x, this.highwayVP.y);
-      return s;
-    };
-    this.highwayA = mk();
-    this.highwayB = mk();
-    this.bgLayer.addChild(this.highwayA, this.highwayB);
-
-    // A single, uniform knock-down over the whole backdrop so the highway is not
-    // photo-bright behind the truck. The old top (H*0.10) and bottom (H*0.18)
-    // dark bands were removed — the player read them as "transparent black
-    // margins" framing the screen. No top/bottom banding now.
-    const grad = new Graphics();
-    grad.rect(0, 0, W, H).fill({ color: 0x000000, alpha: 0.18 });
-    this.bgLayer.addChild(grad);
-
-    // Set the opening transforms so the first painted frame is already correct.
+    this.miamiStreet = new MiamiStreet(tex, W, H, getExtraTexture("getaway_palm"), getExtraTexture("getaway_building"));
+    this.bgLayer.addChild(this.miamiStreet);
     this.updateHighway(0, 0);
   }
 
-  /**
-   * Advance the dolly-zoom flight. Called every ambient frame.
-   *
-   * Speed CONTINUOUSLY ACCELERATES: it eases toward a cruise target that itself
-   * ramps up over the feature's first few seconds (a launch), with spins and
-   * heat surging on top. The zoom is EXPONENTIAL, so the perceived forward speed
-   * is constant for a given rate (never the sickening fast→slow→fast of a linear
-   * zoom) and the loop seam carries no speed dip.
-   */
+  /** Fast side scenery against a quiet night skyline; truck framing is independent. */
   private updateHighway(dt: number, elapsed: number): void {
-    if (!this.highwayA || !this.highwayB) return;
-
+    if (!this.miamiStreet || this.miamiStreet.destroyed) return;
     this.highwayAge += dt;
-    const ramp = Math.min(1, this.highwayAge / HW_RAMP_SECS);           // 0→1 launch ramp
+    const ramp = Math.min(1, this.highwayAge / HW_RAMP_SECS);
     const cruise = HW_RATE_START + (HW_RATE_CRUISE - HW_RATE_START) * ramp;
     const target = cruise + this.shakeBoost * HW_RATE_SURGE + this.heat * HW_HEAT;
     this.highwaySpeed += (target - this.highwaySpeed) * Math.min(1, dt * 2);
-    this.highwayPhase = (this.highwayPhase + dt * this.highwaySpeed) % 1;
-
-    // A slow lane-weave so the camera drifts across the road rather than sitting
-    // dead-centre — kept gentle so it never adds to any motion discomfort.
-    const weave = Math.sin(elapsed * 0.47) * (this.rect.width * 0.010)
-                + Math.sin(elapsed * 1.13) * (this.rect.width * 0.004);
-
-    const ratio = HW_ZOOM_MAX / HW_ZOOM_MIN;
-    const apply = (s: Sprite, phase: number): void => {
-      s.alpha = 1 - Math.abs(phase * 2 - 1);                  // triangle: clean single image at phase 0 and 0.5
-      const z = HW_ZOOM_MIN * Math.pow(ratio, phase);         // EXPONENTIAL → constant flow speed, no seam dip
-      s.scale.set(this.highwayBase * z);
-      s.x = this.highwayVP.x + weave * (0.5 + phase * 0.7);   // nearer frame weaves a touch more
-      s.y = this.highwayVP.y;
-    };
-    apply(this.highwayA, this.highwayPhase);
-    apply(this.highwayB, (this.highwayPhase + 0.5) % 1);
+    this.miamiStreet.update(dt, elapsed, this.highwaySpeed, this.heat);
   }
 
   /**

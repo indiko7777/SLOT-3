@@ -1,3 +1,11 @@
+/** Use the payout's precision for the entire roll instead of flickering between
+ * two and four decimals as intermediate floating-point values change. */
+export function winCountFormatter(finalAmount: number): (amount: number) => string {
+  const cents = finalAmount * 100;
+  const precision = Math.abs(cents - Math.round(cents)) < 1e-6 ? 2 : 4;
+  return amount => Math.min(finalAmount, Math.max(0, amount)).toFixed(precision);
+}
+
 /** One clock owns the displayed amount and its audio. Skipping commits both
  * synchronously, even between animation frames or in a background tab. */
 export function createWinCount(options: {

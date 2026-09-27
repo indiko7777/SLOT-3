@@ -1,6 +1,7 @@
 import { Application } from "pixi.js";
 import { loadUiFonts } from "./typography";
 import { EventAudioBus } from "./audio";
+import { SoundToggle } from "./audio/SoundToggle";
 import { displayCurrency, uiStrings, type BonusCell, type Board, type GameEvent, type Position, type RoundRecord, type SymbolId } from "./domain";
 import { isModalOpen, showChoiceModal, showToast } from "./modals";
 import { formatWin } from "./rgs/client";
@@ -65,6 +66,7 @@ let pixi: Application;
 let scene: PixiGameScene;
 let radioWheel: RadioWheel;
 let settingsMenu: SettingsMenu;
+let soundToggle: SoundToggle | undefined;
 let activeModeKey = "base";
 let anteEnabled = false;
 // Spin speed: persistent mode set from the ☰ menu (Normal / Turbo / Extra Turbo)
@@ -76,9 +78,13 @@ let turboHeld = false;
 let autoplayRemaining = 0;
 let autoplayStop = false;
 let muted = false;
+let lastAudibleStation = "heat";
 let isPlaying = false;
 let isReplayActive = false;
 let snapshot: PlaybackSnapshot = INITIAL_SNAPSHOT;
+function syncSoundToggle(): void {
+  soundToggle?.update(isReplayActive || snapshot.state.startsWith('bonus'), muted);
+}
 /**
  * The WANTED LEVEL stars are the LIVE in-spin Heat (cascade depth, 0–5): the
  * player watches them climb as the cascade chain builds, and at 5 stars (a
@@ -386,6 +392,9 @@ async function boot(): Promise<void> {
     onSafeLand: (index, total) => {
       if (!muted) audioBus.fireSafeLand(index, total);
     },
+    onSymbolFoley: (id, cue, turbo) => {
+      if (!muted) audioBus.symbolFoley(id, cue, turbo);
+    },
     onGetawayCue: (cue, turbo) => {
       // The dynamite now arms before it blows: its original explosive sound
       // plays on the blast frame. No other Getaway moment has a sound here.
@@ -539,6 +548,63 @@ async function boot(): Promise<void> {
     };
     // Slow-motion for inspecting fast beats (1 = normal). __slow(0.2) = 5x slower.
     (window as unknown as { __slow: (s?: number) => void }).__slow = (s = 0.2) => setTimeScale(s);
+    // Explicit local presentation harness; compiled out of publication builds.
+    if (new URLSearchParams(location.search).get("qa") === "presentation") {
+      const panel = document.createElement("div");
+      panel.setAttribute("aria-label", "Presentation QA");
+      Object.assign(panel.style, { position: "fixed", top: "0", left: "0", zIndex: "10001", display: "flex", flexWrap: "wrap", gap: "3px", maxWidth: "100%", background: "#263442", padding: "4px" });
+      const add = (label: string, action: () => Promise<void> | void) => {
+        const button = document.createElement("button");
+        button.textContent = label;
+        button.onclick = async () => {
+          button.disabled = true;
+          try { await audioBus.unlock(); await action(); }
+          finally { button.disabled = false; }
+        };
+        panel.appendChild(button);
+      };
+      const dev = window as unknown as { __getaway: () => Promise<void>; __trigger: (via: "stars" | "trucks") => Promise<void> };
+      add("QA Getaway", () => dev.__getaway());
+      add("QA Stars", () => dev.__trigger("stars"));
+      add("QA Trucks", () => dev.__trigger("trucks"));
+      add("QA Stash", async () => {
+        if (isPlaying) return;
+        isPlaying = true;
+        try { await scene.playEvent({ type: "heat_transform", sourceSymbols: [], targetSymbol: "CASH", positions: [], board: snapshot.board ?? filler() }, snapshot); }
+        finally { isPlaying = false; }
+      });
+      add("QA Cash", async () => {
+        if (isPlaying) return;
+        isPlaying = true;
+        const board = filler();
+        const positions: Position[] = [[1,1],[2,1],[3,1],[2,0],[2,2]];
+        for (const [c,r] of positions) board[c]![r] = "CASH";
+        const preview = { ...snapshot, board };
+        try {
+          scene.resetRound(preview);
+          await scene.playEvent({ type: "board_settle", board }, preview);
+          await scene.playEvent({ type: "cluster_win", winId: "qa-cash", symbol: "CASH", positions,
+            baseMultiplier: 1, heatLevel: 0, appliedGlobalMultiplier: 1, payout: 1 }, preview);
+          await scene.playEvent({ type: "tumble_remove", positions }, preview);
+        } finally { scene.resetRound(snapshot); isPlaying = false; }
+      });
+      for (const [label, payout] of [["Nice", 10], ["Big", 40], ["Mega", 180], ["Grand", 800], ["Max", 5000]] as const) {
+        add(`QA ${label}`, async () => {
+          if (isPlaying) return;
+          isPlaying = true;
+          try {
+            await scene.playEvent({ type: "round_end", payoutMultiplier: payout, capApplied: payout === 5000 }, { ...snapshot, betAmount: 1 });
+          } finally { isPlaying = false; }
+        });
+      }
+      add("QA Slow", () => setTimeScale(.1));
+      for (const [label, mode] of [["Normal", "off"], ["Turbo", "turbo"], ["Extra Turbo", "super"]] as const) {
+        add(`QA ${label}`, () => { turboMode = mode; applyTurboMode(); });
+      }
+      add("QA Mute", () => { muted = true; audioBus.setMuted(true); });
+      add("QA Sound", () => { muted = false; audioBus.setMuted(false); });
+      document.body.appendChild(panel);
+    }
     // eslint-disable-next-line no-console
     console.info("[dev] __trigger('stars'|'trucks'), __slow(0.2) — preview/inspect trigger beats");
   }
@@ -560,13 +626,24 @@ async function boot(): Promise<void> {
         audioBus.selectStation("off");
       } else {
         muted = false;
+        lastAudibleStation = stationId;
         audioBus.selectStation(stationId);
       }
       scene.renderSnapshot(snapshot); // refresh the radio button state
+      syncSoundToggle();
     },
     "heat",
     () => audioBus.playUI("ui_click", muted)
   );
+
+  soundToggle = new SoundToggle(async () => {
+    await audioBus.unlock();
+    muted = !muted;
+    if (!muted && audioBus.getStation() === "off") audioBus.selectStation(lastAudibleStation);
+    else audioBus.setMuted(muted);
+    syncSoundToggle();
+  });
+  syncSoundToggle();
 
   // ☰ burger-menu popup: spin speed (Turbo / Extra Turbo) + Autoplay. All options
   // respect the RGS jurisdiction flags so a disabled feature is greyed out.
@@ -583,7 +660,7 @@ async function boot(): Promise<void> {
     getFlags: () => ({
       disabledTurbo: Boolean(jurisdiction?.disabledTurbo),
       disabledSuperTurbo: Boolean(jurisdiction?.disabledSuperTurbo),
-      disabledAutoplay: Boolean(jurisdiction?.disabledAutoplay)
+      disabledAutoplay: isReplayActive || Boolean(jurisdiction?.disabledAutoplay)
     }),
     playClick: () => { if (!muted) audioBus.playUI("click", false); },
     // GAME INFO tab content sources (same data the Pixi paytable used).
@@ -766,7 +843,8 @@ async function runReplayFlow(record: RoundRecord): Promise<void> {
 }
 
 async function handleAction(action: string): Promise<void> {
-  if (isReplayActive) return; // Prevent any interaction during replay
+  // Replay disables wagering; sound, rules and playback speed remain available.
+  if (isReplayActive && !["mute", "menu", "info"].includes(action)) return;
   // Stopping autoplay must work at ANY moment — including mid-round — so it
   // is handled before every playing/lock gate below.
   if (action === "spin" && autoplayRemaining > 0) {
@@ -976,6 +1054,7 @@ function consumeRoundStars(record: RoundRecord): void {
 async function replayRound(record: RoundRecord, active: boolean): Promise<void> {
   for (const event of record.events as GameEvent[]) {
     snapshot = applyEvent(snapshot, event, record);
+    syncSoundToggle();
     audioBus.playEvent(event, muted, isTurbo());
     await scene.playEvent(event, snapshot);
   }

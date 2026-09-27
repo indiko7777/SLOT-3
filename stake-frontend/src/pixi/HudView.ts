@@ -336,11 +336,11 @@ export class HudView extends Container {
       const regionTop = buttonsBottom + gap;
       const regionBottom = rect.y + rect.height - 4;
       const availH = regionBottom - regionTop;
-      const boxW = Math.max(0, rect.width * 1.6);
+      const boxW = Math.max(0, panelWidth * .96);
       if (availH > 20 && boxW > 20) {
         const logo = new Sprite(logoTex);
         logo.anchor.set(0.5, 0.5);
-        const baseScale = Math.min(boxW / logoTex.width, availH / logoTex.height) * 1.05;
+        const baseScale = Math.min(boxW / logoTex.width, availH * .88 / logoTex.height);
         logo.scale.set(baseScale);
         logo.position.set(center, (regionTop + regionBottom) / 2);
         logo.filters = [new DropShadowFilter({ color: 0x000000, alpha: 0.9, blur: 8, offset: { x: 0, y: 5 } })];

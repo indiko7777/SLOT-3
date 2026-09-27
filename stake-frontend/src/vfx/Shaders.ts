@@ -11,7 +11,7 @@ import { Container, Filter } from "pixi.js";
 import { AdvancedBloomFilter, RGBSplitFilter, ShockwaveFilter } from "pixi-filters";
 import { tween, linear } from "../pixi/tween";
 
-/** Attach a filter, run an animation over it, then restore the prior filter chain. */
+/** Attach a filter and remove only that filter when its animation ends. */
 async function withFilter<T extends Filter>(
   target: Container,
   filter: T,
@@ -23,10 +23,15 @@ async function withFilter<T extends Filter>(
   try {
     await run(filter);
   } finally {
-    // IMPORTANT: reset to the prior chain, or to `null` (NOT `[]`). In Pixi v8 an
-    // empty filter array still routes the container through an empty filter pass
-    // that renders nothing — blanking it. `null` disables filtering entirely.
-    target.filters = prevArr.length ? prevArr : (null as unknown as Filter[]);
+    // Pulses can overlap and finish in either order. Restoring the captured
+    // chain resurrects a destroyed sibling filter (or removes a live one).
+    // Remove our own instance from the CURRENT chain; null disables filtering.
+    if (!target.destroyed) {
+      const current = target.filters;
+      const remaining = (current ? (Array.isArray(current) ? current : [current]) : [])
+        .filter((entry) => entry !== filter);
+      target.filters = remaining.length ? remaining : (null as unknown as Filter[]);
+    }
     try { filter.destroy(); } catch { /* already gone */ }
   }
 }

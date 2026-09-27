@@ -1,0 +1,34 @@
+{
+  "small": {
+    "event": 22003,
+    "payout": 3.8,
+    "cascades": 1,
+    "wild": false,
+    "transform": false,
+    "bonus": false
+  },
+  "cascade": {
+    "event": 22005,
+    "payout": 3,
+    "cascades": 2,
+    "wild": true,
+    "transform": true,
+    "bonus": false
+  },
+  "wild": {
+    "event": 22005,
+    "payout": 3,
+    "cascades": 2,
+    "wild": true,
+    "transform": true,
+    "bonus": false
+  },
+  "transform": {
+    "event": 22005,
+    "payout": 3,
+    "cascades": 2,
+    "wild": true,
+    "transform": true,
+    "bonus": false
+  }
+}

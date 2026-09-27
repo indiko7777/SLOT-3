@@ -156,7 +156,13 @@ export class BoardView extends Container {
   async highlight(positions: Position[], turbo: boolean): Promise<void> {
     this.markPositions(positions, "highlight");
     await Promise.all(
-      positions.map((p) => this.symbols.get(keyOf(p))?.winCelebrate(turbo) ?? Promise.resolve())
+      positions.map(async (p, i) => {
+        const view = this.symbols.get(keyOf(p));
+        // A cluster feeds cash in a quick ripple, not six identical sprays
+        // advancing on exactly the same frame. Keep the delay bounded.
+        if (view?.id === "CASH") await wait((i % 4) * (turbo ? 10 : 24));
+        if (view && !view.destroyed) await view.winCelebrate(turbo);
+      })
     );
     await wait(turbo ? 30 : 80);
   }

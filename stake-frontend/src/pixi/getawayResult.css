@@ -70,11 +70,11 @@
 .getaway-result__kicker i { width: clamp(28px, 9vw, 86px); height: 1px; background: linear-gradient(90deg, transparent, #d3ab74); }
 .getaway-result__kicker i:last-child { transform: rotate(180deg); }
 .getaway-result__tier {
-  margin: 10px 0 0; line-height: .98; font-weight: 700; font-style: italic;
+  margin: 10px 0 0; line-height: 1.08; font-family: 'Heat Display', Impact, sans-serif; font-weight: 400; font-style: normal;
   font-size: clamp(38px, 7.4vw, 86px); letter-spacing: 1px;
-  background: linear-gradient(#fff9e2 8%, var(--gold) 46%, var(--gold-deep) 98%);
+  background: linear-gradient(#fff9e2 8%, #ffe0b0 46%, #f69a9b 98%);
   background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 3px 0 #4a2c14) drop-shadow(0 0 calc(14px + 26px * var(--heat)) rgba(255, 173, 66, .55));
+  filter: drop-shadow(0 4px 0 #702746) drop-shadow(0 0 10px rgba(255, 173, 120, .18));
 }
 .getaway-result__label {
   margin-top: 20px; color: #cdae7c; font-size: 11px; font-weight: 700; letter-spacing: 5px;

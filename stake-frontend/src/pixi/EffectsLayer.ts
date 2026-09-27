@@ -1,11 +1,14 @@
 import { Container, Graphics, Text, TextStyle, Sprite } from "pixi.js";
+import { AnnouncementArt, announcementTitleStyle } from "./AnnouncementArt";
+import { logicalViewport } from "./layout";
+import { UI_FONT, DISPLAY_FONT } from "../typography";
 import type { Position } from "../domain";
 import type { Rect } from "./types";
 import { makeText } from "./text";
-import { tween, wait, easeOutBack, easeOutCubic, easeInOutCubic, easeOutElastic, linear, ambientTicker } from "./tween";
+import { tween, wait, easeOutBack, easeOutCubic, easeInOutCubic, easeOutElastic, linear, ambientTicker, getTimeScale } from "./tween";
 import { pulseBloom, pulseChromaticAberration } from "../vfx/Shaders";
 import { getExtraTexture } from "./assets";
-import { formatWin } from "../rgs/client";
+import { winCountFormatter } from "./winCount";
 
 export class EffectsLayer extends Container {
   public readonly particles = new Container();
@@ -15,6 +18,32 @@ export class EffectsLayer extends Container {
   private readonly numCols = 15;
   private maxWinActive = false;
   private shouldStack = false;
+  private readonly announcements = new Set<{
+    content: Container;
+    veil: Graphics;
+    source: Rect;
+    veilOpacity: number;
+  }>();
+
+  /** Re-anchor a running title without restarting its motion or count-up. */
+  resize(board: Rect, viewport: { width: number; height: number }): void {
+    for (const item of this.announcements) {
+      const scale = Math.min(board.width / item.source.width, board.height / item.source.height);
+      item.content.scale.set(scale);
+      item.content.position.set(
+        board.x + board.width / 2 - (item.source.x + item.source.width / 2) * scale,
+        board.y + board.height / 2 - (item.source.y + item.source.height / 2) * scale,
+      );
+      item.veil.clear().rect(0, 0, viewport.width, viewport.height)
+        .fill({ color: 0x070a12, alpha: item.veilOpacity });
+    }
+  }
+
+  private trackAnnouncement(content: Container, veil: Graphics, source: Rect, veilOpacity: number): () => void {
+    const item = { content, veil, source: { ...source }, veilOpacity };
+    this.announcements.add(item);
+    return () => { this.announcements.delete(item); };
+  }
 
   private readonly activeParticles: Array<{
     view: Container | Graphics;
@@ -274,171 +303,76 @@ export class EffectsLayer extends Container {
     const group = new Container();
     const cx = rect.x + rect.width / 2;
     const cy = rect.y + rect.height / 2;
-    const big = intensity === "mid" || intensity === "high" || intensity === "grand";
 
-    // Tier-scaled config
-    const cfg = {
-      low:   { titleSize: 22, amtSize: 40, flashAlpha: 0,    holdMs: 250,  rays: false, coins: 0 },
-      mid:   { titleSize: 28, amtSize: 52, flashAlpha: 0.30, holdMs: 450,  rays: true,  coins: 24 },
-      high:  { titleSize: 34, amtSize: 60, flashAlpha: 0.40, holdMs: 700,  rays: true,  coins: 40 },
-      grand: { titleSize: 42, amtSize: 72, flashAlpha: 0.50, holdMs: 1100, rays: true,  coins: 60 },
-    }[intensity];
-
-    // --- Screen flash ---
-    if (cfg.flashAlpha > 0 && !turbo) {
-      const flash = new Graphics();
-      flash.rect(rect.x - 50, rect.y - 50, rect.width + 100, rect.height + 100)
-        .fill({ color: intensity === "grand" ? 0xff88ff : 0xffdf65, alpha: cfg.flashAlpha });
-      group.addChild(flash);
-      tween(300, (p) => { flash.alpha = (1 - p) * cfg.flashAlpha; });
-    }
-
-    // --- Radial light rays behind text ---
-    if (cfg.rays && !turbo) {
-      const rays = new Graphics();
-      const rayCount = intensity === "grand" ? 18 : 12;
-      for (let i = 0; i < rayCount; i++) {
-        const angle = (Math.PI * 2 * i) / rayCount;
-        const inner = 30;
-        const outer = rect.width * (intensity === "grand" ? 0.65 : 0.5);
-        const spread = 0.08;
-        rays.moveTo(cx + Math.cos(angle - spread) * inner, cy + Math.sin(angle - spread) * inner);
-        rays.lineTo(cx + Math.cos(angle - spread) * outer, cy + Math.sin(angle - spread) * outer);
-        rays.lineTo(cx + Math.cos(angle + spread) * outer, cy + Math.sin(angle + spread) * outer);
-        rays.lineTo(cx + Math.cos(angle + spread) * inner, cy + Math.sin(angle + spread) * inner);
-        rays.fill({ color: intensity === "grand" ? 0xff88ff : 0xffdf65, alpha: 0.06 });
-      }
-      rays.alpha = 0;
-      group.addChild(rays);
-      tween(400, (p) => {
-        rays.alpha = Math.sin(p * Math.PI) * 0.8;
-        rays.rotation = p * 0.3;
-      });
-    }
-
-    // --- Background glow burst ---
-    const glowBurst = new Graphics();
-    const glowR = big ? 0.45 : 0.35;
-    glowBurst.circle(0, 0, rect.width * glowR)
-      .fill({ color: 0xffdf65, alpha: 0.12 });
-    glowBurst.circle(0, 0, rect.width * glowR * 0.55)
-      .fill({ color: 0xffdf65, alpha: 0.08 });
-    glowBurst.position.set(cx, cy);
-    glowBurst.alpha = 0;
-    group.addChild(glowBurst);
-
-    // --- Dark overlay strip ---
-    const strip = new Graphics();
-    const stripH = amount ? (big ? 120 : 100) : 55;
-    strip.rect(rect.x, cy - stripH / 2, rect.width, stripH)
-      .fill({ color: 0x000000, alpha: 0.85 });
-    strip.alpha = 0;
-    group.addChild(strip);
-
-    // --- Gold accent lines ---
-    const lineThick = big ? 4 : 3;
-    const lineTop = new Graphics();
-    lineTop.rect(rect.x, cy - stripH / 2, rect.width, lineThick)
-      .fill({ color: intensity === "grand" ? 0xff88ff : 0xffdf65, alpha: 0.9 });
-    lineTop.alpha = 0;
-    group.addChild(lineTop);
-
-    const lineBot = new Graphics();
-    lineBot.rect(rect.x, cy + stripH / 2 - lineThick, rect.width, lineThick)
-      .fill({ color: intensity === "grand" ? 0xff88ff : 0xffdf65, alpha: 0.9 });
-    lineBot.alpha = 0;
-    group.addChild(lineBot);
-
-    // --- Message text (styled) ---
-    const msgText = new Text({
-      text: message.toUpperCase(),
-      style: new TextStyle({
-        fill: intensity === "grand" ? 0xff88ff : 0xffffff,
-        fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
-        fontSize: amount ? cfg.titleSize : cfg.titleSize + 6,
-        fontWeight: "900",
-        letterSpacing: intensity === "grand" ? 6 : 3,
-        align: "center",
-        dropShadow: { color: 0x000000, alpha: 0.8, blur: big ? 8 : 4, distance: 2 }
-      })
-    });
-    msgText.anchor.set(0.5, 0.5);
-    msgText.position.set(cx, cy - (amount ? stripH * 0.22 : 0));
-    msgText.alpha = 0;
-    msgText.scale.set(0.3);
-    group.addChild(msgText);
-
-    // --- Win amount (big gold) ---
-    let amtText: Text | null = null;
+    const viewport = logicalViewport(window.innerWidth, window.innerHeight);
+    const veil = new Graphics().rect(0, 0, viewport.width, viewport.height)
+      .fill({ color: 0x070a12, alpha: amount ? .62 : .5 });
+    veil.alpha = 0;
+    this.addChild(veil);
+    const tier = { low: 0, mid: 1, high: 2, grand: 3 }[intensity];
+    const width = Math.min(rect.width * .98, 850);
+    const titleLines: Record<string, string> = {
+      "BUST THE STASH": "BUST THE\nSTASH", "GETAWAY DRIVER": "GETAWAY\nDRIVER",
+      "PRESTIGE RANK UP!": "PRESTIGE\nRANK UP!", "GALLERY MASTERED": "GALLERY\nMASTERED",
+      "REWARD UNLOCKED": "REWARD\nUNLOCKED",
+    };
+    const titleText = titleLines[message.toUpperCase()] ?? message.toUpperCase();
+    const multiline = titleText.includes("\n");
+    const height = multiline ? (amount ? 256 : Math.min(260, Math.max(190, width*.44))) : amount ? 174 : 120;
+    group.position.set(cx, cy);
+    const art = new AnnouncementArt(width, height, tier);
+    group.addChild(art);
+    const featureSize = Math.min(amount ? 76 : 96, width*.16);
+    const titleStyle = announcementTitleStyle(multiline ? featureSize : amount ? 50 + tier * 6 : 56, tier);
+    if (multiline) titleStyle.lineHeight = featureSize;
+    const title = new Text({ text: titleText, style: titleStyle });
+    title.skew.x = -.08;
+    title.anchor.set(.5);
+    title.y = amount ? -height * (multiline ? .18 : .22) : 0;
+    title.scale.set(Math.min(1, width * .84 / Math.max(1, title.width)));
+    group.addChild(title);
     if (amount) {
-      amtText = new Text({
-        text: amount,
-        style: new TextStyle({
-          fill: intensity === "grand" ? 0xffaaff : 0xffdf65,
-          fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
-          fontSize: cfg.amtSize,
-          fontWeight: "900",
-          letterSpacing: 2,
-          stroke: { color: intensity === "grand" ? 0x6a1a6a : 0x8b4513, width: big ? 4 : 3 },
-          dropShadow: { color: intensity === "grand" ? 0xff44ff : 0xff6a00, alpha: 0.6, blur: big ? 16 : 12, distance: 0 }
-        })
-      });
-      amtText.anchor.set(0.5, 0.5);
-      amtText.position.set(cx, cy + stripH * 0.2);
-      amtText.alpha = 0;
-      amtText.scale.set(0.1);
-      group.addChild(amtText);
+      const value = new Text({ text: amount, style: new TextStyle({
+        fontFamily: DISPLAY_FONT, fontWeight: "400", fontSize: 48 + tier * 5,
+        fill: 0xffdf98, stroke: { color: 0x292137, width: 4 },
+        dropShadow: { color: 0x130f26, alpha: .8, distance: 3, blur: 2 },
+      }) });
+      value.anchor.set(.5);
+      value.y = height * (multiline ? .29 : .16);
+      value.scale.set(Math.min(1, width * .65 / Math.max(1, value.width)));
+      group.addChild(value);
     }
-
-    this.addChild(group);
-
-    // Every banner lands like a punch: fire the cinematic "bang" the instant it
-    // bursts in, scaled to the tier so a grand reveal hits harder than a low one.
+    const content = new Container();
+    content.addChild(group);
+    this.addChild(content);
+    const untrack = this.trackAnnouncement(content, veil, rect, amount ? .62 : .5);
+    group.alpha = 0;
+    await tween(turbo ? 45 : 110, p => {
+      veil.alpha = p;
+      group.alpha = p * .7;
+      group.x = cx - (1-p) * width * .12;
+      group.scale.set(.82 - .025 * p);
+      art.pose(p * .5);
+    }, easeOutCubic);
     this.emit("banner_impact", intensity);
-
-    // GPU bloom + chromatic-aberration glitch on the win moment. Applied to THIS
-    // (the mask-free effects layer) — filtering the masked board/root blanks the
-    // canvas in Pixi v8, so the banner + rays + coins carry the surge instead.
-    if (!turbo && (intensity === "mid" || intensity === "high" || intensity === "grand")) {
-      void pulseBloom(this, { scale: intensity === "grand" ? 1.7 : intensity === "high" ? 1.2 : 0.8, duration: 900 });
-      if (intensity === "grand" || intensity === "high") {
-        void pulseChromaticAberration(this, { intensity: intensity === "grand" ? 10 : 6, duration: 600 });
-      }
-    }
-
-    // === Phase 1: Burst in ===
-    await tween(turbo ? 80 : 220, (p) => {
-      glowBurst.alpha = p * 0.8;
-      glowBurst.scale.set(0.3 + p * 0.7);
-      strip.alpha = p;
-      lineTop.alpha = p;
-      lineBot.alpha = p;
-      msgText.alpha = Math.min(1, p * 2);
-      msgText.scale.set(0.3 + 0.7 * p);
-    }, easeOutBack);
-
-    // === Phase 2: Amount punches in ===
-    if (amtText) {
-      await tween(turbo ? 60 : 200, (p) => {
-        amtText!.alpha = Math.min(1, p * 2);
-        amtText!.scale.set(0.1 + 1.1 * p);
-      }, easeOutBack);
-      amtText.scale.set(1);
-    }
-
-    // === Hold ===
-    await wait(turbo ? 60 : cfg.holdMs);
-
-    // === Phase 3: Fade out ===
-    await tween(turbo ? 80 : 250, (p) => {
-      group.alpha = 1 - p;
-      glowBurst.scale.set(1 + p * 0.3);
-      if (amtText) amtText.scale.set(1 + p * 0.08);
-      msgText.y = cy - (amount ? stripH * 0.22 : 0) - p * 20;
-      if (amtText) amtText.y = cy + stripH * 0.2 - p * 20;
+    art.impact(0);
+    await tween(turbo ? 95 : 240, p => {
+      group.alpha = 1;
+      group.x = cx;
+      group.scale.set(1.10 - .10 * p);
+      art.pose(p);
+      art.impact(p);
+    }, easeOutCubic);
+    await wait(turbo ? 450 * Math.max(1, getTimeScale()) : [580, 780, 980, 1250][tier]);
+    await tween(turbo ? 100 : 240, p => {
+      veil.alpha = 1-p;
+      group.alpha = 1-p;
+      group.x = cx + p * width * .07;
+      group.y = cy - p * 9;
     }, easeInOutCubic);
-
-    group.destroy({ children: true });
+    untrack();
+    veil.destroy();
+    content.destroy({ children: true });
   }
 
   /* ─────────────────────────────────────────────────
@@ -822,11 +756,16 @@ export class EffectsLayer extends Container {
 
     // Tap/Click skip area covering the whole board
     const interactionBlock = new Graphics();
-    interactionBlock.rect(rect.x, rect.y, rect.width, rect.height)
-      .fill({ color: 0x000000, alpha: 0.0001 }); // invisible block
+    const viewport = logicalViewport(window.innerWidth, window.innerHeight);
+    interactionBlock.rect(0, 0, viewport.width, viewport.height)
+      .fill({ color: 0x030711, alpha: .68 });
+    interactionBlock.alpha = 0;
     interactionBlock.eventMode = "static";
     interactionBlock.cursor = "pointer";
     group.addChild(interactionBlock);
+    const content = new Container();
+    group.addChild(content);
+    const untrack = this.trackAnnouncement(content, interactionBlock, rect, .68);
 
     let slammed = false;
     let doubleClicked = false;
@@ -860,59 +799,53 @@ export class EffectsLayer extends Container {
     };
     window.addEventListener("keydown", onKeyDown);
 
-    // --- Dark overlay strip (spans full width of the screen) ---
-    const strip = new Graphics();
-    const stripH = 140;
-    const stripX = 0;
-    const stripW = window.innerWidth || 1024;
-    strip.rect(stripX, cy - stripH / 2, stripW, stripH)
-      .fill({ color: 0x000000, alpha: 0.88 });
-    group.addChild(strip);
-
-    // --- Accent lines ---
-    const lineTop = new Graphics();
-    const lineBot = new Graphics();
-    group.addChild(lineTop, lineBot);
-
-    // Set initial lines to soft gold
-    lineTop.rect(stripX, cy - stripH / 2, stripW, 3.5).fill({ color: 0xffdf65, alpha: 0.8 });
-    lineBot.rect(stripX, cy + stripH / 2 - 3.5, stripW, 3.5).fill({ color: 0xffdf65, alpha: 0.8 });
+    const stripW = Math.min(rect.width * .98, 900);
+    const stripH = Math.min(190, Math.max(128, rect.height * .36));
+    const announcement = new AnnouncementArt(stripW, stripH, 0);
+    announcement.position.set(cx, cy);
+    content.addChild(announcement);
 
     // --- Title text ---
-    const msgText = new Text({
-      text: "WINNING",
-      style: new TextStyle({
-        fill: 0xffffff,
-        fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
-        fontSize: 28,
-        fontWeight: "900",
-        letterSpacing: 3,
-        align: "center",
-        dropShadow: { color: 0x000000, alpha: 0.8, blur: 8, distance: 2 }
-      })
-    });
+    const msgText = new Text({ text: "NICE WIN", style: announcementTitleStyle(76) });
+    msgText.skew.x = -.08;
     msgText.anchor.set(0.5, 0.5);
-    msgText.position.set(cx, cy - 26);
-    group.addChild(msgText);
+    msgText.scale.set(Math.min(1, stripW * .76 / Math.max(1, msgText.width)));
+    msgText.position.set(cx, cy - stripH * .27);
+    content.addChild(msgText);
 
+    // Keep precision stable throughout the roll, including fractional wagers.
+    const finalAmount = targetMultiplier * betAmount;
+    const formatCount = winCountFormatter(finalAmount);
     // --- Win amount text ---
     const amtText = new Text({
-      text: "0.00",
+      text: formatCount(0) + " " + currency,
       style: new TextStyle({
         fill: 0xffdf65,
-        fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
-        fontSize: 48,
-        fontWeight: "900",
-        letterSpacing: 2,
+        fontFamily: DISPLAY_FONT,
+        fontSize: 68,
+        stroke: { color: 0x292239, width: 5 },
+        fontWeight: "400",
+        letterSpacing: 1,
         align: "center",
         dropShadow: { color: 0x000000, alpha: 0.8, blur: 12, distance: 0 }
       })
     });
     amtText.anchor.set(0.5, 0.5);
-    amtText.position.set(cx, cy + 28);
-    group.addChild(amtText);
+    amtText.position.set(cx, cy + stripH * .19);
+    content.addChild(amtText);
 
     this.addChild(group);
+
+    await tween(turbo ? 70 : 180, p => {
+      interactionBlock.alpha = p;
+      msgText.alpha = p;
+      amtText.alpha = p;
+      announcement.alpha = .35 + p * .65;
+      announcement.scale.set(.94 + p * .06);
+      announcement.pose(p);
+    }, easeOutCubic);
+    this.emit("banner_impact", targetMultiplier >= 500 ? "grand" : "mid");
+    void tween(turbo ? 120 : 320, p => announcement.impact(p), easeOutCubic);
 
     // Pacing calculations (max 6 seconds in normal mode)
     const duration = turbo ? 800 : Math.min(6000, 1500 + targetMultiplier * 10);
@@ -939,8 +872,8 @@ export class EffectsLayer extends Container {
         const isGrandRain = targetTier === "grand" || targetTier === "max";
         
         // Target spawn intervals in ms (significantly faster for dense continuous flow)
-        const billInterval = targetTier === "max" ? 6 : targetTier === "grand" ? 12 : targetTier === "mega" ? 20 : 35;
-        const coinInterval = targetTier === "max" ? 80 : targetTier === "grand" ? 120 : targetTier === "mega" ? 180 : 250;
+        const billInterval = targetTier === "max" ? 45 : targetTier === "grand" ? 65 : targetTier === "mega" ? 90 : 130;
+        const coinInterval = targetTier === "max" ? 650 : targetTier === "grand" ? 850 : targetTier === "mega" ? 1100 : 1500;
 
         billSpawnTimer += dt * 1000;
         coinSpawnTimer += dt * 1000;
@@ -984,8 +917,8 @@ export class EffectsLayer extends Container {
         const currentMult = targetMultiplier * p;
         const currentAmount = currentMult * betAmount;
 
-        amtText.text = formatWin(currentAmount) + " " + currency;
-        onUpdate(currentAmount);
+        amtText.text = formatCount(currentAmount) + " " + currency;
+        onUpdate(Number(formatCount(currentAmount)));
 
         // Determine current tier
         let activeTier: "none" | "big" | "mega" | "grand" | "max" = "none";
@@ -1002,9 +935,6 @@ export class EffectsLayer extends Container {
           // Transition pop and effects
           if (activeTier === "big") {
             msgText.text = "BIG WIN";
-            msgText.style.fill = 0xffdf65; // Gold
-            lineTop.clear().rect(stripX, cy - stripH / 2, stripW, 4).fill({ color: 0xffdf65 });
-            lineBot.clear().rect(stripX, cy + stripH / 2 - 4, stripW, 4).fill({ color: 0xffdf65 });
             
             if (!turbo) {
               void this.screenShake(this.parent as Container, turbo);
@@ -1012,9 +942,6 @@ export class EffectsLayer extends Container {
             }
           } else if (activeTier === "mega") {
             msgText.text = "MEGA WIN";
-            msgText.style.fill = 0xe056fd; // Magenta/Purple
-            lineTop.clear().rect(stripX, cy - stripH / 2, stripW, 4).fill({ color: 0xe056fd });
-            lineBot.clear().rect(stripX, cy + stripH / 2 - 4, stripW, 4).fill({ color: 0xe056fd });
 
             if (!turbo) {
               void this.screenShake(this.parent as Container, turbo);
@@ -1023,43 +950,44 @@ export class EffectsLayer extends Container {
             }
           } else if (activeTier === "grand") {
             msgText.text = "GRAND WIN";
-            msgText.style.fill = 0xff4757; // Vibrant Neon Red
-            lineTop.clear().rect(stripX, cy - stripH / 2, stripW, 4).fill({ color: 0xff4757 });
-            lineBot.clear().rect(stripX, cy + stripH / 2 - 4, stripW, 4).fill({ color: 0xff4757 });
 
             if (!turbo) {
               void this.screenShake(this.parent as Container, turbo);
               void this.goldCoinBurst(cx, cy, rect, turbo);
               void pulseBloom(this, { scale: 1.7, duration: 900 });
-              void pulseChromaticAberration(this, { intensity: 10, duration: 600 });
+              void pulseChromaticAberration(this, { intensity: 3, duration: 350 });
             }
           } else if (activeTier === "max") {
             msgText.text = "MAX WIN";
-            msgText.style.fill = 0x00f0ff; // Cyan/Neon Blue
-            lineTop.clear().rect(stripX, cy - stripH / 2, stripW, 5).fill({ color: 0x00f0ff });
-            lineBot.clear().rect(stripX, cy + stripH / 2 - 5, stripW, 5).fill({ color: 0x00f0ff });
 
             if (!turbo) {
               void this.screenShake(this.parent as Container, turbo);
               void this.goldCoinBurst(cx, cy, rect, turbo);
               void pulseBloom(this, { scale: 2.0, duration: 1200 });
-              void pulseChromaticAberration(this, { intensity: 15, duration: 800 });
+              void pulseChromaticAberration(this, { intensity: 4, duration: 400 });
             }
           }
 
+          const artTier = { none: 0, big: 1, mega: 2, grand: 3, max: 4 }[activeTier];
+          announcement.setTier(artTier);
+          void tween(turbo ? 120 : 300, p => announcement.impact(p), easeOutCubic);
+          msgText.style = announcementTitleStyle(72 + artTier * 10, artTier);
+
           // Pop title text
-          msgText.scale.set(1.4);
-          void tween(200, (pt) => {
-            msgText.scale.set(1.4 - 0.4 * pt);
-          });
+          msgText.scale.set(1);
+          const titleFit = Math.min(1, stripW * .76 / Math.max(1, msgText.width));
+          void tween(220, (pt) => {
+            if (!msgText.destroyed) msgText.scale.set(titleFit * (1.09 - .09 * pt));
+          }, easeOutCubic);
         }
 
         // Drive the continuous roller every frame so its pitch tracks the rising
         // total exactly — no more dead per-tick blips.
         this.emit("win_counter_progress", p, activeTier);
 
-        // Text bounce during updates
-        amtText.scale.set(1.0 + Math.sin(p * Math.PI * 8) * 0.05);
+        // Stable digits, including long currency amounts.
+        amtText.scale.set(1);
+        amtText.scale.set(Math.min(1, stripW * .65 / Math.max(1, amtText.width)));
 
         if (t < 1 && !slammed) {
           animFrame = requestAnimationFrame(tick);
@@ -1072,9 +1000,9 @@ export class EffectsLayer extends Container {
     });
 
     // Final confirmations
-    const finalAmount = targetMultiplier * betAmount;
-    amtText.text = formatWin(finalAmount) + " " + currency;
+    amtText.text = formatCount(finalAmount) + " " + currency;
     amtText.scale.set(1);
+    amtText.scale.set(Math.min(1, stripW * .65 / Math.max(1, amtText.width)));
     onUpdate(finalAmount);
 
     // Resolve the roller (quick upward flourish + fade) and punctuate the landing
@@ -1097,7 +1025,7 @@ export class EffectsLayer extends Container {
 
     if (isMaxWin) {
       // For max win, we wait for a second tap/click or keyboard press to dismiss
-      let dismissed = false;
+      let dismissed = doubleClicked;
 
       // Update interaction block event handler for dismissal
       interactionBlock.off("pointerdown", onTap);
@@ -1132,7 +1060,7 @@ export class EffectsLayer extends Container {
     } else {
       // Normal win hold - wait for hold duration or 2nd click to dismiss immediately
       const holdStart = performance.now();
-      const holdMax = slammed ? 750 : turbo ? 300 : 1200;
+      const holdMax = slammed ? 750 : turbo ? 550 : 1200;
       while (!doubleClicked && performance.now() - holdStart < holdMax) {
         await wait(30);
       }
@@ -1156,6 +1084,7 @@ export class EffectsLayer extends Container {
     });
     this.activeParticles.length = 0;
 
+    untrack();
     group.destroy({ children: true });
   }
 }
