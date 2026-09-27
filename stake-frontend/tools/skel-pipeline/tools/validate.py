@@ -12,6 +12,11 @@ Checks (errors fail the build):
   E6 destroy ends with every slot invisible (alpha 00) or scaled to zero
   E7 setup pose: reconstructed world centre of every part == manifest (<=0.05px)
   E8 every attachment has an atlas region; duplicate region names
+  Semantic rigs (they ship a `hold` clip — see src/pixi/symbolFlow.ts):
+  E9  `win` ends exactly on `hold`'s first pose (no snap into the held pose)
+  E10 `land` starts and ends at the setup pose (the board owns the fall)
+  E11 win / hold / land / destroy all present
+  E12 every event key names an event declared at the top level
 Warnings:
   W1 attachment size != atlas region size
   W2 <3 or >14 parts
@@ -123,6 +128,90 @@ def main():
             keys = dst.get(n, {}).get("color", [])
             if not (keys and keys[-1]["color"].endswith("00")) and not anchor_zero:
                 E(f"E6 destroy leaves '{n}' visible")
+
+    # E9-E12 semantic clip contract
+    setup_color = {s["name"]: s.get("color", "ffffffff") for s in data["slots"]}
+
+    def rest_value(path):
+        # path like "<anim>/<target>/<timeline>"
+        _, tgt, tl = path.split("/")
+        if tl == "rotate":
+            return {"angle": 0}
+        if tl == "translate":
+            return {"x": 0, "y": 0}
+        if tl == "scale":
+            return {"x": 1, "y": 1}
+        if tl == "color":
+            return {"color": setup_color.get(tgt, "ffffffff")}
+        return None
+
+    def same(a, b, tol=0.02):
+        # scale keys carry 4 decimals: hold them to that, not the 0.02 that
+        # suits translate px / angle degrees
+        for k, v in a.items():
+            if k in ("time", "curve"):
+                continue
+            w = b.get(k)
+            if isinstance(v, (int, float)) and isinstance(w, (int, float)):
+                d = abs(v - w)
+                if k == "angle":  # a full turn (360) is the same pose as 0
+                    d = abs(((v - w) + 180) % 360 - 180)
+                if d > tol:
+                    return False
+            elif isinstance(v, str) and isinstance(w, str) and k == "color":
+                if any(abs(int(v[i:i + 2], 16) - int(w[i:i + 2], 16)) > 2 for i in range(0, 8, 2)):
+                    return False
+            elif v != w:
+                return False
+        return True
+
+    if "hold" in anims:
+        for need in ("win", "land", "destroy"):
+            if need not in anims:
+                E(f"E11 semantic rig (has hold) is missing '{need}'")
+        if "win" in anims:
+            hold_tl = {p.split("/", 1)[1]: k for p, k in walk_timelines(anims["hold"], "hold")}
+            win_tl = {p.split("/", 1)[1]: k for p, k in walk_timelines(anims["win"], "win")}
+
+            def alpha_of(tl, slot, idx):
+                keys = tl.get(f"{slot}/color")
+                c = keys[idx]["color"] if keys else setup_color.get(slot, "ffffffff")
+                return int(c[6:8], 16)
+
+            for key, keys in win_tl.items():
+                tgt, tln = key.split("/")
+                # A part that is invisible on both sides of the hand-off (an
+                # ejected casing, spent smoke) may reset its transform freely.
+                if tln in ("translate", "rotate", "scale") and tgt in setup_color \
+                        and alpha_of(win_tl, tgt, -1) == 0 and alpha_of(hold_tl, tgt, 0) == 0:
+                    continue
+                target = hold_tl[key][0] if key in hold_tl else rest_value("win/" + key)
+                tol = 0.0006 if tln == "scale" else 0.02
+                if target is not None and "attachment" not in key and not same(keys[-1], target, tol):
+                    E(f"E9 win/{key} ends at {keys[-1]} but hold starts at {target}")
+            for key, keys in hold_tl.items():
+                tol = 0.0006 if key.endswith("/scale") else 0.02
+                if key not in win_tl and not same(keys[0], rest_value("hold/" + key), tol):
+                    E(f"E9 hold/{key} starts off the setup pose the win leaves ({keys[0]})")
+    # E10 applies to ANY rig that ships a land clip (the truck has no hold)
+    if "land" in anims:
+        for path, keys in walk_timelines(anims["land"], "land"):
+            rv = rest_value(path)
+            if rv is None:
+                continue
+            tol = 0.0006 if path.endswith("/scale") else 0.02
+            if not same(keys[0], rv, tol):
+                E(f"E10 {path} does not start at rest: {keys[0]}")
+            if not same(keys[-1], rv, tol):
+                E(f"E10 {path} does not end at rest: {keys[-1]}")
+    declared = set((data.get("events") or {}).keys())
+    for an, anim in anims.items():
+        for e in anim.get("events", []):
+            if e.get("name") not in declared:
+                E(f"E12 {an} event '{e.get('name')}' is not declared in top-level events")
+            f = e.get("time", 0) * FPS
+            if abs(f - round(f)) > 1e-3:
+                E(f"E4 fractional event frame {f:.2f} in {an}")
 
     # E7 setup pose reconstruction (bone world matrix o attachment offset)
     bones = {}

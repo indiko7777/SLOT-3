@@ -15,22 +15,34 @@
    "parent": "root"
   },
   {
-   "name": "glow",
+   "name": "ground",
    "parent": "symbol_anchor",
-   "x": -1.5,
-   "y": -0.5
+   "x": -17.0,
+   "y": -188.0
+  },
+  {
+   "name": "chassis",
+   "parent": "ground",
+   "x": -145.0,
+   "y": 24.0
+  },
+  {
+   "name": "glow",
+   "parent": "chassis",
+   "x": 160.5,
+   "y": 163.5
   },
   {
    "name": "body",
-   "parent": "symbol_anchor",
-   "x": -1.0,
-   "y": 0.5
+   "parent": "chassis",
+   "x": 161.0,
+   "y": 164.5
   },
   {
    "name": "shine",
-   "parent": "symbol_anchor",
-   "x": 1.5,
-   "y": -0.5
+   "parent": "chassis",
+   "x": 163.5,
+   "y": 163.5
   }
  ],
  "slots": [
@@ -62,7 +74,7 @@
    },
    "body": {
     "body": {
-     "x": 0.0,
+     "x": 0,
      "y": 0.0,
      "width": 512,
      "height": 467

@@ -6,21 +6,91 @@ repeat: none
 glow
   rotate: false
   xy: 2, 2
-  size: 682, 671
-  orig: 682, 671
+  size: 649, 640
+  orig: 649, 640
   offset: 0, 0
   index: -1
-body
+interior
   rotate: false
-  xy: 2, 675
+  xy: 2, 1149
+  size: 371, 109
+  orig: 371, 109
+  offset: 0, 0
+  index: -1
+pop_note_1
+  rotate: false
+  xy: 375, 1149
+  size: 135, 102
+  orig: 135, 102
+  offset: 0, 0
+  index: -1
+pop_note_2
+  rotate: false
+  xy: 512, 1149
+  size: 135, 93
+  orig: 135, 93
+  offset: 0, 0
+  index: -1
+pop_coin_1
+  rotate: false
+  xy: 214, 1260
+  size: 49, 45
+  orig: 49, 45
+  offset: 0, 0
+  index: -1
+pop_coin_2
+  rotate: false
+  xy: 265, 1260
+  size: 49, 45
+  orig: 49, 45
+  offset: 0, 0
+  index: -1
+pop_coin_3
+  rotate: false
+  xy: 316, 1260
+  size: 49, 45
+  orig: 49, 45
+  offset: 0, 0
+  index: -1
+loot
+  rotate: false
+  xy: 517, 644
+  size: 375, 148
+  orig: 375, 148
+  offset: 0, 0
+  index: -1
+pocket_in
+  rotate: false
+  xy: 776, 1149
+  size: 129, 88
+  orig: 129, 88
+  offset: 0, 0
+  index: -1
+pocket_loot
+  rotate: false
+  xy: 649, 1149
+  size: 125, 93
+  orig: 125, 93
+  offset: 0, 0
+  index: -1
+bag
+  rotate: false
+  xy: 2, 644
   size: 513, 503
   orig: 513, 503
   offset: 0, 0
   index: -1
-shine
+zipper_pull
   rotate: false
-  xy: 517, 675
-  size: 452, 486
-  orig: 452, 486
+  xy: 170, 1260
+  size: 42, 55
+  orig: 42, 55
+  offset: 0, 0
+  index: -1
+handle
+  rotate: false
+  xy: 2, 1260
+  size: 166, 78
+  orig: 166, 78
   offset: 0, 0
   index: -1

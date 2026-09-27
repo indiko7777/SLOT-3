@@ -1,0 +1,34 @@
+{
+ "groups": [
+  {
+   "name": "bagroot",
+   "parent": "symbol_anchor",
+   "pivot": [
+    355.32,
+    567.5875
+   ]
+  }
+ ],
+ "parents": {
+  "glow": "bagroot",
+  "interior": "bagroot",
+  "loot": "bagroot",
+  "pocket_in": "bagroot",
+  "pocket_loot": "bagroot",
+  "bag": "bagroot",
+  "zipper_pull": "bagroot",
+  "handle": "bagroot",
+  "pop_note_1": "bagroot",
+  "pop_note_2": "bagroot",
+  "pop_coin_1": "bagroot",
+  "pop_coin_2": "bagroot",
+  "pop_coin_3": "bagroot"
+ },
+ "hidden": [
+  "pop_note_1",
+  "pop_note_2",
+  "pop_coin_1",
+  "pop_coin_2",
+  "pop_coin_3"
+ ]
+}

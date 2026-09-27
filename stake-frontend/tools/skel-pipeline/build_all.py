@@ -5,7 +5,18 @@ For each symbol:  parts -> atlas -> rig -> per-symbol motion -> validate -> ship
 
   python build_all.py                # every symbol
   python build_all.py pistol knife   # just these
-  python build_all.py --skip=diamond # diamond keeps its hand-authored gen_anim.py
+
+Two kinds of layer sets:
+  generic   make_parts_generic.py splits the flat art into glow / body / shine
+            (WILD, CAR_WILD, the truck, brass, bike, safe, master_key).
+  semantic  semantic/make_layers.mjs (Node + sharp) builds REAL moving parts
+            with the hidden areas painted in: the pistol's slide / barrel /
+            casing / muzzle flash, individual cartridges, loose bills, the
+            duffel's loot, the knife's blade glint, the diamond's facets.
+
+Pillow is optional: without it the Node twins of pack_atlas / ship are used
+and generic symbols reuse the parts already in symbols/<name>/parts. The motion,
+rig and validation steps are plain Python.
 
 Ships the bundle to public/assets/skel/<name>/ and prints the fitW/fitH pair
 that assets.ts needs (the ART size inside the padded canvas, so SymbolView
@@ -16,12 +27,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-from PIL import Image
-
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from make_parts_generic import build as build_parts  # noqa: E402
 from symbol_motion import build_for  # noqa: E402
+
+try:
+    from PIL import Image  # noqa: F401
+    HAVE_PIL = True
+except ImportError:
+    HAVE_PIL = False
 
 PUBLIC_SKEL = HERE.parents[1] / "public" / "assets" / "skel"
 
@@ -35,6 +49,12 @@ ALL_SYMBOLS = [
     "safe", "master_key",                           # bonus
 ]
 
+# Layer sets built by semantic/make_layers.mjs instead of make_parts_generic.
+SEMANTIC_LAYERS = {"pistol", "ammo", "cash", "duffel", "knife", "diamond"}
+
+# Clips that must loop seamlessly (validate.py E5).
+LOOPS = "idle,hold"
+
 
 def run(*args) -> str:
     r = subprocess.run([sys.executable, *[str(a) for a in args]],
@@ -44,40 +64,83 @@ def run(*args) -> str:
     return r.stdout.strip()
 
 
+def node(*args) -> str:
+    r = subprocess.run(["node", *[str(a) for a in args]],
+                       capture_output=True, text=True, cwd=str(HERE))
+    if r.returncode != 0:
+        raise RuntimeError(f"node {args[0]} failed:\n{r.stdout}\n{r.stderr}")
+    return r.stdout.strip()
+
+
+def make_parts(name: str, max_side: int) -> tuple:
+    d = HERE / "symbols" / name
+    if name in SEMANTIC_LAYERS:
+        info = json.loads(node("semantic/make_layers.mjs", name).splitlines()[-1])
+        return tuple(info["canvas"]), tuple(info["art"]), info["parts"]
+    if HAVE_PIL:
+        from make_parts_generic import build as build_parts
+        return build_parts(name, max_side)
+    # No Pillow: reuse the generic parts already built for this symbol.
+    m = json.loads((d / "manifest.json").read_text())
+    if not (d / "parts").exists():
+        raise FileNotFoundError(f"{name}: no parts and Pillow is not installed")
+    body = next(p for p in m["parts"] if p["name"] == "body")
+    return (m["canvas"]["w"], m["canvas"]["h"]), (body["w"], body["h"]), len(m["parts"])
+
+
 def build_symbol(name: str, max_side: int = 712) -> dict:
     d = HERE / "symbols" / name
-    canvas, art, nparts = build_parts(name, max_side)
+    canvas, art, nparts = make_parts(name, max_side)
 
-    run(HERE / "tools" / "pack_atlas.py", d)
+    # Semantic rigs always pack with the Node packer: it also honours rig.json
+    # "lowres" (parts stored at reduced resolution, e.g. thrown banknotes).
+    if HAVE_PIL and name not in SEMANTIC_LAYERS:
+        run(HERE / "tools" / "pack_atlas.py", d)
+    else:
+        node("semantic/pack_atlas.mjs", d)
     run(HERE / "tools" / "make_skeleton.py", d)
 
     # Replace the generic default animations with this symbol's personality.
     src = json.loads((d / f"{name}_source.json").read_text())
     parts = [s["name"] for s in src["slots"]]
     sparks = [p for p in parts if p.startswith("sparkle")]
-    src["animations"] = build_for(name, sparks, canvas[1], max(canvas))
+    ctx = {
+        "slots": parts,
+        "bones": {b["name"]: b for b in src["bones"]},
+        "manifest": json.loads((d / "manifest.json").read_text()),
+        "meta": json.loads((d / "meta.json").read_text()) if (d / "meta.json").exists() else {},
+    }
+    anims = build_for(name, sparks, canvas[1], max(canvas), ctx)
+    src["animations"] = anims
+    # Spine declares every event used by an event timeline at the top level.
+    names = sorted({e["name"] for a in anims.values() for e in a.get("events", [])})
+    if names:
+        src["events"] = {n: {} for n in names}
     (d / f"{name}.json").write_text(json.dumps(src, separators=(",", ":")))
 
     # run() already raises on a non-zero exit, so reaching here means the gate
     # passed; WARN lines may precede the PASS line, so don't match on prefix.
-    out = run(HERE / "tools" / "validate.py", d)
+    out = run(HERE / "tools" / "validate.py", d, f"--loop={LOOPS}")
     summary = next((ln for ln in out.splitlines() if ln.startswith("PASS")), "")
     if not summary:
         raise RuntimeError(f"{name}: validator did not report PASS:\n{out}")
     warns = [ln for ln in out.splitlines() if ln.startswith("WARN")]
 
-    dst = PUBLIC_SKEL / name
-    dst.mkdir(parents=True, exist_ok=True)
-    (dst / f"{name}.json").write_bytes((d / f"{name}.json").read_bytes())
-
-    # Ship the sheet as LOSSLESS WebP, not PNG. Pixel-identical, ~40% smaller,
-    # which is what pays for the 512px art. The runtime loads the texture from a
-    # hardcoded packed.webp path (assets.ts), so the .atlas header is rewritten
-    # to match purely for consistency with the file beside it.
-    Image.open(d / "packed.png").save(dst / "packed.webp", "WEBP", lossless=True, quality=100, method=6)
-    atlas = (d / f"{name}.atlas").read_text().splitlines()
-    atlas[0] = "packed.webp"
-    (dst / f"{name}.atlas").write_text(chr(10).join(atlas) + chr(10))
+    if HAVE_PIL:
+        dst = PUBLIC_SKEL / name
+        dst.mkdir(parents=True, exist_ok=True)
+        (dst / f"{name}.json").write_bytes((d / f"{name}.json").read_bytes())
+        # Ship the sheet as LOSSLESS WebP, not PNG. Pixel-identical, ~40% smaller,
+        # which is what pays for the 512px art. The runtime loads the texture from
+        # a hardcoded packed.webp path (assets.ts), so the .atlas header is
+        # rewritten to match purely for consistency with the file beside it.
+        Image.open(d / "packed.png").save(dst / "packed.webp", "WEBP", lossless=True, quality=100, method=6)
+        atlas = (d / f"{name}.atlas").read_text().splitlines()
+        atlas[0] = "packed.webp"
+        (dst / f"{name}.atlas").write_text(chr(10).join(atlas) + chr(10))
+    else:
+        node("semantic/ship.mjs", d)
+        dst = PUBLIC_SKEL / name
 
     kb = sum((dst / f).stat().st_size for f in (f"{name}.json", f"{name}.atlas", "packed.webp")) / 1024
     return {"name": name, "canvas": canvas, "fit": art, "parts": nparts,
@@ -108,7 +171,7 @@ def main() -> None:
             print(f"SKIP {n}: {e}")
         except Exception as e:  # keep going; report everything at the end
             failed.append((n, str(e).split("\n")[0]))
-            print(f"FAIL {n}: {str(e)[:200]}")
+            print(f"FAIL {n}: {str(e)[:400]}")
 
     print(f"\n{len(results)} built, {total:.0f} KB total")
     if failed:

@@ -2,6 +2,27 @@ import type { RoundRecord, UiStrings } from "../domain";
 import type { BetModeObject } from "../rgs/types";
 import type { PieceGain } from "../meta/collection";
 
+/** A moment in the Getaway, fired by BonusView on its visual frame — the hook
+ *  for syncing sound to the reels, each landing, the dynamite and the meter.
+ *  Only "boom" is wired to a sound (the original explosive). */
+export type GetawayCue =
+  | { kind: "spin_start" }
+  | { kind: "column_stop"; col: number }
+  /** a gold bar stuck: index = its order among this spin's bars */
+  | { kind: "bar"; index: number; value: number }
+  | { kind: "dynamite" }
+  /** the fuse is burning down; the blast follows after `seconds` */
+  | { kind: "fuse"; seconds: number }
+  /** the blast; power 0..1 — how much gold it is about to double */
+  | { kind: "boom"; power: number }
+  /** one neighbour bar doubled: index = its order in this blast */
+  | { kind: "double"; index: number }
+  /** a dynamite with no gold bar beside it fizzled out */
+  | { kind: "dud" }
+  | { kind: "held" }
+  | { kind: "spent"; spinsLeft: number }
+  | { kind: "dead"; heat: number };
+
 /** Persistent Beach Girl gallery snapshot for HUD rendering (cosmetic). */
 export interface GalleryProgress {
   girlId: number;
@@ -58,6 +79,8 @@ export interface SceneRuntime {
   isHeadStartActive?(): boolean;
   onAction(action: string): Promise<void>;
   onSafeLand?: (index: number, total: number) => void;
+  /** A Getaway moment (see GetawayCue), fired on its visual frame. */
+  onGetawayCue?: (cue: GetawayCue, turbo: boolean) => void;
   /** Bonus heat level 0–3 (consecutive dead spins); drives siren/helicopter audio. */
   onBonusHeat?: (level: number) => void;
   /** Fired as each reel column snaps to its stop — drives the mechanical reel-stop SFX. */
@@ -72,6 +95,10 @@ export interface SceneRuntime {
   /** 3+ scatters triggered The Getaway — the trucks are revving and tearing off
    *  the board. Fires once, at the start of the drive-off beat. */
   onTruckDriveOff?: () => void;
+  /** A skeletal symbol clip reached an authored cue (event timeline): the
+   *  pistol's shot and casing tink, cartridges rattling, notes fluttering…
+   *  `id` is the symbol, `cue` the event name baked into its JSON. */
+  onSymbolFoley?: (id: string, cue: string, turbo: boolean) => void;
   /** The Wanted meter filled to 5★ on a paid spin — the stars themselves ignite
    *  and detonate straight into the Getaway. This is the STAR-path trigger,
    *  visually distinct from the truck drive-off, so the player reads the filled

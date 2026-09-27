@@ -4,8 +4,15 @@
  * implementation of the public JSON format — no Spine runtime code, no license).
  *
  * Supports: bone rotate/translate/scale timelines, slot color (alpha+tint),
- * attachment swaps, stepped keys, draw order = slot order. Not supported:
- * meshes, IK, draworder timelines, curve arrays (import-safe JSON only).
+ * attachment swaps, stepped keys, draw order = slot order, event timelines.
+ * Not supported: meshes, IK, draworder timelines, curve arrays (import-safe
+ * JSON only).
+ *
+ * On top of the format it adds the two things a slot symbol needs to never
+ * visibly snap between clips:
+ *   mix    — cross-fade from whatever pose is on screen into the new clip
+ *   weight — play a clip at partial strength (a soft reel-stop landing reuses
+ *            the full tumble `land` clip at ~half amplitude)
  *
  * Bundles are produced by tools/skel-pipeline (pack_atlas → make_skeleton →
  * gen_anim → validate) and live in public/assets/skel/<symbol>/.
@@ -47,6 +54,15 @@ export interface SkelData {
 interface AnimData {
   bones?: Record<string, { rotate?: KeyFrame[]; translate?: KeyFrame[]; scale?: KeyFrame[] }>;
   slots?: Record<string, { color?: KeyFrame[]; attachment?: KeyFrame[] }>;
+  /** Spine event timeline: authored cue points (a gunshot, a cartridge hitting
+   *  the table) so sound stays locked to the motion at any playback speed. */
+  events?: Array<{ time?: number; name: string }>;
+}
+
+/** Local transform + slot colour snapshot used as the "from" side of a mix. */
+interface PoseSnapshot {
+  bones: Array<{ x: number; y: number; rot: number; scx: number; scy: number }>;
+  colors: string[];
 }
 
 interface Bone {
@@ -64,7 +80,17 @@ interface Slot {
   sprite: Sprite;
 }
 
-export interface PlayOptions { loop?: boolean; speed?: number; onComplete?: (() => void) | null }
+export interface PlayOptions {
+  loop?: boolean;
+  speed?: number;
+  onComplete?: (() => void) | null;
+  /** Seconds (of clip time) to cross-fade from the current on-screen pose. */
+  mix?: number;
+  /** 0..1 strength relative to the setup pose (1 = as authored). */
+  weight?: number;
+  /** Receives the clip's event timeline as playback passes each key. */
+  onEvent?: ((name: string) => void) | null;
+}
 
 function parseAtlas(text: string): Record<string, AtlasRegion> {
   const lines = text.split(/\r?\n/);
@@ -94,6 +120,38 @@ function parseAtlas(text: string): Record<string, AtlasRegion> {
 const lerpAngle = (a: number, b: number, r: number): number =>
   a + ((((b - a) % 360) + 540) % 360 - 180) * r;
 
+function lerpColor(A: string, C: string, r: number): string {
+  if (r <= 0 || A === C) return A;
+  if (r >= 1) return C;
+  let out = "";
+  for (let i = 0; i < 8; i += 2) {
+    const av = parseInt(A.slice(i, i + 2), 16), cv = parseInt(C.slice(i, i + 2), 16);
+    out += Math.round(av + (cv - av) * r).toString(16).padStart(2, "0");
+  }
+  return out;
+}
+
+/** Longest key time anywhere in a clip = its duration. */
+function scanDuration(anim: AnimData): number {
+  let d = 0;
+  const scan = (o: unknown): void => {
+    if (Array.isArray(o)) {
+      for (const f of o) {
+        const t = (f as KeyFrame).time;
+        if (typeof t === "number") d = Math.max(d, t);
+      }
+    } else if (o && typeof o === "object") {
+      for (const v of Object.values(o as Record<string, unknown>)) scan(v);
+    }
+  };
+  scan(anim);
+  return d;
+}
+
+/** Sub-textures are identical for every player built from one bundle, so they
+ *  are shared per base texture instead of re-created per symbol instance. */
+const sharedTextures = new WeakMap<Texture, Map<string, Texture>>();
+
 function keyAt<T>(frames: KeyFrame[], t: number, interp: (a: KeyFrame, b: KeyFrame, r: number) => T): T {
   if (t <= (frames[0].time || 0)) return interp(frames[0], frames[0], 0);
   const last = frames[frames.length - 1];
@@ -108,8 +166,9 @@ function keyAt<T>(frames: KeyFrame[], t: number, interp: (a: KeyFrame, b: KeyFra
 export class SkelPlayer extends Container {
   private readonly _regions: Record<string, AtlasRegion>;
   private readonly _base: Texture;
-  private readonly _texCache = new Map<string, Texture>();
+  private readonly _texCache: Map<string, Texture>;
   private readonly _anims: Record<string, AnimData>;
+  private readonly _durations = new Map<string, number>();
   private _bones: Bone[] = [];
   private _byName: Record<string, Bone> = {};
   private _slots: Slot[] = [];
@@ -118,13 +177,21 @@ export class SkelPlayer extends Container {
   private _t = 0;
   private _loop = false;
   private _speed = 1;
+  private _weight = 1;
   private _playing = false;
   private _onComplete: (() => void) | null = null;
+  private _onEvent: ((name: string) => void) | null = null;
+  private _mixFrom: PoseSnapshot | null = null;
+  private _mixDur = 0;
+  private _mixT = 0;
 
   constructor(data: SkelData, atlasText: string, baseTexture: Texture) {
     super();
     this._regions = parseAtlas(atlasText);
     this._base = baseTexture;
+    let shared = sharedTextures.get(baseTexture);
+    if (!shared) { shared = new Map(); sharedTextures.set(baseTexture, shared); }
+    this._texCache = shared;
     this._anims = data.animations || {};
     this._buildSkeleton(data);
     this._pose(null, 0);
@@ -181,23 +248,35 @@ export class SkelPlayer extends Container {
 
   get animations(): string[] { return Object.keys(this._anims); }
 
+  /** True if the bundle ships a clip with this name. */
+  has(name: string): boolean { return Boolean(this._anims[name]); }
+
+  /** Name of the clip currently driving the pose (null before the first play). */
+  get current(): string | null { return this._cur; }
+
+  get isPlaying(): boolean { return this._playing; }
+
   duration(name: string): number {
-    let d = 0;
-    const scan = (o: unknown): void => {
-      if (Array.isArray(o)) {
-        for (const f of o) d = Math.max(d, (f as KeyFrame).time || 0);
-      } else if (o && typeof o === "object") {
-        for (const v of Object.values(o as Record<string, unknown>)) scan(v);
-      }
-    };
-    if (this._anims[name]) scan(this._anims[name]);
+    let d = this._durations.get(name);
+    if (d === undefined) {
+      const anim = this._anims[name];
+      d = anim ? scanDuration(anim) : 0;
+      this._durations.set(name, d);
+    }
     return d;
   }
 
-  play(name: string, { loop = false, speed = 1, onComplete = null }: PlayOptions = {}): this {
+  play(name: string, { loop = false, speed = 1, onComplete = null, mix = 0, weight = 1, onEvent = null }: PlayOptions = {}): this {
     if (!this._anims[name]) throw new Error(`unknown animation: ${name}`);
+    // Snapshot BEFORE switching so the mix starts from exactly what is on screen.
+    this._mixFrom = mix > 0 && this._cur ? this._snapshot() : null;
+    this._mixDur = this._mixFrom ? mix : 0;
+    this._mixT = 0;
     this._cur = name; this._t = 0; this._loop = loop;
     this._speed = speed; this._onComplete = onComplete; this._playing = true;
+    this._weight = Math.max(0, Math.min(1, weight));
+    this._onEvent = onEvent;
+    this._fireEvents(name, -1, 0);
     this._pose(name, 0);
     return this;
   }
@@ -207,19 +286,53 @@ export class SkelPlayer extends Container {
   /** call every frame with elapsed seconds */
   update(dt: number): void {
     if (!this._playing || !this._cur) return;
-    const dur = this.duration(this._cur);
-    this._t += dt * this._speed;
+    const name = this._cur;
+    const dur = this.duration(name);
+    const step = dt * this._speed;
+    const prev = this._t;
+    this._t += step;
+    if (this._mixFrom) {
+      this._mixT += step;
+      if (this._mixT >= this._mixDur) this._mixFrom = null;
+    }
     if (dur > 0 && this._t >= dur) {
-      if (this._loop) this._t %= dur;
-      else {
+      if (this._loop) {
+        this._fireEvents(name, prev, dur);
+        this._t %= dur;
+        this._fireEvents(name, -1, this._t);
+      } else {
+        this._fireEvents(name, prev, dur);
         this._t = dur; this._playing = false;
+        // A clip shorter than its mix must still come to rest on its own last
+        // frame (a destroy has to end fully invisible), not mid-blend.
+        this._mixFrom = null;
         const cb = this._onComplete; this._onComplete = null;
-        this._pose(this._cur, this._t);
+        this._pose(name, this._t);
         if (cb) cb();
         return;
       }
+    } else {
+      this._fireEvents(name, prev, this._t);
     }
-    this._pose(this._cur, this._t);
+    this._pose(name, this._t);
+  }
+
+  /** Fire every event key with from < time <= to (from = -1 includes t=0). */
+  private _fireEvents(name: string, from: number, to: number): void {
+    const cb = this._onEvent;
+    const evs = this._anims[name]?.events;
+    if (!cb || !evs) return;
+    for (const e of evs) {
+      const et = e.time || 0;
+      if (et > from && et <= to) cb(e.name);
+    }
+  }
+
+  private _snapshot(): PoseSnapshot {
+    return {
+      bones: this._bones.map((b) => ({ x: b.x, y: b.y, rot: b.rot, scx: b.scx, scy: b.scy })),
+      colors: this._slots.map((s) => s.color),
+    };
   }
 
   private _pose(animName: string | null, t: number): void {
@@ -229,36 +342,53 @@ export class SkelPlayer extends Container {
     for (const s of this._slots) { s.att = s.setupAtt; s.color = s.setupColor; }
     const anim = animName ? this._anims[animName] : null;
     if (anim) {
+      const w = this._weight;
       for (const bn in (anim.bones || {})) {
         const b = this._byName[bn]; if (!b) continue;
         const tl = anim.bones![bn];
-        if (tl.rotate) b.rot = b.srot + keyAt(tl.rotate, t, (a, c, r) => lerpAngle(a.angle || 0, c.angle || 0, r));
+        if (tl.rotate) b.rot = b.srot + w * keyAt(tl.rotate, t, (a, c, r) => lerpAngle(a.angle || 0, c.angle || 0, r));
         if (tl.translate) {
-          b.x = b.sx + keyAt(tl.translate, t, (a, c, r) => (a.x || 0) + ((c.x || 0) - (a.x || 0)) * r);
-          b.y = b.sy + keyAt(tl.translate, t, (a, c, r) => (a.y || 0) + ((c.y || 0) - (a.y || 0)) * r);
+          b.x = b.sx + w * keyAt(tl.translate, t, (a, c, r) => (a.x || 0) + ((c.x || 0) - (a.x || 0)) * r);
+          b.y = b.sy + w * keyAt(tl.translate, t, (a, c, r) => (a.y || 0) + ((c.y || 0) - (a.y || 0)) * r);
         }
         if (tl.scale) {
-          b.scx = b.ssx * keyAt(tl.scale, t, (a, c, r) => { const av = a.x ?? 1, cv = c.x ?? 1; return av + (cv - av) * r; });
-          b.scy = b.ssy * keyAt(tl.scale, t, (a, c, r) => { const av = a.y ?? 1, cv = c.y ?? 1; return av + (cv - av) * r; });
+          const kx = keyAt(tl.scale, t, (a, c, r) => { const av = a.x ?? 1, cv = c.x ?? 1; return av + (cv - av) * r; });
+          const ky = keyAt(tl.scale, t, (a, c, r) => { const av = a.y ?? 1, cv = c.y ?? 1; return av + (cv - av) * r; });
+          b.scx = b.ssx * (1 + w * (kx - 1));
+          b.scy = b.ssy * (1 + w * (ky - 1));
         }
       }
       for (const sn in (anim.slots || {})) {
         const s = this._slotByName[sn]; if (!s) continue;
         const tl = anim.slots![sn];
-        if (tl.color) s.color = keyAt(tl.color, t, (a, c, r) => {
-          const A = a.color || "ffffffff", C = c.color || "ffffffff";
-          let out = "";
-          for (let i = 0; i < 8; i += 2) {
-            const av = parseInt(A.slice(i, i + 2), 16), cv = parseInt(C.slice(i, i + 2), 16);
-            out += Math.round(av + (cv - av) * r).toString(16).padStart(2, "0");
-          }
-          return out;
-        });
-        if (tl.attachment) {
+        if (tl.color) {
+          const c = keyAt(tl.color, t, (a, k, r) => lerpColor(a.color || "ffffffff", k.color || "ffffffff", r));
+          s.color = w >= 1 ? c : lerpColor(s.setupColor, c, w);
+        }
+        if (tl.attachment && w >= 0.5) {
           let name = s.setupAtt;
           for (const k of tl.attachment) { if (t >= (k.time || 0)) name = k.name ?? null; }
           s.att = name;
         }
+      }
+    }
+    // Cross-fade: blend from the snapshot of the previous clip's pose. Eased so
+    // the hand-off has no velocity kink at either end.
+    const from = this._mixFrom;
+    if (from && this._mixDur > 0) {
+      const r0 = Math.min(1, this._mixT / this._mixDur);
+      const r = r0 * r0 * (3 - 2 * r0);
+      for (let i = 0; i < this._bones.length; i++) {
+        const b = this._bones[i]!, f = from.bones[i]!;
+        b.x = f.x + (b.x - f.x) * r;
+        b.y = f.y + (b.y - f.y) * r;
+        b.rot = lerpAngle(f.rot, b.rot, r);
+        b.scx = f.scx + (b.scx - f.scx) * r;
+        b.scy = f.scy + (b.scy - f.scy) * r;
+      }
+      for (let i = 0; i < this._slots.length; i++) {
+        const s = this._slots[i]!;
+        s.color = lerpColor(from.colors[i]!, s.color, r);
       }
     }
     // world transforms: Spine y-up/CCW-deg -> Pixi y-down at compose time

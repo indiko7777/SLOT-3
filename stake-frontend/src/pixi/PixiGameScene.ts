@@ -10,7 +10,7 @@ import { EffectsLayer } from "./EffectsLayer";
 import { HudView } from "./HudView";
 import { PaytableView } from "./PaytableView";
 import { SymbolView, WIN_ACCENT, DEFAULT_ACCENT } from "./SymbolView";
-import { computeLayout, logicalViewport } from "./layout";
+import { computeLayout, logicalViewport, wantedStarsGeometry } from "./layout";
 import { getExtraTexture, silhouetteOffset } from "./assets";
 import { tween, wait, linear, easeInCubic, easeInOutCubic, easeOutBack, easeOutCubic } from "./tween";
 import type { LayoutMetrics, SceneRuntime } from "./types";
@@ -63,6 +63,13 @@ export class PixiGameScene {
     });
     this.paytable = new PaytableView(runtime);
     this.effects = new EffectsLayer(this.particleLayer);
+
+    // Authored clip cues (gunshot, casing tink, cartridge rattle…) → audio.
+    SymbolView.foleySink = runtime.onSymbolFoley
+      ? (id, cue, turbo) => runtime.onSymbolFoley?.(id, cue, turbo)
+      : null;
+    // Getaway moments (reels, landings, fuse, blast, ×2, meter) on their frames.
+    this.bonus.onCue = (cue) => runtime.onGetawayCue?.(cue, runtime.isTurbo());
 
     this.board.setAudioHooks({
       onReelStop: (col, total) => {
@@ -138,9 +145,18 @@ export class PixiGameScene {
     return computeLayout(viewport.width, viewport.height);
   }
 
+  /** Lay the board out, and give its "[n/8]" counter its reserved slot at the
+   *  right end of the wanted-stars strip (on top of the reel frame). */
+  private layoutBoard(): void {
+    this.board.layout(this.layout.board);
+    const bar = this.layout.starsBar;
+    const g = bar ? wantedStarsGeometry(bar) : null;
+    this.board.setCounterSlot(g ? { x: g.counterX, y: g.counterY } : null);
+  }
+
   resize(): void {
     this.layout = this.measureLayout();
-    this.board.layout(this.layout.board);
+    this.layoutBoard();
     // The Getaway bonus is a full-screen POV chase.
     this.bonus.layout({ x: 0, y: 0, width: this.layout.width, height: this.layout.height });
     this.cardPeek.layout(this.layout);
@@ -181,7 +197,7 @@ export class PixiGameScene {
     // The HUD is also redrawn inside resize() if currentSnapshot is set,
     // so we don't need a second draw() call — just do it once below.
     this.layout = this.measureLayout();
-    this.board.layout(this.layout.board);
+    this.layoutBoard();
     this.bonus.layout({ x: 0, y: 0, width: this.layout.width, height: this.layout.height });
     this.board.updateCollectionCounter(snapshot.collectionCount);
     
@@ -464,7 +480,9 @@ export class PixiGameScene {
         // Value is shown on the gold bar and added to COLLECTED — no banner.
         return;
       case "master_key_crack":
-        // Dynamite: shockwave, double neighbours, then it vanishes.
+        // Dynamite: the fuse burns while its targets light up, BOOM, each
+        // neighbour doubles on its own beat, then the cell is a blank again.
+        // (A dynamite with no neighbour gets no event — playSpin fizzles it.)
         await this.bonus.crack(
           event.keyPosition,
           event.affectedSafes.map((safe) => ({ position: safe.position, newValue: safe.newValue })),

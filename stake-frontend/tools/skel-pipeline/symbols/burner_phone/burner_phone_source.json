@@ -15,22 +15,28 @@
    "parent": "root"
   },
   {
-   "name": "glow",
+   "name": "base",
    "parent": "symbol_anchor",
+   "x": 0.0,
+   "y": -187.0
+  },
+  {
+   "name": "glow",
+   "parent": "base",
    "x": -4.0,
-   "y": 0.0
+   "y": 187.0
   },
   {
    "name": "body",
-   "parent": "symbol_anchor",
+   "parent": "base",
    "x": 0.0,
-   "y": 0.5
+   "y": 187.5
   },
   {
    "name": "shine",
-   "parent": "symbol_anchor",
+   "parent": "base",
    "x": -3.5,
-   "y": 11.5
+   "y": 198.5
   }
  ],
  "slots": [
@@ -54,15 +60,15 @@
   "default": {
    "glow": {
     "glow": {
-     "x": 0.0,
-     "y": 0.0,
+     "x": 0,
+     "y": 0,
      "width": 668,
      "height": 520
     }
    },
    "body": {
     "body": {
-     "x": 0.0,
+     "x": 0,
      "y": 0.0,
      "width": 512,
      "height": 375

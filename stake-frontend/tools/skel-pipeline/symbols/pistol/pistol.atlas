@@ -1,26 +1,68 @@
 packed.png
-size: 1024,1024
+size: 1024,2048
 format: RGBA8888
 filter: Linear,Linear
 repeat: none
 glow
   rotate: false
   xy: 2, 2
-  size: 679, 583
-  orig: 679, 583
+  size: 648, 557
+  orig: 648, 557
   offset: 0, 0
   index: -1
-body
+frame
   rotate: false
-  xy: 2, 587
-  size: 513, 426
-  orig: 513, 426
+  xy: 2, 561
+  size: 507, 380
+  orig: 507, 380
   offset: 0, 0
   index: -1
-shine
+slide
   rotate: false
-  xy: 517, 587
-  size: 473, 217
-  orig: 473, 217
+  xy: 511, 561
+  size: 486, 258
+  orig: 486, 258
+  offset: 0, 0
+  index: -1
+slide_shine
+  rotate: false
+  xy: 2, 943
+  size: 471, 213
+  orig: 471, 213
+  offset: 0, 0
+  index: -1
+barrel_tip
+  rotate: false
+  xy: 801, 943
+  size: 72, 55
+  orig: 72, 55
+  offset: 0, 0
+  index: -1
+casing
+  rotate: false
+  xy: 875, 943
+  size: 52, 38
+  orig: 52, 38
+  offset: 0, 0
+  index: -1
+flash
+  rotate: false
+  xy: 475, 943
+  size: 148, 115
+  orig: 148, 115
+  offset: 0, 0
+  index: -1
+smoke_a
+  rotate: false
+  xy: 625, 943
+  size: 86, 70
+  orig: 86, 70
+  offset: 0, 0
+  index: -1
+smoke_b
+  rotate: false
+  xy: 713, 943
+  size: 86, 70
+  orig: 86, 70
   offset: 0, 0
   index: -1

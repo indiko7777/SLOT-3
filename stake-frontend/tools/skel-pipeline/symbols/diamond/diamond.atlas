@@ -1,47 +1,131 @@
 packed.png
-size: 1024,2048
+size: 2048,1024
 format: RGBA8888
 filter: Linear,Linear
 repeat: none
 glow
   rotate: false
   xy: 2, 2
-  size: 674, 557
-  orig: 674, 557
+  size: 649, 530
+  orig: 649, 530
   offset: 0, 0
   index: -1
-body
+shard_0
   rotate: false
-  xy: 2, 561
-  size: 513, 417
-  orig: 513, 417
+  xy: 653, 2
+  size: 513, 404
+  orig: 513, 404
   offset: 0, 0
   index: -1
-shine
+shard_1
   rotate: false
-  xy: 517, 561
-  size: 499, 404
-  orig: 499, 404
+  xy: 644, 829
+  size: 102, 47
+  orig: 102, 47
   offset: 0, 0
   index: -1
-sparkle_0
+shard_2
   rotate: false
-  xy: 168, 980
-  size: 136, 138
-  orig: 136, 138
+  xy: 2, 829
+  size: 328, 106
+  orig: 328, 106
   offset: 0, 0
   index: -1
-sparkle_1
+shard_3
   rotate: false
-  xy: 306, 980
-  size: 117, 117
-  orig: 117, 117
+  xy: 1408, 534
+  size: 179, 140
+  orig: 179, 140
   offset: 0, 0
   index: -1
-sparkle_2
+shard_4
   rotate: false
-  xy: 2, 980
-  size: 164, 164
-  orig: 164, 164
+  xy: 1589, 534
+  size: 172, 123
+  orig: 172, 123
+  offset: 0, 0
+  index: -1
+shard_5
+  rotate: false
+  xy: 988, 534
+  size: 204, 186
+  orig: 204, 186
+  offset: 0, 0
+  index: -1
+shard_6
+  rotate: false
+  xy: 744, 534
+  size: 173, 226
+  orig: 173, 226
+  offset: 0, 0
+  index: -1
+shard_7
+  rotate: false
+  xy: 2, 534
+  size: 256, 293
+  orig: 256, 293
+  offset: 0, 0
+  index: -1
+shard_8
+  rotate: false
+  xy: 1194, 534
+  size: 212, 164
+  orig: 212, 164
+  offset: 0, 0
+  index: -1
+shard_9
+  rotate: false
+  xy: 919, 534
+  size: 67, 205
+  orig: 67, 205
+  offset: 0, 0
+  index: -1
+light_0
+  rotate: false
+  xy: 556, 534
+  size: 186, 248
+  orig: 186, 248
+  offset: 0, 0
+  index: -1
+light_1
+  rotate: false
+  xy: 260, 534
+  size: 141, 266
+  orig: 141, 266
+  offset: 0, 0
+  index: -1
+light_2
+  rotate: false
+  xy: 1490, 2
+  size: 155, 322
+  orig: 155, 322
+  offset: 0, 0
+  index: -1
+light_3
+  rotate: false
+  xy: 1168, 2
+  size: 320, 329
+  orig: 320, 329
+  offset: 0, 0
+  index: -1
+light_4
+  rotate: false
+  xy: 1647, 2
+  size: 173, 322
+  orig: 173, 322
+  offset: 0, 0
+  index: -1
+light_5
+  rotate: false
+  xy: 403, 534
+  size: 151, 251
+  orig: 151, 251
+  offset: 0, 0
+  index: -1
+table_fire
+  rotate: false
+  xy: 332, 829
+  size: 310, 58
+  orig: 310, 58
   offset: 0, 0
   index: -1

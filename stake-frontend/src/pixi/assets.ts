@@ -49,18 +49,22 @@ const SKEL_ASSETS: Partial<Record<SymbolId, { dir: string; fitW: number; fitH: n
   // long edge (was 230) since the pipeline canvas went 320 -> 712: at 230 the
   // symbols were upscaled ~2.3x on a large retina display and read soft, which
   // is what Stake reviewers flagged as low-quality assets.
-  BRASS: { dir: "skel/brass_knuckles", fitW: 513, fitH: 456 }, // cel-shaded GTA silver/chrome, skeletal rebuilt
-  KNIFE: { dir: "skel/knife", fitW: 513, fitH: 464 }, // regenerated cel-shaded GTA art, skeletal rebuilt
-  PISTOL: { dir: "skel/pistol", fitW: 513, fitH: 426 }, // regenerated cel-shaded GTA art (was 3D), skeletal rebuilt
-  AMMO: { dir: "skel/ammo", fitW: 513, fitH: 428 },
-  DUFFEL: { dir: "skel/duffel", fitW: 513, fitH: 503 }, // brighter teal Miami loot bag, skeletal rebuilt
-  CASH: { dir: "skel/cash", fitW: 513, fitH: 374 }, // regenerated cel-shaded GTA money brick (simple stack), skeletal rebuilt
-  // DIAMOND: regenerated clean art (Gemini green-screen render → chroma-keyed),
-  // then its skeletal bundle REBUILT from that clean art (make_parts → pack_atlas
-  // → make_skeleton → gen_anim → validate PASS). Same idle luster / win burst as
-  // before, now with no crop-halo or chromatic fringe. fitW/fitH = new body size.
-  DIAMOND: { dir: "skel/diamond", fitW: 513, fitH: 417 },
-  BIKE: { dir: "skel/bike", fitW: 513, fitH: 468 },
+  //
+  // "Semantic" rigs (they ship `hold` + `land` clips; see symbolFlow.ts) are
+  // built from real moving parts by tools/skel-pipeline/semantic/: the pistol's
+  // slide / barrel / casing / flash, individual cartridges, loose bills, the
+  // duffel's loot and handle, the knife's blade glint, the diamond's facets.
+  BRASS: { dir: "skel/brass_knuckles", fitW: 513, fitH: 456 }, // cel-shaded GTA silver/chrome; ground-pivot punch rig
+  KNIFE: { dir: "skel/knife", fitW: 513, fitH: 464 }, // material pass (lifted handle, satin blade) + glint flipbook
+  PISTOL: { dir: "skel/pistol", fitW: 513, fitH: 426 }, // slide cut on its seam, barrel/spring painted beneath
+  AMMO: { dir: "skel/ammo", fitW: 513, fitH: 388 }, // re-authored vector rounds, one layer per cartridge
+  DUFFEL: { dir: "skel/duffel", fitW: 513, fitH: 503 }, // loot / pocket bills / handle / zipper tab cut out, insides painted
+  CASH: { dir: "skel/cash", fitW: 513, fitH: 341 }, // fan of real Los Santos $1000 notes (real_bill art) in a gold money clip
+  // DIAMOND: the baked cartoon twinkle-stars are painted out (facet lines
+  // rebuilt through them); the stone is split into its own facets for
+  // refraction light and angular shards.
+  DIAMOND: { dir: "skel/diamond", fitW: 513, fitH: 404 },
+  BIKE: { dir: "skel/bike", fitW: 513, fitH: 468 }, // suspension + rear-tyre wheelie pivots
   WILD: { dir: "skel/wild_symbole", fitW: 492, fitH: 513 },
   CAR_WILD: { dir: "skel/cyan_car_wild", fitW: 461, fitH: 513 },
   // The scatter: Brinks armored truck, art recovered from commit cc06ba2.

@@ -1,7 +1,7 @@
 import { Application } from "pixi.js";
 import { loadUiFonts } from "./typography";
 import { EventAudioBus } from "./audio";
-import { displayCurrency, uiStrings, type Board, type GameEvent, type RoundRecord, type SymbolId } from "./domain";
+import { displayCurrency, uiStrings, type BonusCell, type Board, type GameEvent, type Position, type RoundRecord, type SymbolId } from "./domain";
 import { isModalOpen, showChoiceModal, showToast } from "./modals";
 import { formatWin } from "./rgs/client";
 import { hideLoader, showLoader, updateLoader } from "./loader";
@@ -386,6 +386,11 @@ async function boot(): Promise<void> {
     onSafeLand: (index, total) => {
       if (!muted) audioBus.fireSafeLand(index, total);
     },
+    onGetawayCue: (cue, turbo) => {
+      // The dynamite now arms before it blows: its original explosive sound
+      // plays on the blast frame. No other Getaway moment has a sound here.
+      if (!muted && cue.kind === "boom") audioBus.dynamiteBlast(turbo);
+    },
     onBonusHeat: (level) => {
       if (!muted) audioBus.setBonusHeat(level);
     },
@@ -480,6 +485,58 @@ async function boot(): Promise<void> {
           await play({ type: "bonus_trigger", mode: "getaway", scatterPositions: [] });
         }
       };
+    // __getaway() → a scripted Getaway through the real audio + scene path, built
+    // by the engine's rules: two bars in one column, a big bar, a live dynamite
+    // doubling two bars, a dud with nothing beside it, dead spins down to the
+    // last spin, then the result stage.
+    (window as unknown as { __getaway: () => Promise<void> }).__getaway = async () => {
+      if (isPlaying) return;
+      isPlaying = true;
+      try {
+        const grid: BonusCell[][] = Array.from({ length: 5 }, () => Array.from({ length: 4 }, () => ({ symbol: "EMPTY" as const })));
+        const clone = (): BonusCell[][] => grid.map((col) => col.map((cell) => ({ ...cell })));
+        const rec: RoundRecord = { id: 0, payoutMultiplier: 0, events: [] };
+        const play = async (ev: GameEvent) => {
+          snapshot = applyEvent(snapshot, ev, rec);
+          audioBus.playEvent(ev, muted, isTurbo());
+          await scene.playEvent(ev, snapshot);
+        };
+        let respins = 5;
+        const spin = async (lands: Array<{ symbol: "SAFE" | "MASTER_KEY"; position: Position; value?: number }>) => {
+          for (const l of lands) grid[l.position[0]]![l.position[1]] = l.symbol === "SAFE" ? { symbol: "SAFE", value: l.value } : { symbol: "MASTER_KEY" };
+          const before = respins;
+          if (!lands.length) respins -= 1;
+          await play({ type: "bonus_spin", respinsBefore: before, respinsAfter: respins, landedSymbols: lands, lockedGrid: clone() });
+          for (const l of lands) if (l.symbol === "SAFE") await play({ type: "safe_lock", position: l.position, value: l.value! });
+          for (const l of lands) {
+            if (l.symbol !== "MASTER_KEY") continue;
+            const [c, r] = l.position;
+            const affected = ([[c - 1, r], [c + 1, r], [c, r - 1], [c, r + 1]] as Position[])
+              .filter(([x, y]) => grid[x]?.[y]?.symbol === "SAFE")
+              .map(([x, y]) => { const oldValue = grid[x]![y]!.value!; grid[x]![y] = { symbol: "SAFE", value: oldValue * 2 }; return { position: [x, y] as Position, oldValue, newValue: oldValue * 2 }; });
+            if (affected.length) await play({ type: "master_key_crack", keyPosition: l.position, affectedSafes: affected });
+            grid[c]![r] = { symbol: "EMPTY" };
+          }
+        };
+        snapshot = { ...INITIAL_SNAPSHOT, betAmount: betLevels[betIndex] ?? 1 };
+        await play({ type: "round_start", mode: "getaway", boardSeedLabel: "dev", turboProfile: "normal" });
+        await play({ type: "board_settle", board: filler() });
+        await play({ type: "bonus_trigger", mode: "getaway", scatterPositions: [[0, 0], [2, 1], [4, 2]] });
+        await spin([
+          { symbol: "SAFE", position: [1, 1], value: 2 }, { symbol: "SAFE", position: [1, 2], value: 5 },
+          { symbol: "SAFE", position: [2, 0], value: 3 }, { symbol: "MASTER_KEY", position: [2, 1] },
+          { symbol: "SAFE", position: [3, 0], value: 30 }, { symbol: "MASTER_KEY", position: [4, 3] },
+        ]);
+        await spin([]); await spin([]); await spin([]);
+        await spin([{ symbol: "SAFE", position: [0, 3], value: 1 }]);
+        await spin([]); await spin([]);
+        const total = grid.flat().reduce((s, cell) => s + (cell.symbol === "SAFE" ? cell.value ?? 0 : 0), 0);
+        await play({ type: "bonus_end", totalPayout: total, filledScreen: false });
+        await play({ type: "round_end", payoutMultiplier: total, capApplied: false });
+      } finally {
+        isPlaying = false;
+      }
+    };
     // Slow-motion for inspecting fast beats (1 = normal). __slow(0.2) = 5x slower.
     (window as unknown as { __slow: (s?: number) => void }).__slow = (s = 0.2) => setTimeScale(s);
     // eslint-disable-next-line no-console

@@ -1,26 +1,89 @@
 packed.png
-size: 1024,2048
+size: 2048,1024
 format: RGBA8888
 filter: Linear,Linear
 repeat: none
 glow
   rotate: false
   xy: 2, 2
-  size: 671, 621
-  orig: 671, 621
+  size: 646, 596
+  orig: 646, 596
   offset: 0, 0
   index: -1
-body
+slash
   rotate: false
-  xy: 2, 625
+  xy: 1165, 2
+  size: 113, 461
+  orig: 113, 461
+  offset: 0, 0
+  index: -1
+handle
+  rotate: false
+  xy: 650, 2
   size: 513, 464
   orig: 513, 464
   offset: 0, 0
   index: -1
-shine
+blade
   rotate: false
-  xy: 517, 625
-  size: 240, 195
-  orig: 240, 195
+  xy: 2, 600
+  size: 307, 257
+  orig: 307, 257
+  offset: 0, 0
+  index: -1
+glint_0
+  rotate: false
+  xy: 877, 600
+  size: 75, 87
+  orig: 75, 87
+  offset: 0, 0
+  index: -1
+glint_1
+  rotate: false
+  xy: 673, 600
+  size: 123, 125
+  orig: 123, 125
+  offset: 0, 0
+  index: -1
+glint_2
+  rotate: false
+  xy: 433, 600
+  size: 123, 143
+  orig: 123, 143
+  offset: 0, 0
+  index: -1
+glint_3
+  rotate: false
+  xy: 311, 600
+  size: 120, 149
+  orig: 120, 149
+  offset: 0, 0
+  index: -1
+glint_4
+  rotate: false
+  xy: 558, 600
+  size: 113, 139
+  orig: 113, 139
+  offset: 0, 0
+  index: -1
+glint_5
+  rotate: false
+  xy: 798, 600
+  size: 77, 97
+  orig: 77, 97
+  offset: 0, 0
+  index: -1
+tip_flare
+  rotate: false
+  xy: 954, 600
+  size: 100, 69
+  orig: 100, 69
+  offset: 0, 0
+  index: -1
+edge_flash
+  rotate: false
+  xy: 1280, 2
+  size: 506, 445
+  orig: 506, 445
   offset: 0, 0
   index: -1

@@ -1,0 +1,27 @@
+{
+ "groups": [
+  {
+   "name": "gun",
+   "parent": "symbol_anchor",
+   "pivot": [
+    504.50624999999997,
+    278.24375
+   ]
+  }
+ ],
+ "parents": {
+  "glow": "gun",
+  "frame": "gun",
+  "slide": "gun",
+  "slide_shine": "slide",
+  "flash": "gun",
+  "barrel_tip": "gun"
+ },
+ "hidden": [
+  "barrel_tip",
+  "casing",
+  "flash",
+  "smoke_a",
+  "smoke_b"
+ ]
+}

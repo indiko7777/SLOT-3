@@ -2,7 +2,8 @@ import { Container, Graphics, Sprite, Text, TextStyle, BlurFilter, Texture } fro
 import { GRID_COLUMNS, GRID_ROWS, type Board, type Position, type SymbolId } from "../domain";
 import { getSymbolTexture } from "./assets";
 import { SymbolView } from "./SymbolView";
-import { tween, wait, easeOutBounce, easeOutBack, linear, ambientTicker } from "./tween";
+import { tween, wait, easeOutBack, linear, ambientTicker } from "./tween";
+import { planColumn, gravityEase, TUMBLE_TIMING, type FallSpec } from "./tumblePlan";
 import type { Rect } from "./types";
 
 function slamBounce(r: number): number {
@@ -123,7 +124,7 @@ export class BoardView extends Container {
     this.cellWidth = (rect.width - this.gap * (GRID_COLUMNS + 1)) / GRID_COLUMNS;
     this.cellHeight = (rect.height - this.gap * (GRID_ROWS + 1)) / GRID_ROWS;
 
-    this.counterText.position.set(rect.width - 10, -20);
+    this.placeCounter();
 
     this.drawBackground();
     this.drawMask();
@@ -271,11 +272,33 @@ export class BoardView extends Container {
 
 
 
-  /* ─── CASCADE: gravity-drop survivors + slide new symbols from above ─── */
+  /* ─── CASCADE: gravity-drop survivors + drop new symbols from above ───
+   * The board owns the fall: a clean constant-gravity drop (tumblePlan), no
+   * bounce. At touchdown each symbol's rig performs its OWN impact through
+   * SymbolView.touchdown → the skeletal `land` clip (brass thuds, cartridges
+   * chatter, the duffel squashes, paper flutters…). The clip never animates
+   * the fall, so nothing is double-animated. Landing reactions play on past
+   * the resolve, overlapping the next event like a real settle would. */
   async tumbleTo(board: Board, turbo: boolean): Promise<void> {
     this.currentBoard = board;
     const cellStep = this.cellHeight + this.gap;
     const animations: Promise<void>[] = [];
+
+    const drop = (view: SymbolView, spec: FallSpec): Promise<void> => {
+      if (spec.fallMs <= 0 || Math.abs(spec.targetY - spec.startY) <= 1) {
+        view.y = spec.targetY;
+        return Promise.resolve();
+      }
+      const dist = spec.targetY - spec.startY;
+      const fall = (): Promise<void> => tween(spec.fallMs, (p) => {
+        if (!view.destroyed) view.y = spec.startY + dist * p;
+      }, gravityEase).then(() => {
+        if (view.destroyed) return;
+        view.y = spec.targetY;
+        view.touchdown("tumble", turbo);
+      });
+      return spec.delay > 0 ? wait(spec.delay).then(fall) : fall();
+    };
 
     for (let col = 0; col < GRID_COLUMNS; col++) {
       // Gather surviving symbols in this column (top to bottom order)
@@ -290,59 +313,34 @@ export class BoardView extends Container {
       }
 
       const newCount = GRID_ROWS - survivors.length;
+      const plan = planColumn(
+        survivors.map((v) => v.y), GRID_ROWS, (r) => this.cellY(r), cellStep, this.gap, turbo
+      );
 
-      // Survivors fall to the BOTTOM of the column, keeping relative order
+      // Survivors fall to the BOTTOM of the column, keeping relative order.
+      // Any that were still holding a win pose (won but not removed) let go.
       for (let i = 0; i < survivors.length; i++) {
-        const view = survivors[i];
-        const newRow = newCount + i;
-        const targetY = this.cellY(newRow);
-        const startY = view.y;
-
-        this.symbols.set(keyOf([col, newRow]), view);
-
-        if (Math.abs(startY - targetY) > 1) {
-          const fallDist = targetY - startY;
-          const dur = turbo ? 100 : Math.min(380, 140 + fallDist * 0.7);
-          animations.push(
-            tween(dur, (p) => {
-              view.y = startY + fallDist * p;
-            }, easeOutBounce).then(() => { view.y = targetY; })
-          );
-        }
+        const view = survivors[i]!;
+        view.releaseHold();
+        this.symbols.set(keyOf([col, newCount + i]), view);
+        animations.push(drop(view, plan.survivors[i]!));
       }
 
-      // New symbols enter from ABOVE the board
+      // New symbols enter from ABOVE the board (clipped by the reel mask).
       for (let i = 0; i < newCount; i++) {
-        const newRow = i;
-        const id = board[col][newRow];
-        const view = new SymbolView(id);
+        const spec = plan.fresh[i]!;
+        const view = new SymbolView(board[col][i]);
         view.layout(this.cellWidth, this.cellHeight);
-
-        // Stagger start positions above the board
-        const startY = -(newCount - i) * cellStep - this.gap;
-        view.position.set(this.cellX(col), startY);
-        view.alpha = 0.7;
+        view.position.set(this.cellX(col), spec.startY);
         this.reelContainer.addChild(view);
-
-        const targetY = this.cellY(newRow);
-        const fallDist = targetY - startY;
-        const delay = i * (turbo ? 10 : 25);
-        const dur = turbo ? 120 : Math.min(420, 160 + fallDist * 0.5);
-
-        animations.push(
-          wait(delay).then(() =>
-            tween(dur, (p) => {
-              view.y = startY + fallDist * p;
-              view.alpha = 0.7 + 0.3 * Math.min(1, p * 2);
-            }, easeOutBounce)
-          ).then(() => { view.y = targetY; view.alpha = 1; })
-        );
-
-        this.symbols.set(keyOf([col, newRow]), view);
+        this.symbols.set(keyOf([col, i]), view);
+        animations.push(drop(view, spec));
       }
     }
 
     await Promise.all(animations);
+    const settle = (turbo ? TUMBLE_TIMING.turbo : TUMBLE_TIMING.normal).settleMs;
+    if (settle > 0) await wait(settle);
   }
 
   async transform(board: Board, positions: Position[], turbo: boolean): Promise<void> {
@@ -500,8 +498,7 @@ export class BoardView extends Container {
     }
 
     // Tear the old board down and empty the container completely.
-    this.symbols.forEach((v) => v.destroy({ children: true }));
-    this.symbols.clear();
+    this.destroyAllSymbols();
     for (const child of [...this.reelContainer.children]) {
       this.reelContainer.removeChild(child);
       child.destroy({ children: true });
@@ -619,7 +616,7 @@ export class BoardView extends Container {
           // the filter stays attached at blur 0, and in Pixi v8 a non-empty
           // filters array keeps resampling the container through a render texture.
           if (!landed && p > 0.34) {
-            landed = this.handOffColumn(reel, finalBoard);
+            landed = this.handOffColumn(reel, finalBoard, turbo);
           }
           if (landed) {
             for (const { view, baseY } of landed) view.y = baseY + offset;
@@ -633,7 +630,7 @@ export class BoardView extends Container {
           reel.state = "stopped";
           // Normally the swap already happened at p>0.34; this covers a tween
           // that jumped straight to completion (tab throttling, timeScale).
-          landed = landed ?? this.handOffColumn(reel, finalBoard);
+          landed = landed ?? this.handOffColumn(reel, finalBoard, turbo);
           for (const { view, baseY } of landed) view.y = baseY;
           this.onReelStop?.(reel.col, GRID_COLUMNS);
           
@@ -712,7 +709,7 @@ export class BoardView extends Container {
     //       leave that column as a dead strip, so land anything still missing. ──
     for (const reel of reels) {
       if (!reel.container.destroyed) {
-        for (const { view, baseY } of this.handOffColumn(reel, finalBoard)) view.y = baseY;
+        for (const { view, baseY } of this.handOffColumn(reel, finalBoard, turbo)) view.y = baseY;
       }
     }
   }
@@ -733,7 +730,7 @@ export class BoardView extends Container {
    * and "compressed". It must be null, never [], because an empty array still
    * routes through the filter pipeline.
    */
-  private handOffColumn(reel: Reel, finalBoard: Board): { view: SymbolView; baseY: number }[] {
+  private handOffColumn(reel: Reel, finalBoard: Board, turbo: boolean): { view: SymbolView; baseY: number }[] {
     if (reel.container.destroyed) return [];
     reel.filter.strengthY = 0;
     reel.container.filters = null;
@@ -749,6 +746,9 @@ export class BoardView extends Container {
       view.position.set(this.cellX(reel.col), this.cellY(row));
       this.symbols.set(key, view);
       this.reelContainer.addChild(view);
+      // The column has just slammed: each symbol answers with a softened
+      // version of its own landing (rig only — the slam still owns position).
+      view.touchdown("reel", turbo);
       views.push({ view, baseY: view.y });
     }
     for (const cell of reel.cells) cell.container.destroy({ children: true });
@@ -815,9 +815,24 @@ export class BoardView extends Container {
     if (this.ambientCb) { ambientTicker.remove(this.ambientCb); this.ambientCb = null; }
   }
 
-  private rebuildSymbols(board: Board): void {
-    this.symbols.forEach((s) => s.destroy({ children: true }));
+  /** Empty the symbol map FIRST, then destroy each view on its own, so one
+   *  failing view can never leave destroyed views behind in the map (every
+   *  later layout would then crash on them). */
+  private destroyAllSymbols(): void {
+    const views = [...this.symbols.values()];
     this.symbols.clear();
+    for (const v of views) {
+      if (v.destroyed) continue;
+      try {
+        v.destroy({ children: true });
+      } catch (err) {
+        console.error("[BoardView] symbol teardown failed:", err);
+      }
+    }
+  }
+
+  private rebuildSymbols(board: Board): void {
+    this.destroyAllSymbols();
     this.reelContainer.removeChildren(); // Guarantee a completely empty container before rebuilding
     for (let col = 0; col < GRID_COLUMNS; col++) {
       for (let row = 0; row < GRID_ROWS; row++) {
@@ -841,6 +856,25 @@ export class BoardView extends Container {
 
   updateCollectionCounter(count: number): void {
     this.counterText.text = `[${count}/8]`;
+  }
+
+  /** Screen-space slot for the "[n/8]" counter (from wantedStarsGeometry): the
+   *  wanted-stars strip's top-right corner, clear of the stars. */
+  private counterSlot: { x: number; y: number } | null = null;
+
+  setCounterSlot(slot: { x: number; y: number } | null): void {
+    this.counterSlot = slot;
+    this.placeCounter();
+  }
+
+  private placeCounter(): void {
+    const s = this.counterSlot;
+    if (!s) {
+      this.counterText.position.set(this.rect.width - 10, -20);
+      return;
+    }
+    // board-local: the board container sits at (rect.x, rect.y)
+    this.counterText.position.set(s.x - this.rect.x, s.y - this.rect.y);
   }
 
   getSymbolView(pos: Position): SymbolView | null {

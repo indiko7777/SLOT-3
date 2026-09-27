@@ -801,10 +801,7 @@ export class HudView extends Container {
   }
 
   private drawArt(rect: Rect, _snapshot: PlaybackSnapshot): void {
-    const starR = Math.min(22, rect.width / 11);
-    const labelSize = Math.min(13, rect.width * 0.04);
-    const starsH = labelSize + starR * 2 + 16;
-    this.drawWantedStars({ x: rect.x, y: rect.y, width: rect.width, height: starsH });
+    // The wanted stars live in layout.starsBar, on top of the reel frame.
     this.drawCharacter(rect, _snapshot.collectionCount);
   }
 

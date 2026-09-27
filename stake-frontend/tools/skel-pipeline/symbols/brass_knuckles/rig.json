@@ -1,0 +1,4 @@
+{
+ "groups": [{"name": "base", "parent": "symbol_anchor", "pivot": [356, 544]}],
+ "parents": {"glow": "base", "body": "base", "shine": "base"}
+}

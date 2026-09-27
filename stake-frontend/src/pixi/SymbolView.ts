@@ -4,7 +4,12 @@ import { SYMBOLS } from "../domain";
 import { SYMBOL_ASSETS, getSymbolTexture, createSkelSymbol } from "./assets";
 import type { SkelPlayer } from "./SkelPlayer";
 import { makeText } from "./text";
-import { easeInOutCubic, easeOutElastic, easeOutBack, easeOutQuad, linear, tween, ambientTicker, getTimeScale } from "./tween";
+import { easeInOutCubic, easeOutBack, easeOutQuad, linear, tween, ambientTicker, getTimeScale } from "./tween";
+import { SymbolFlow, isSemantic, type ClipPlan, type LandSource } from "./symbolFlow";
+
+/** How long a winner may sit in its held pose before it is released back to
+ *  idle on its own (a win that no removal followed). ms at 1x time scale. */
+const HOLD_SAFETY_MS = 2600;
 
 export const WIN_ACCENT: Record<SymbolId, number> = {
   // Low Tier: Steel Blue
@@ -56,6 +61,18 @@ export class SymbolView extends Container {
   private readonly skelFitW: number = 1;
   private readonly skelFitH: number = 1;
   private skelCb: ((dt: number) => void) | null = null;
+  /** Clip-flow state (idle / land / win / hold / destroy) for skeletal symbols. */
+  private readonly flow: SymbolFlow | null = null;
+  /** Completion callback of the clip on screen; resolved early if a newer clip
+   *  interrupts it, so nothing awaiting a clip can hang. */
+  private pendingComplete: (() => void) | null = null;
+  private holdTimer: number | null = null;
+  private highlighted = false;
+  private settleToken = 0;
+
+  /** Sink for authored clip events (gunshot, casing tink, bill flutter…).
+   *  Wired by the scene to the audio bus; null = silent. */
+  static foleySink: ((id: SymbolId, cue: string, turbo: boolean) => void) | null = null;
 
   constructor(id: SymbolId) {
     super();
@@ -75,6 +92,7 @@ export class SymbolView extends Container {
       this.skel = skelInfo.player;
       this.skelFitW = skelInfo.fitW;
       this.skelFitH = skelInfo.fitH;
+      this.flow = new SymbolFlow({ hasHold: this.skel.has("hold"), hasLand: this.skel.has("land") });
     }
 
     this.labelText = makeText(skin.label, 24, skin.text, 0, 0, "center");
@@ -112,7 +130,9 @@ export class SymbolView extends Container {
     const w = this.widthValue;
     const h = this.heightValue;
 
+    this.highlighted = highlighted;
     this.background.clear();
+    this.background.alpha = 1;
 
     // No idle cell box or white frame — symbols sit directly on the reel.
     // A border is only drawn to signal win / alert / transform states.
@@ -154,9 +174,8 @@ export class SymbolView extends Container {
     // Skeletal player: origin is the symbol centre; scale by the ART content
     // size (fitW/fitH), not the padded canvas, so it matches the static art.
     if (this.skel && w > 0 && h > 0) {
-      const padding = 6;
-      const s = Math.min((w - padding * 2) / this.skelFitW, (h - padding * 2) / this.skelFitH);
-      if (isFinite(s) && s > 0) this.skel.scale.set(s);
+      const s = this.skelFitScale();
+      if (s > 0) this.skel.scale.set(s);
       this.skel.position.set(w / 2, h / 2);
     }
 
@@ -167,6 +186,12 @@ export class SymbolView extends Container {
       this.corner.style.fontSize = Math.max(10, Math.min(18, w * 0.18));
       this.corner.position.set(w - 8, h - 22);
     }
+  }
+
+  private skelFitScale(): number {
+    const padding = 6;
+    const s = Math.min((this.widthValue - padding * 2) / this.skelFitW, (this.heightValue - padding * 2) / this.skelFitH);
+    return isFinite(s) && s > 0 ? s : 0;
   }
 
   /** Scale + center a sprite to fill the cell with a small padding. */
@@ -216,20 +241,87 @@ export class SymbolView extends Container {
     }
   }
 
-  async land(delay: number, turbo: boolean): Promise<void> {
-    const targetY = this.y;
-    const startY = targetY - (turbo ? 30 : 80);
-    this.alpha = 0;
-    this.scale.set(0.78);
-    this.y = startY;
-    await tween(turbo ? 120 : 280 + delay, (progress) => {
-      this.alpha = Math.min(1, progress * 1.5);
-      this.scale.set(0.78 + 0.22 * progress);
-      this.y = startY + (targetY - startY) * progress;
-    }, easeOutElastic);
-    this.y = targetY;
-    this.scale.set(1);
-    this.alpha = 1;
+  /* ─── skeletal clip plumbing ─── */
+
+  /** Start a planned clip. Any clip it interrupts has its completion released
+   *  immediately (after the switch), so an awaiting caller never hangs. */
+  private runPlan(plan: ClipPlan, turbo: boolean, onComplete?: () => void): void {
+    const skel = this.skel;
+    // A destroyed view never plays another clip: its sprites are gone. (A clip
+    // still pending when the board tears down — the tab was backgrounded, or a
+    // quick autoplay spin — releases its completion from destroy().)
+    if (!skel || this.destroyed || skel.destroyed || !skel.has(plan.clip)) { onComplete?.(); return; }
+    const interrupted = this.pendingComplete;
+    this.pendingComplete = null;
+    const done = (): void => {
+      if (this.pendingComplete === done) this.pendingComplete = null;
+      onComplete?.();
+    };
+    if (onComplete) this.pendingComplete = done;
+    const sink = SymbolView.foleySink;
+    skel.play(plan.clip, {
+      loop: plan.loop,
+      speed: plan.speed,
+      mix: plan.mix,
+      weight: plan.weight,
+      onComplete: onComplete ? done : null,
+      onEvent: plan.events && sink ? (cue) => sink(this.id, cue, turbo) : null,
+    });
+    interrupted?.();
+  }
+
+  private clearHoldTimer(): void {
+    if (this.holdTimer !== null) { window.clearTimeout(this.holdTimer); this.holdTimer = null; }
+  }
+
+  /**
+   * The symbol has just come to rest in its cell. `tumble` = it fell into
+   * place during a cascade; `reel` = its reel column just slammed to a stop.
+   * Semantic rigs play their object-specific `land` clip (the board already
+   * moved the symbol — the clip never animates the fall itself). Anything
+   * without one gets a tiny container settle that leaves its rig untouched.
+   * A symbol that is mid-win / held / being destroyed is never interrupted.
+   */
+  touchdown(source: LandSource, turbo: boolean): void {
+    if (this.destroyed) return;
+    if (this.skel && this.flow) {
+      const plan = this.flow.land(source, turbo, getTimeScale());
+      if (plan) {
+        this.runPlan(plan, turbo, () => {
+          if (this.destroyed) return;
+          const next = this.flow?.landEnded();
+          if (next) this.runPlan(next, turbo);
+        });
+        return;
+      }
+      if (this.flow.state !== "idle") return;
+    }
+    if (source === "tumble") this.containerSettle(turbo);
+  }
+
+  /** Bottom-anchored micro squash for symbols with no authored `land` clip.
+   *  Scales the player's container only; its clips are never touched. */
+  private containerSettle(turbo: boolean): void {
+    const target = this.skel ?? this.sprite;
+    if (!target) return;
+    const token = ++this.settleToken;
+    const baseScale = (): number => (this.skel ? this.skelFitScale() : target.scale.y);
+    const s0 = baseScale();
+    if (s0 <= 0) return;
+    const halfH = (this.skel ? this.skelFitH : target.height / s0) / 2;
+    const cy = this.heightValue / 2;
+    void tween(turbo ? 110 : 200, (p) => {
+      if (this.destroyed || token !== this.settleToken) return;
+      const k = Math.exp(-4.2 * p) * Math.cos(Math.PI * 2 * 1.1 * p) * (1 - p);
+      const sy = 1 - 0.05 * k;
+      const sx = 1 + 0.035 * k;
+      target.scale.set(s0 * sx, s0 * sy);
+      target.y = cy + (1 - sy) * halfH * s0;
+    }, linear).then(() => {
+      if (this.destroyed || token !== this.settleToken) return;
+      target.scale.set(s0);
+      target.y = cy;
+    });
   }
 
   async punch(): Promise<void> {
@@ -241,6 +333,7 @@ export class SymbolView extends Container {
   }
 
   async winCelebrate(turbo: boolean): Promise<void> {
+    if (this.skel && this.flow && isSemantic(this.flow.caps)) return this.winCelebrateSemantic(turbo);
     if (this.skel) return this.winCelebrateSkel(turbo);
     const w = this.widthValue;
     const h = this.heightValue;
@@ -297,8 +390,52 @@ export class SymbolView extends Container {
     this.shimmer.alpha = 0;
   }
 
-  /** Skeletal win: play the authored `win` animation (anticipation crush →
-   *  prismatic burst) with the tier aura + shimmer sweep layered on top. */
+  /**
+   * Semantic skeletal win: the object's own motion is the hero. No filled
+   * tier box and no diagonal shimmer sweep — the rig flares its silhouette
+   * glow itself — only the thin tier border stays, faded in, so the winning
+   * cells still read at a glance next to the cluster link.
+   *
+   * Resolves when the signature action has played; the symbol then HOLDS its
+   * presented pose until it is destroyed (tumble_remove) or released (it
+   * survived), instead of dropping back to idle for a beat first.
+   */
+  private async winCelebrateSemantic(turbo: boolean): Promise<void> {
+    const flow = this.flow!;
+    this.clearHoldTimer();
+    this.redraw(true, false, false);
+    const border = this.background;
+    border.alpha = 0;
+    void tween(turbo ? 70 : 160, (p) => { if (!border.destroyed) border.alpha = p; }, easeOutQuad);
+
+    const plan = flow.win(turbo, getTimeScale());
+    if (!plan) return;
+    await new Promise<void>((resolve) => this.runPlan(plan, turbo, resolve));
+    if (this.destroyed) return;
+    const next = flow.winEnded(getTimeScale());
+    if (next) this.runPlan(next, turbo);
+    if (flow.state === "hold") {
+      this.holdTimer = window.setTimeout(() => {
+        this.holdTimer = null;
+        this.releaseHold();
+      }, HOLD_SAFETY_MS / getTimeScale());
+    }
+  }
+
+  /** A held winner that is NOT being removed goes back to idle (called by the
+   *  board when a cascade moves on, and by the hold safety timer). */
+  releaseHold(): void {
+    if (this.destroyed || !this.flow) return;
+    this.clearHoldTimer();
+    const plan = this.flow.release();
+    if (plan) {
+      this.runPlan(plan, false);
+      if (this.highlighted) this.redraw(false, false, false);
+    }
+  }
+
+  /** Legacy skeletal win (WILD, CAR_WILD, truck): play the authored `win`
+   *  animation with the tier aura + shimmer sweep layered on top, then idle. */
   private async winCelebrateSkel(turbo: boolean): Promise<void> {
     const w = this.widthValue;
     const h = this.heightValue;
@@ -314,13 +451,15 @@ export class SymbolView extends Container {
     const glowIn = tween(turbo ? 90 : 200, (p) => { this.winGlow.alpha = p; });
     // The ambient ticker keeps calling skel.update, so a one-shot play resolves
     // itself; speed tracks turbo and the global time scale like the tweens do.
-    const speed = (turbo ? 2 : 1) * getTimeScale();
-    await new Promise<void>((resolve) => this.skel!.play("win", { speed, onComplete: resolve }));
+    const plan = this.flow?.win(turbo, getTimeScale());
+    if (plan) await new Promise<void>((resolve) => this.runPlan(plan, turbo, resolve));
     await Promise.all([sweep, glowIn]);
+    if (this.destroyed) return;
 
     this.winGlow.alpha = 0;
     this.shimmer.alpha = 0;
-    this.skel!.play("idle", { loop: true });
+    const next = this.flow?.winEnded(getTimeScale());
+    if (next) this.runPlan(next, turbo);
   }
 
   /** A diagonal light streak sweeping left→right across the symbol (cell-clipped). */
@@ -360,10 +499,12 @@ export class SymbolView extends Container {
   }
 
   async vanish(turbo: boolean): Promise<void> {
-    if (this.skel) {
-      // Authored shatter: light flies outward, body collapses, ends invisible.
-      const speed = (turbo ? 4 : 2) * getTimeScale();
-      await new Promise<void>((resolve) => this.skel!.play("destroy", { speed, onComplete: resolve }));
+    if (this.skel && this.flow) {
+      // Authored destroy, cross-faded straight out of the held win pose on
+      // semantic rigs. Legacy rigs keep their 2x/4x playback exactly.
+      this.clearHoldTimer();
+      const plan = this.flow.vanish(turbo, getTimeScale());
+      if (plan) await new Promise<void>((resolve) => this.runPlan(plan, turbo, resolve));
       return;
     }
     await tween(turbo ? 100 : 220, (progress) => {
@@ -376,12 +517,24 @@ export class SymbolView extends Container {
   override destroy(options?: { children?: boolean }): void {
     this.setSpinBlur(0);
     this.stopIdleShimmer();
+    this.clearHoldTimer();
+    this.settleToken++;
     if (this.skelCb) {
       ambientTicker.remove(this.skelCb);
       this.skelCb = null;
     }
     this.skel?.stop();
+    // Release anything still awaiting a clip on this view (after the destroy,
+    // so a continuation sees `destroyed` and plays nothing). Never let it
+    // throw out of destroy(): the board destroys views in bulk.
+    const pending = this.pendingComplete;
+    this.pendingComplete = null;
     super.destroy(options);
+    try {
+      pending?.();
+    } catch (err) {
+      console.error("[SymbolView] pending clip completion failed after destroy:", err);
+    }
   }
 }
 

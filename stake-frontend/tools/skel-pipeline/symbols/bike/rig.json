@@ -1,0 +1,7 @@
+{
+ "groups": [
+  {"name": "ground", "parent": "symbol_anchor", "pivot": [339, 513]},
+  {"name": "chassis", "parent": "ground", "pivot": [194, 489]}
+ ],
+ "parents": {"glow": "chassis", "body": "chassis", "shine": "chassis"}
+}

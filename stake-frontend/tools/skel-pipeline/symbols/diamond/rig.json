@@ -1,0 +1,41 @@
+{
+ "groups": [
+  {
+   "name": "gem",
+   "parent": "symbol_anchor",
+   "pivot": [
+    356,
+    280
+   ]
+  }
+ ],
+ "parents": {
+  "glow": "gem",
+  "table_fire": "gem",
+  "shard_0": "gem",
+  "shard_1": "gem",
+  "shard_2": "gem",
+  "shard_3": "gem",
+  "shard_4": "gem",
+  "shard_5": "gem",
+  "shard_6": "gem",
+  "shard_7": "gem",
+  "shard_8": "gem",
+  "shard_9": "gem",
+  "light_0": "gem",
+  "light_1": "gem",
+  "light_2": "gem",
+  "light_3": "gem",
+  "light_4": "gem",
+  "light_5": "gem"
+ },
+ "hidden": [
+  "light_0",
+  "light_1",
+  "light_2",
+  "light_3",
+  "light_4",
+  "light_5",
+  "table_fire"
+ ]
+}

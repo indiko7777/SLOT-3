@@ -1,0 +1,47 @@
+{
+ "groups": [
+  {
+   "name": "knife",
+   "parent": "symbol_anchor",
+   "pivot": [
+    349.3125,
+    328.2975
+   ],
+   "rotation": 41.285
+  },
+  {
+   "name": "edgeline",
+   "parent": "symbol_anchor",
+   "pivot": [
+    349.3125,
+    328.2975
+   ],
+   "rotation": 41.285
+  }
+ ],
+ "parents": {
+  "glow": "knife",
+  "slash": "knife",
+  "handle": "knife",
+  "blade": "knife",
+  "tip_flare": "knife",
+  "glint_0": "knife",
+  "glint_1": "knife",
+  "glint_2": "knife",
+  "glint_3": "knife",
+  "glint_4": "knife",
+  "glint_5": "knife",
+  "edge_flash": "edgeline"
+ },
+ "hidden": [
+  "slash",
+  "tip_flare",
+  "edge_flash",
+  "glint_0",
+  "glint_1",
+  "glint_2",
+  "glint_3",
+  "glint_4",
+  "glint_5"
+ ]
+}

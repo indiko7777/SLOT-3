@@ -6,21 +6,77 @@ repeat: none
 glow
   rotate: false
   xy: 2, 2
-  size: 683, 518
-  orig: 683, 518
+  size: 626, 460
+  orig: 626, 460
   offset: 0, 0
   index: -1
-body
+bill_0
   rotate: false
-  xy: 2, 522
-  size: 513, 374
-  orig: 513, 374
+  xy: 2, 790
+  size: 343, 278
+  orig: 343, 278
   offset: 0, 0
   index: -1
-shine
+bill_1
   rotate: false
-  xy: 2, 898
-  size: 508, 355
-  orig: 508, 355
+  xy: 449, 464
+  size: 313, 311
+  orig: 313, 311
+  offset: 0, 0
+  index: -1
+bill_2
+  rotate: false
+  xy: 2, 464
+  size: 280, 324
+  orig: 280, 324
+  offset: 0, 0
+  index: -1
+bill_3
+  rotate: false
+  xy: 630, 2
+  size: 253, 347
+  orig: 253, 347
+  offset: 0, 0
+  index: -1
+bill_4
+  rotate: false
+  xy: 284, 464
+  size: 163, 316
+  orig: 163, 316
+  offset: 0, 0
+  index: -1
+throw_0
+  rotate: false
+  xy: 347, 790
+  size: 83, 175
+  orig: 83, 175
+  offset: 0, 0
+  index: -1
+throw_1
+  rotate: false
+  xy: 432, 790
+  size: 83, 175
+  orig: 83, 175
+  offset: 0, 0
+  index: -1
+throw_2
+  rotate: false
+  xy: 517, 790
+  size: 83, 175
+  orig: 83, 175
+  offset: 0, 0
+  index: -1
+throw_3
+  rotate: false
+  xy: 602, 790
+  size: 83, 175
+  orig: 83, 175
+  offset: 0, 0
+  index: -1
+clip
+  rotate: false
+  xy: 687, 790
+  size: 160, 60
+  orig: 160, 60
   offset: 0, 0
   index: -1

@@ -69,8 +69,35 @@ From `stake-frontend/tools/skel-pipeline/`:
 ```bash
 python build_all.py                 # every symbol in ALL_SYMBOLS
 python build_all.py pistol knife    # just these
-python build_all.py --skip=diamond  # diamond has a hand-authored gen_anim.py; never clobber it
+python build_all.py --skip=safe     # skip some
 ```
+
+Pillow is optional: without it `build_all.py` uses the Node twins of the packer/shipper
+(`semantic/pack_atlas.mjs`, `semantic/ship.mjs`, byte-identical output) and reuses the generic
+parts already in `symbols/<name>/parts`. Motion, rig and validation are plain Python.
+
+### Semantic rigs (real moving parts) — pistol, ammo, cash, duffel, knife, diamond
+
+These don't use the glow/body/shine split. `semantic/make_layers.mjs <name>` (Node + sharp) runs
+`semantic/symbols/<name>.mjs`, which cuts or paints REAL parts and paints whatever a moving part
+uncovers (never holes): the pistol's slide on its seam with barrel/guide rod/spring painted
+beneath; one vector cartridge per layer; a fan of real `real_bill.webp` notes in a money clip;
+the duffel's loot/pocket/handle/zipper with painted insides; the knife's blade + glint flipbook;
+the diamond split into its own facets (light bands + shards). Each module also writes
+`rig.json` (group bones, reparenting, hidden FX slots, `lowres` parts, `shipLossy`),
+`pivots.json` and `meta.json` (geometry the motion reads). `--debug` writes `_rest.png`,
+`_layer_*.png` and a rest-pose reconstruction check against the source (must be ~0).
+
+Semantic clips (see `src/pixi/symbolFlow.ts`): `idle`, `win` (ends on `hold`'s first pose),
+`hold` (loop shown until the symbol is destroyed or released), `land` (touchdown impact — starts
+and ends at rest; BoardView owns the fall), `destroy`. Clip `events` (e.g. `fire`, `rattle`,
+`flick`) drive the synthesized foley in `src/audio/SymbolFoley.ts`.
+
+Inspect any clip offline: `node semantic/render.mjs symbols/<name> <clip> --every=2` writes a
+contact sheet (same pose maths as SkelPlayer) — the in-app browser pauses rAF when hidden.
+
+**Do not rebuild `wild_symbole` / `cyan_car_wild`** — the owner wants them exactly as they are;
+their shipped files are hash-pinned in `src/__tests__/skelBundles.test.ts`.
 
 For each symbol `build_all.py` chains, and **aborts if any step fails**:
 
@@ -115,19 +142,22 @@ Motion is authored per symbol so each reads as *what it is*. Current personaliti
 
 | symbol | idle | win |
 |---|---|---|
-| pistol | steady aim, muzzle micro-drift | **recoil** — slide kicks back+up, muzzle flare |
-| knife | slow menacing tilt | **flip** — coils, full 360, blade glint |
-| brass_knuckles | heavy rock | **punch** — winds back, thrusts forward |
-| ammo | rolls in place | **jolt** — cartridges kick up + rattle |
-| duffel | breathes (stuffed) | **bulge** — soft swell + burst |
-| cash | slight riffle | **riffle** — bills flutter |
-| bike | 6-cycle engine idle vibration | **rev + wheelie** |
+| pistol | steady aim, muzzle micro-drift | **shot** — slide cycles on its rail, muzzle flash, casing ejects on an arc, smoke; destroy: slide locks back and strips off |
+| knife | slow menacing tilt | **flip** with a slash arc, glint rolls heel→tip; destroy: edge-on into a line of light |
+| brass_knuckles | heavy rock | **punch** — loaded wind-up, dead stop, ground-pivot squash; destroy: dead weight drop |
+| ammo | rounds rock out of phase | **jolt** — every cartridge hops/rattles on its own beat; destroy: rounds eject on separate arcs |
+| duffel | breathes (stuffed) | **heave** — loot spills up and drops back, handle flops; destroy: bursts, loot blows out |
+| cash | notes breathe apart | **fan snaps open**, notes thumb-flicked off ("make it rain", paper physics); destroy: clip pops, fan bursts into falling notes |
+| bike | 6-cycle engine idle vibration | **rev + wheelie** about the rear tyre, suspension takes the drop; destroy: rides off right |
+| diamond | faint light drifts through facets | jeweller's tilt, refraction wave across facets, table flash; destroy: shatters along its facets |
 | wild | cloth sway | flutter pop |
 | cyan_car_wild (phone) | quiet, screen pulse | **ring** — 13-cycle buzz |
 | burner_phone (truck) | suspension bob | **lurch** forward |
 | safe | rigid (<1°), dial idle | **crack** — dial whirl, door pop |
 | master_key | arcane float | **turn** 90° like a lock |
-| diamond | luster loop (hand-authored `gen_anim.py`, NOT this file) | prismatic burst |
+
+The semantic personalities (pistol … diamond, brass, bike) take a 4th `ctx` argument and return
+the clip dict directly (`idle/win/hold/land/destroy`); the truck adds a `land` clip only.
 
 **To add/edit a personality**, register a function with `@motion("<name>")` returning
 `(idle, win, drop, destroy)` — or a 5th element, a dict of extra one-shots (e.g. the truck's
@@ -203,8 +233,10 @@ Bezier curve arrays — keep JSON inside that subset.
   small/large in its cell. Always paste the number `build_all.py` prints.
 - **`--noupscale` for low-res source.** `prep_art.py --noupscale` re-encodes without enlarging;
   upscaling a 200px symbol just makes a bigger blurry symbol. Regenerate art instead.
-- **Diamond is hand-authored.** It uses `symbols/diamond/gen_anim.py`, not `symbol_motion.py`.
-  Always `--skip=diamond` in `build_all.py`, or you overwrite the bespoke luster/burst.
+- **Some modules overwrite their own static art** (`public/assets/symbols/{ammo,cash,knife,
+  diamond}.webp` are written by their semantic modules). The knife and diamond read their
+  pristine originals from `semantic/symbols/{knife,diamond}.source.webp`, so rebuilds are
+  idempotent — never delete those.
 - **`destroy` must reach alpha 00 on every slot** or `validate.py` E6 fails the build. If you add
   a layer (e.g. shine as a flying shard), fade it too.
 - **Tint must stay 0–255 per channel.** `(ch<<16)|(ch<<8)|ch` with `ch=256` produces `0x1010100`,

@@ -3,9 +3,10 @@ import { BONUS_START_RESPINS, GRID_COLUMNS, GRID_ROWS, type BonusCell, type Posi
 import { getExtraTexture } from "./assets";
 import { UI_FONT } from "../typography";
 import { GetawayResult, type GetawayResultAudio } from "./GetawayResult";
-import { tween, wait, easeOutBack, easeOutCubic, linear, ambientTicker } from "./tween";
+import { tween, wait, easeOutBack, easeOutCubic, easeInQuad, linear, ambientTicker, getTimeScale } from "./tween";
 
-import type { Rect } from "./types";
+import type { GetawayCue, Rect } from "./types";
+import { dudDynamites } from "./dynamitePlan";
 import { shockwave, pulseBloom, pulseChromaticAberration } from "../vfx/Shaders";
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -135,6 +136,12 @@ function reelVel(p: number): number {
   return (1 + Math.cos(Math.PI * u)) / 2;
 }
 
+// Where the fuse is on dynamite.webp (640², centre-relative texture px): the lit
+// tip drawn into the art, and where the fuse enters the sticks. The burn-down
+// runs the spark from one to the other.
+const FUSE_TIP = { x: 125, y: -195 };
+const FUSE_BASE = { x: 66, y: -98 };
+
 function fmtX(v: number): string {
   const r = Math.round(v * 100) / 100;
   return `${r.toLocaleString("en-US", { maximumFractionDigits: 2 })}x`;
@@ -208,6 +215,12 @@ export class BonusView extends Container {
    *  official slot. 0 bet = fall back to raw multipliers (shouldn't happen). */
   private betAmount = 0;
   private currency = "";
+
+  /** Moment sink: fired on the frame each visual happens (the reel stopping,
+   *  a bar slamming in, the fuse, the blast, each ×2, the meter) so sound can
+   *  be synced to it. Set by the scene. */
+  onCue: ((cue: GetawayCue) => void) | null = null;
+  private cue(c: GetawayCue): void { this.onCue?.(c); }
 
   setMoneyContext(betAmount: number, currency: string): void {
     this.betAmount = betAmount;
@@ -543,10 +556,19 @@ export class BonusView extends Container {
 
     // Normal reel spin: open cells spin and STOP on their result, which sticks.
     for (const node of previous.values()) node.destroy({ children: true });
-    await this.spinColumns(grid, spinning, turbo, onLand);
+    const duds = new Set(dudDynamites(grid, landed).map(keyOf));
+    await this.spinColumns(grid, spinning, duds, turbo, onLand);
 
     // Count up any gold just collected (bottom-centre, away from the meter).
     this.setCollected(this.sumGrid(grid), true);
+
+    // Dynamite with no gold bar beside it has nothing to blow. The engine sends
+    // no blast for it, so it used to just sit there and vanish on the next spin;
+    // now it visibly fizzles out right here and its cell goes back to a blank.
+    if (duds.size) {
+      await wait(turbo ? 40 : 160);
+      await Promise.all([...duds].map((k) => this.fizzle(k.split(":").map(Number) as Position, turbo)));
+    }
 
     // Resolve the respin meter AFTER the spin, as its OWN deliberate beat — the
     // reel settles first, THEN the player watches the spins count change. The
@@ -557,29 +579,215 @@ export class BonusView extends Container {
       await wait(turbo ? 50 : 240);
       // Countdown rule: a lock HOLDS the meter (the number does not change), so
       // there is no number transition to play — just a confirming gold pulse.
+      this.cue({ kind: "held" });
       this.spinsHeldBeat(turbo);
       await wait(turbo ? 60 : 420);
     } else {
       this.heat = Math.min(3, deadSpins);
-      // The "miss" audio fires on the same frame as the visual dead-spin beat.
+      // The "miss" sound fires on the same frame as the visual dead-spin beat.
       onDeadBeat?.();
+      this.cue({ kind: "dead", heat: this.heat });
       this.deadSpinBeat();
       await wait(turbo ? 50 : 300);
+      // …and the meter's ka-chunk on the frame the number drops.
+      this.cue({ kind: "spent", spinsLeft: respins });
       this.animateSpinsBeat(respins, turbo);
       await wait(turbo ? 80 : 680);
     }
   }
 
-  /** Dynamite detonates: shockwave over neighbours, double them, then vanish. */
+  /** Where the burning fuse sits on a dynamite node (node-local coords). */
+  private fuseGeometry(node: Container): { tip: { x: number; y: number }; base: { x: number; y: number } } {
+    const art = node.getChildByLabel("art");
+    // FUSE_* are measured on the 640² art; rescale to the loaded texture.
+    const s = art instanceof Sprite ? art.scale.x * (art.texture.width / 640) : 0;
+    if (!s) {
+      const h = node.height || 60;
+      return { tip: { x: 0, y: -h * 0.34 }, base: { x: 0, y: -h * 0.24 } };
+    }
+    return { tip: { x: FUSE_TIP.x * s, y: FUSE_TIP.y * s }, base: { x: FUSE_BASE.x * s, y: FUSE_BASE.y * s } };
+  }
+
+  /**
+   * A live fuse: a flickering hot spark on the tip, so a dynamite that WILL go
+   * off reads as lit from the moment it lands until its blast. Lives on the
+   * node (dies with it); crack() moves it down the fuse.
+   */
+  private lightFuse(node: Container): Graphics {
+    const existing = node.getChildByLabel("spark");
+    if (existing instanceof Graphics) return existing;
+    const { tip } = this.fuseGeometry(node);
+    const unit = Math.max(6, (node.width || 60) * 0.05);
+    const spark = new Graphics();
+    spark.label = "spark";
+    spark.blendMode = "add";
+    spark.position.set(tip.x, tip.y);
+    node.addChild(spark);
+    const cb = (_dt: number, elapsed: number): void => {
+      // Stop with the node — destroyed, or just cleared off the board (hide()
+      // detaches the grid without destroying it).
+      if (spark.destroyed || !node.parent) { ambientTicker.remove(cb); return; }
+      const f = 0.75 + 0.25 * Math.sin(elapsed * 41) * Math.sin(elapsed * 23 + 1.3);
+      spark.clear();
+      spark.circle(0, 0, unit * 1.9 * f).fill({ color: 0xff7a1a, alpha: 0.28 });
+      spark.circle(0, 0, unit * 1.05 * f).fill({ color: 0xffc04a, alpha: 0.6 });
+      spark.circle(0, 0, unit * 0.45).fill({ color: 0xfff6d0, alpha: 0.95 });
+      // a few stray sparks spitting off
+      for (let i = 0; i < 3; i++) {
+        const a = elapsed * (7 + i * 3) + i * 2.1;
+        const d = unit * (1.4 + ((elapsed * (3 + i)) % 1) * 1.6);
+        spark.circle(Math.cos(a) * d, Math.sin(a) * d - unit * 0.4, unit * 0.16).fill({ color: 0xffe08a, alpha: 0.85 });
+      }
+    };
+    ambientTicker.add(cb);
+    node.once("destroyed", () => ambientTicker.remove(cb));
+    return spark;
+  }
+
+  /**
+   * A dud: no gold bar next to it, so there is nothing to blow. The fuse
+   * sputters, a puff of smoke, the sticks go cold and dark, "DUD", and the cell
+   * returns to the blank logo — the player sees WHY nothing happened.
+   */
+  private async fizzle(pos: Position, turbo: boolean): Promise<void> {
+    const node = this.cells.get(keyOf(pos));
+    if (!node) return;
+    const rc = this.cellRect(pos[0], pos[1]);
+    const { tip } = this.fuseGeometry(node);
+    const art = node.getChildByLabel("art");
+    this.cue({ kind: "dud" });
+
+    // Sputter: the spark stutters and dies.
+    const spark = new Graphics();
+    spark.blendMode = "add";
+    spark.position.set(tip.x, tip.y);
+    node.addChild(spark);
+    const unit = Math.max(6, rc.w * 0.05);
+    // Soft, blurred wisps — flat circles read as grey discs, not smoke.
+    const puff = new Container();
+    puff.filters = [new BlurFilter({ strength: unit * 0.9, quality: 2 })];
+    node.addChild(puff);
+    const smoke: Graphics[] = [];
+    for (let i = 0; i < 6; i++) {
+      const g = new Graphics();
+      const r = unit * (0.9 + i * 0.3);
+      g.circle(0, 0, r).fill({ color: 0x8f959e, alpha: 0.42 });
+      g.circle(r * 0.35, -r * 0.2, r * 0.7).fill({ color: 0xc3c8cf, alpha: 0.25 });
+      g.position.set(tip.x, tip.y);
+      g.alpha = 0;
+      puff.addChild(g);
+      smoke.push(g);
+    }
+    const label = new Text({
+      text: "DUD",
+      style: new TextStyle({
+        fill: 0xb8c0cc, fontFamily: FONT, fontSize: Math.min(26, rc.h * 0.26), fontWeight: "900", letterSpacing: 3,
+        stroke: { color: 0x000000, width: 4 },
+      }),
+    });
+    label.anchor.set(0.5);
+    label.alpha = 0;
+    this.fxLayer.addChild(label);
+    const lx = rc.x + rc.w / 2, ly = rc.y + rc.h * 0.62;
+    label.position.set(lx, ly);
+
+    await tween(turbo ? 320 : 820, (p) => {
+      // spark: irregular stutter, gone by 55%
+      const live = p < 0.55 ? 1 - p / 0.55 : 0;
+      const stutter = Math.sin(p * 90) > -0.2 ? 1 : 0.2;
+      spark.clear();
+      if (live > 0) {
+        spark.circle(0, 0, unit * 1.1 * live * stutter).fill({ color: 0xffb040, alpha: 0.7 });
+        spark.circle(0, 0, unit * 0.4 * live).fill({ color: 0xfff0c0, alpha: 0.9 });
+      }
+      // smoke puff rising off the dead fuse (from 45%)
+      const sp = Math.max(0, (p - 0.45) / 0.55);
+      smoke.forEach((g, i) => {
+        const q = Math.max(0, sp - i * 0.06);
+        g.alpha = q > 0 ? 0.55 * Math.sin(Math.min(1, q) * Math.PI) : 0;
+        g.position.set(tip.x + Math.sin(i * 2.3 + q * 3) * unit * 0.8, tip.y - q * rc.h * 0.35 - i * unit * 0.3);
+        g.scale.set(0.6 + q * 1.1);
+      });
+      // the sticks go cold: darken + desaturate towards grey
+      if (art) {
+        const k = Math.min(1, sp * 1.4);
+        const v = Math.round(255 - 150 * k);
+        (art as Sprite).tint = (v << 16) | (v << 8) | v;
+      }
+      label.alpha = sp < 0.2 ? sp / 0.2 : sp > 0.8 ? (1 - sp) / 0.2 : 1;
+      label.y = ly - sp * 10;
+    }, linear);
+    label.destroy();
+
+    // Back to a blank cell (the logo), fading in over the cold sticks.
+    const logoTex = getExtraTexture("heat_chase_logo_symbol") ?? getExtraTexture("heat_chase_logo");
+    const blank = this.buildEmptyFace(pos[0], pos[1], logoTex);
+    blank.alpha = 0;
+    this.placeCell(pos, blank);
+    await tween(turbo ? 90 : 220, (p) => { blank.alpha = p; if (!node.destroyed) node.alpha = 1 - p; }, linear);
+    node.destroy({ children: true });
+  }
+
+  /**
+   * Dynamite, as one readable beat: it doubles every gold bar next to it.
+   *   1. ARM — the bars it will hit light up with a "×2" tag while the spark
+   *      runs down the fuse and the sticks tremble (the player sees exactly
+   *      what is about to happen, and to which bars).
+   *   2. BOOM — the blast, on the frame the spark reaches the sticks.
+   *   3. ×2 — each target bar doubles on its OWN beat: punch, new value, the
+   *      money gained, a hit climbing in pitch, COLLECTED ticking up.
+   *   4. The spent cell goes back to a blank, ready to be refilled.
+   */
   async crack(keyPos: Position, affected: Array<{ position: Position; newValue: number }>, turbo: boolean): Promise<void> {
     const kc = this.cellRect(keyPos[0], keyPos[1]);
     const cx = kc.x + kc.w / 2;
     const cy = kc.y + kc.h / 2;
     const reach = Math.max(kc.w, kc.h);
     const dyn = this.cells.get(keyOf(keyPos));
+    const dynArt = dyn ? dyn.children.filter((ch) => ch.label === "art") : [];
 
     // Highest multiplier of affected safes
     const maxVal = affected.reduce((max, a) => Math.max(max, a.newValue), 1);
+
+    // ── 1. ARM ─────────────────────────────────────────────────────────────
+    const armMs = turbo ? 220 : 640;
+    const zone = new Graphics();
+    zone.blendMode = "add";
+    this.fxLayer.addChild(zone);
+    const chips = affected.map((a) => this.targetChip(a.position));
+    const spark = dyn ? this.lightFuse(dyn) : null;
+    const fuse = dyn ? this.fuseGeometry(dyn) : null;
+    const artPos = dynArt.map((ch) => ({ x: ch.x, y: ch.y }));
+    this.cue({ kind: "fuse", seconds: armMs / 1000 / getTimeScale() });
+    await tween(armMs, (p) => {
+      if (spark && fuse && !spark.destroyed) {
+        const e = easeInQuad(p);
+        spark.position.set(fuse.tip.x + (fuse.base.x - fuse.tip.x) * e, fuse.tip.y + (fuse.base.y - fuse.tip.y) * e);
+      }
+      // The sticks tremble harder as the spark nears them.
+      const amp = reach * 0.02 * p * p;
+      dynArt.forEach((ch, i) => {
+        if (ch.destroyed) return;
+        ch.position.set(artPos[i]!.x + Math.sin(p * 97) * amp, artPos[i]!.y + Math.cos(p * 83) * amp * 0.6);
+      });
+      // Blast reach: every bar it will double pulses hot, faster as it burns.
+      const pulse = 0.5 + 0.5 * Math.sin(p * Math.PI * (4 + 6 * p));
+      zone.clear();
+      for (const a of affected) {
+        const nc = this.cellRect(a.position[0], a.position[1]);
+        zone.roundRect(nc.x + 3, nc.y + 3, nc.w - 6, nc.h - 6, 8).fill({ color: 0xff7a1a, alpha: 0.08 + 0.1 * pulse * p });
+        zone.roundRect(nc.x + 3, nc.y + 3, nc.w - 6, nc.h - 6, 8).stroke({ color: 0xffa640, width: 2.5, alpha: 0.35 + 0.55 * pulse });
+      }
+      const pop = Math.min(1, p / 0.3);
+      chips.forEach((chip) => { chip.alpha = pop; chip.scale.set(0.4 + 0.6 * easeOutBack(pop)); });
+    }, linear);
+    dynArt.forEach((ch, i) => { if (!ch.destroyed) ch.position.set(artPos[i]!.x, artPos[i]!.y); });
+    zone.destroy();
+    chips.forEach((chip) => chip.destroy({ children: true }));
+    spark?.destroy();
+
+    // ── 2. BOOM ────────────────────────────────────────────────────────────
+    this.cue({ kind: "boom", power: Math.min(1, affected.length / 4 + maxVal / 100) });
 
     // Dynamic scale of the explosion based on multiplier
     const explosionRadius = reach * (1.1 + Math.min(1.0, maxVal * 0.015));
@@ -655,27 +863,30 @@ export class BonusView extends Container {
     blastFlash.rect(0, 0, this.rect.width, this.rect.height).fill({ color: 0xffaa00, alpha: 0.12 });
     this.fxLayer.addChild(blastFlash);
 
-    // ── The payout beat fires IMMEDIATELY with the blast, not after it. ──
-    // Neighbours flash gold, punch, update to their new value, and a badge
-    // shows the REAL MONEY gained — all while the fireball is still alive.
-    for (const a of affected) {
-      const nc = this.cellRect(a.position[0], a.position[1]);
-      const node = this.cells.get(keyOf(a.position));
-      if (node) {
-        this.updateGoldValue(node, a.newValue);
-        void this.cellStopFx(a.position, true, turbo);
-        const cf = new Graphics(); this.fxLayer.addChild(cf);
-        void tween(turbo ? 160 : 360, (p) => {
-          cf.clear().roundRect(nc.x + 6, nc.y + 6, nc.w - 12, nc.h - 12, 7)
-            .stroke({ color: 0xffdc84, width: 1.5, alpha: (1 - p) * 0.8 });
-        }).then(() => cf.destroy());
+    // ── 3. ×2, one bar at a time, while the fireball is still alive ──────
+    const doubling = (async () => {
+      await wait(turbo ? 60 : 150);
+      for (let i = 0; i < affected.length; i++) {
+        if (i > 0) await wait(turbo ? 70 : 210);
+        const a = affected[i]!;
+        const nc = this.cellRect(a.position[0], a.position[1]);
+        const node = this.cells.get(keyOf(a.position));
+        this.cue({ kind: "double", index: i });
+        if (node) {
+          this.updateGoldValue(node, a.newValue);
+          void this.cellStopFx(a.position, true, turbo);
+          const cf = new Graphics(); this.fxLayer.addChild(cf);
+          void tween(turbo ? 160 : 360, (p) => {
+            cf.clear().roundRect(nc.x + 6, nc.y + 6, nc.w - 12, nc.h - 12, 7)
+              .stroke({ color: 0xffdc84, width: 1.5, alpha: (1 - p) * 0.8 });
+          }).then(() => cf.destroy());
+        }
+        // Doubling: the money gained is the other half of the new value.
+        this.floatWinBadge(nc.x + nc.w / 2, nc.y + nc.h * 0.30, a.newValue / 2, turbo);
+        // COLLECTED climbs with each bar, in step with its badge.
+        this.setCollected(this.collectedTarget + a.newValue / 2, true);
       }
-      // Doubling: the money gained is the other half of the new value.
-      this.floatWinBadge(nc.x + nc.w / 2, nc.y + nc.h * 0.30, a.newValue / 2, turbo);
-    }
-    // Roll the COLLECTED meter up by the total gained, in sync with the badges.
-    const gained = affected.reduce((s, a) => s + a.newValue / 2, 0);
-    this.setCollected(this.collectedTarget + gained, true);
+    })();
 
     // Layered particles setup
     interface ExplosionParticle {
@@ -711,9 +922,13 @@ export class BonusView extends Container {
     }
 
     const duration = turbo ? 260 : 650 + Math.min(350, maxVal * 4);
+    // The sticks blow apart: only the art grows (the cell's own backdrop stays
+    // put, so it never covers the neighbours being doubled).
+    const artScales = dynArt.map((ch) => ch.scale.x);
 
     await Promise.all([
       shakePromise,
+      doubling,
       tween(duration, (p) => {
         // Flash fades quickly
         blastFlash.alpha = Math.max(0, (1 - p * 2.8) * 0.75);
@@ -741,20 +956,45 @@ export class BonusView extends Container {
           }
         });
 
-        if (dyn) {
-          dyn.scale.set(1 + p * 0.8);
-          dyn.alpha = Math.max(0, 1 - p * 3);
-        }
+        dynArt.forEach((ch, i) => {
+          if (ch.destroyed) return;
+          ch.scale.set(artScales[i]! * (1 + p * 0.8));
+          ch.alpha = Math.max(0, 1 - p * 3);
+        });
       }, easeOutCubic)
     ]);
 
     blastFlash.destroy();
     particles.forEach((pt) => pt.g.destroy());
-    if (dyn) {
-      this.cells.delete(keyOf(keyPos));
-      dyn.destroy();
-    }
-    await wait(turbo ? 60 : 160);
+
+    // ── 4. The spent cell is a blank again (the engine clears it too) ──────
+    const logoTex = getExtraTexture("heat_chase_logo_symbol") ?? getExtraTexture("heat_chase_logo");
+    const blank = this.buildEmptyFace(keyPos[0], keyPos[1], logoTex);
+    blank.alpha = 0;
+    this.placeCell(keyPos, blank);
+    dyn?.destroy({ children: true });
+    await tween(turbo ? 60 : 200, (p) => { blank.alpha = p; }, linear);
+    await wait(turbo ? 40 : 120);
+  }
+
+  /** The "×2" tag a target bar wears while the fuse burns. */
+  private targetChip(pos: Position): Container {
+    const rc = this.cellRect(pos[0], pos[1]);
+    const h = Math.max(14, Math.min(24, rc.h * 0.24));
+    const c = new Container();
+    const t = new Text({
+      text: "×2",
+      style: new TextStyle({ fill: 0xffffff, fontFamily: FONT, fontSize: h * 0.72, fontWeight: "900", letterSpacing: 0.5 }),
+    });
+    t.anchor.set(0.5);
+    const w = Math.max(h * 1.5, t.width + h * 0.6);
+    const pill = new Graphics();
+    pill.roundRect(-w / 2, -h / 2, w, h, h / 2).fill(0xe8561a).stroke({ color: 0xffd08a, width: 1.5 });
+    c.addChild(pill, t);
+    c.position.set(rc.x + rc.w - w / 2 - 4, rc.y + h / 2 + 4);
+    c.alpha = 0;
+    this.fxLayer.addChild(c);
+    return c;
   }
 
   /**
@@ -1582,11 +1822,13 @@ export class BonusView extends Container {
     const tex = getExtraTexture("dynamite");
     if (tex) {
       const s = new Sprite(tex);
+      s.label = "art";
       s.anchor.set(0.5);
       s.scale.set(Math.min((r.w * 0.92) / tex.width, (r.h * 0.92) / tex.height));
       c.addChild(s);
     } else {
       const g = new Graphics();
+      g.label = "art";
       const bw = r.w * 0.16;
       for (let i = -1; i <= 1; i++) {
         g.roundRect(i * bw * 1.2 - bw / 2, -r.h * 0.28, bw, r.h * 0.56, 3).fill(0xc24a00);
@@ -1631,11 +1873,24 @@ export class BonusView extends Container {
    * The outcome then sticks as a fixed overlay. Columns settle left → right.
    * Locked cells from earlier spins are untouched (they stay put as overlays).
    */
-  private async spinColumns(grid: BonusCell[][], spinning: Position[], turbo: boolean, onLand?: (i: number, n: number) => void): Promise<void> {
+  private async spinColumns(grid: BonusCell[][], spinning: Position[], duds: Set<string>, turbo: boolean, onLand?: (i: number, n: number) => void): Promise<void> {
     if (!spinning.length) { await wait(turbo ? 60 : 240); return; }
+    this.cue({ kind: "spin_start" });
+    // Every landing gets its own beat, in the order the player sees them.
     const landCount = spinning.filter(([c, r]) => grid[c][r].symbol !== "EMPTY").length;
     let landIdx = 0;
-    const onLandOne = (): void => onLand?.(landIdx++, landCount);
+    let barIdx = 0;
+    const onLandOne = (pos: Position): void => {
+      onLand?.(landIdx++, landCount);
+      const cell = grid[pos[0]][pos[1]];
+      if (cell.symbol === "SAFE") this.cue({ kind: "bar", index: barIdx++, value: cell.value ?? 0 });
+      else if (cell.symbol === "MASTER_KEY") {
+        this.cue({ kind: "dynamite" });
+        // A dynamite that will go off stays visibly lit until its blast.
+        const node = this.cells.get(keyOf(pos));
+        if (node && !duds.has(keyOf(pos))) this.lightFuse(node);
+      }
+    };
 
     // Group the open cells by column → one continuous reel per column.
     const byCol = new Map<number, number[]>();
@@ -1660,7 +1915,7 @@ export class BonusView extends Container {
    * the open rows of the column (symbols flow across cell boundaries — no seams),
    * decelerates, and stops on the column's outcome. Landed faces then stick.
    */
-  private spinOneColumn(grid: BonusCell[][], col: number, rows: number[], dur: number, turbo: boolean, onLandOne: () => void): Promise<void> {
+  private spinOneColumn(grid: BonusCell[][], col: number, rows: number[], dur: number, turbo: boolean, onLandOne: (pos: Position) => void): Promise<void> {
     const rc0 = this.cellRect(col, 0);
     const cellW = rc0.w;
     const cellH = rc0.h;
@@ -1734,42 +1989,56 @@ export class BonusView extends Container {
       blur.destroy();
       strip.destroy({ children: true });
       mask.destroy();
-      const landings: Promise<void>[] = [];
+      this.cue({ kind: "column_stop", col });
+      // Every stop is placed at once (no cell is ever blank)…
+      const wins: Position[] = [];
       for (const r of rows) {
         const cell = grid[col][r];
-        const landed = cell.symbol === "SAFE" || cell.symbol === "MASTER_KEY";
-        if (cell.symbol === "SAFE") { 
-          this.placeCell([col, r], this.buildGoldBar(cell.value ?? 0, col, r)); 
-          onLandOne();
-        }
-        else if (cell.symbol === "MASTER_KEY") { 
-          this.placeCell([col, r], this.buildDynamite(col, r)); 
-          onLandOne();
+        if (cell.symbol === "SAFE") {
+          this.placeCell([col, r], this.buildGoldBar(cell.value ?? 0, col, r));
+          wins.push([col, r]);
+        } else if (cell.symbol === "MASTER_KEY") {
+          this.placeCell([col, r], this.buildDynamite(col, r));
+          wins.push([col, r]);
         }
         // EMPTY: leave a resting Heat Chase watermark so the logos never just
         // vanish when the reel stops (every cell stays consistent, spin or rest).
         else this.placeCell([col, r], this.buildEmptyFace(col, r, logoTex));
-        landings.push(this.cellStopFx([col, r], landed, turbo));
       }
-      await Promise.all(landings);
+      // …then each win in the column slams in on its OWN beat, top to bottom,
+      // so two bars in one column are two hits, never one blurred together.
+      const gap = turbo ? 40 : 110;
+      await Promise.all(wins.map((pos, i) => wait(i * gap).then(() => {
+        onLandOne(pos);
+        return this.cellStopFx(pos, true, turbo);
+      })));
     });
   }
 
-  /** A quick impact when a reel stops on a WIN: the gold/dynamite symbol punches
-   *  in. Empty stops get nothing — the old expanding ring + grey puff circles were
-   *  removed (they looked ugly); the reel motion and the symbol sell the stop. */
+  /** The impact when a reel stops on a WIN: the gold/dynamite punches in with a
+   *  bright glint across the cell. Empty stops get nothing — the old expanding
+   *  ring + grey puff circles were removed (they looked ugly). */
   private async cellStopFx(pos: Position, landed: boolean, turbo: boolean): Promise<void> {
     if (!landed) return;
     const node = this.cells.get(keyOf(pos));
     if (!node) return;
     // Keep the cell backdrop fixed: scaling it covered adjacent held values.
-    const art = node.children.slice(1);
+    const art = node.children.slice(1).filter((child) => child.label !== "spark");
     const scales = art.map((child) => child.scale.x);
-    await tween(turbo ? 100 : 220, (p) => {
-      const scale = 1 + Math.sin(p * Math.PI) * 0.08;
-      art.forEach((child, i) => child.scale.set(scales[i]! * scale));
+    const rc = this.cellRect(pos[0], pos[1]);
+    const glint = new Graphics();
+    glint.roundRect(rc.x + 4, rc.y + 4, rc.w - 8, rc.h - 8, 8).fill({ color: 0xfff1c4, alpha: 1 });
+    glint.blendMode = "add";
+    glint.alpha = 0;
+    this.fxLayer.addChild(glint);
+    await tween(turbo ? 110 : 240, (p) => {
+      // A hard hit: overshoot on contact, then settle.
+      const scale = 1 + Math.sin(p * Math.PI) * (1 - p) * 0.22;
+      art.forEach((child, i) => { if (!child.destroyed) child.scale.set(scales[i]! * scale); });
+      glint.alpha = 0.32 * Math.pow(1 - p, 2);
     }, linear);
-    art.forEach((child, i) => child.scale.set(scales[i]!));
+    art.forEach((child, i) => { if (!child.destroyed) child.scale.set(scales[i]!); });
+    glint.destroy();
   }
 
   /** Dead spin (no land): a red wash around the opening + a centred "NO HIT" so

@@ -1,0 +1,3 @@
+# debug renders from semantic/make_layers.mjs --debug and semantic/render.mjs
+symbols/*/_*.png
+__pycache__/

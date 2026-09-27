@@ -6,21 +6,35 @@ repeat: none
 glow
   rotate: false
   xy: 2, 2
-  size: 680, 590
-  orig: 680, 590
+  size: 648, 502
+  orig: 648, 502
   offset: 0, 0
   index: -1
-body
+round_stand
   rotate: false
-  xy: 2, 594
-  size: 513, 428
-  orig: 513, 428
+  xy: 652, 2
+  size: 164, 325
+  orig: 164, 325
   offset: 0, 0
   index: -1
-shine
+round_back
   rotate: false
-  xy: 517, 594
-  size: 471, 400
-  orig: 471, 400
+  xy: 660, 506
+  size: 306, 165
+  orig: 306, 165
+  offset: 0, 0
+  index: -1
+round_mid
+  rotate: false
+  xy: 2, 506
+  size: 310, 236
+  orig: 310, 236
+  offset: 0, 0
+  index: -1
+round_front
+  rotate: false
+  xy: 314, 506
+  size: 344, 201
+  orig: 344, 201
   offset: 0, 0
   index: -1

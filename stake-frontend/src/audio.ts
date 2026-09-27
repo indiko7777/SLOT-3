@@ -323,6 +323,15 @@ export class EventAudioBus {
 
   /* ── public API (same signature as before) ─────── */
 
+  /** The dynamite blast — the original explosive sound, fired by the view on
+   *  the frame the fuse reaches the sticks (the dynamite now arms first, so
+   *  firing it when the event starts would put it ahead of the explosion). */
+  dynamiteBlast(turbo: boolean): void {
+    const vol = turbo ? 0.55 : 1;
+    if (this.buffers.has("getaway_explosive")) this.fire("getaway_explosive", vol);
+    else this.fire("siren", vol * 0.45);
+  }
+
   playEvent(event: GameEvent, muted: boolean, turbo: boolean): void {
     if (event.type === "bonus_trigger") this.inBonus = true;
     if (muted) {
@@ -729,8 +738,8 @@ export class EventAudioBus {
         break;
 
       case "master_key_crack":
-        if (this.buffers.has("getaway_explosive")) this.fire("getaway_explosive", vol);
-        else this.fire("siren", vol * 0.45);
+        // The explosive sound is fired by the view on the blast frame
+        // (dynamiteBlast), after the fuse burns — not when the event starts.
         break;
 
       case "bonus_end":

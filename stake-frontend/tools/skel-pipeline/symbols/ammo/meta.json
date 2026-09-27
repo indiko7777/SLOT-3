@@ -1,0 +1,44 @@
+{
+ "rounds": [
+  {
+   "name": "round_stand",
+   "centre": [
+    38.15,
+    48.99
+   ],
+   "axis": 101,
+   "length": 290.3,
+   "standing": true
+  },
+  {
+   "name": "round_back",
+   "centre": [
+    89.51,
+    -59.44
+   ],
+   "axis": 172,
+   "length": 275.4,
+   "standing": false
+  },
+  {
+   "name": "round_mid",
+   "centre": [
+    -59.52,
+    54.75
+   ],
+   "axis": -24,
+   "length": 295.9,
+   "standing": false
+  },
+  {
+   "name": "round_front",
+   "centre": [
+    -70.09,
+    -91.86
+   ],
+   "axis": -11,
+   "length": 314.5,
+   "standing": false
+  }
+ ]
+}

@@ -12,6 +12,17 @@ Pivots (this is what makes motion look right):
     original canvas pixel coords (origin top-left, y down)
 The attachment is offset so the world setup pose is pixel-identical either way.
 
+Semantic rigs may add <dir>/rig.json (all coords canvas px, y down):
+  {"groups":  [{"name": "gun", "parent": "symbol_anchor", "pivot": [x, y]}],
+   "parents": {"slide": "gun", "shine": "slide"},
+   "hidden":  ["flash", "casing"]}
+  groups  - extra non-drawing bones (a pistol's grip pivot, a bike's rear-wheel
+            contact) that parts can hang from
+  parents - reparent part bones; locals are recomputed so the world setup pose
+            is unchanged (validate.py E7 still holds)
+  hidden  - slots whose setup colour is fully transparent (muzzle flash, an
+            ejected casing): invisible until a clip keys them in
+
 Default animations (baked eased keys, 30fps, import-safe, all loop-clean):
   idle    2.0s seamless loop: breathing + phase-staggered sway + effect twinkle
   win     1.2s: anticipation dip -> overshoot pop -> damped settle; staggered
@@ -156,8 +167,23 @@ def main():
     if (d / "pivots.json").exists():
         overrides = json.loads((d / "pivots.json").read_text())
 
+    rig = {}
+    if (d / "rig.json").exists():
+        rig = json.loads((d / "rig.json").read_text())
+    W, H = canvas
+
     bones = [{"name": "root"}, {"name": "symbol_anchor", "parent": "root"}]
+    for g in rig.get("groups", []):
+        gx, gy = g["pivot"]
+        gb = {"name": g["name"], "parent": g.get("parent", "symbol_anchor"),
+              "x": round(gx - W / 2, 2), "y": round(H / 2 - gy, 2)}
+        if g.get("rotation"):
+            # WORLD rotation of the group (Spine: CCW deg). Lets a clip scale
+            # along an object's own axis, e.g. turn a diagonal knife edge-on.
+            gb["rotation"] = g["rotation"]
+        bones.append(gb)
     slots, skin = [], {}
+    hidden = set(rig.get("hidden", []))
     print("pivots:")
     for p in m["parts"]:
         pvx, pvy = pivot_for(p, canvas, overrides)
@@ -166,8 +192,72 @@ def main():
                "centre" if (ox == 0 and oy == 0) else "inner-edge")
         print(f"  {p['name']:<16} ({pvx:>7.1f},{pvy:>7.1f})  {src}")
         bones.append({"name": p["name"], "parent": "symbol_anchor", "x": pvx, "y": pvy})
-        slots.append({"name": p["name"], "bone": p["name"], "attachment": p["name"]})
+        slot = {"name": p["name"], "bone": p["name"], "attachment": p["name"]}
+        if p["name"] in hidden:
+            slot["color"] = "ffffff00"
+        slots.append(slot)
         skin[p["name"]] = {p["name"]: {"x": ox, "y": oy, "width": p["w"], "height": p["h"]}}
+
+    # Semantic hierarchy: group bones were placed in world (== symbol_anchor)
+    # space; convert every reparented bone to its parent's local space. Setup
+    # bones carry no rotation/scale, so world = sum of locals.
+    parents = rig.get("parents", {})
+    if parents or rig.get("groups"):
+        by = {b["name"]: b for b in bones}
+        world = {}
+
+        def wpos(n):
+            if n in world:
+                return world[n]
+            b = by[n]
+            if n in ("root", "symbol_anchor"):
+                world[n] = (0.0, 0.0)
+            else:
+                # groups/parts were authored in symbol_anchor space
+                world[n] = (b.get("x", 0.0), b.get("y", 0.0))
+            return world[n]
+
+        for b in bones:
+            wpos(b["name"])
+        # world rotation: groups carry one (authored as WORLD), parts none
+        wrot = {b["name"]: float(b.get("rotation", 0.0)) for b in bones}
+
+        def to_local(child_xy, par):
+            """child world position -> local offset in par's (rotated) frame"""
+            dx, dy = child_xy[0] - world[par][0], child_xy[1] - world[par][1]
+            a = math.radians(-wrot.get(par, 0.0))
+            return (round(dx * math.cos(a) - dy * math.sin(a), 2),
+                    round(dx * math.sin(a) + dy * math.cos(a), 2))
+
+        for g in rig.get("groups", []):
+            par = g.get("parent", "symbol_anchor")
+            if par not in ("root", "symbol_anchor"):
+                b = by[g["name"]]
+                b["x"], b["y"] = to_local(world[g["name"]], par)
+                if wrot.get(par):
+                    b["rotation"] = round(wrot[g["name"]] - wrot[par], 3)
+        for child, par in parents.items():
+            if child not in by or par not in by:
+                sys.exit(f"rig.json: unknown bone in parents: {child} -> {par}")
+            by[child]["parent"] = par
+            by[child]["x"], by[child]["y"] = to_local(world[child], par)
+            if wrot.get(par):
+                # cancel the parent's rotation so the part's art stays upright
+                by[child]["rotation"] = round(-wrot[par], 3)
+        # parents must precede children (the runtime resolves them in order)
+        ordered, placed = [], set()
+        while len(ordered) < len(bones):
+            progressed = False
+            for b in bones:
+                if b["name"] in placed:
+                    continue
+                if b.get("parent") is None or b["parent"] in placed:
+                    ordered.append(b)
+                    placed.add(b["name"])
+                    progressed = True
+            if not progressed:
+                sys.exit("rig.json: bone hierarchy has a cycle")
+        bones = ordered
 
     data = {
         "skeleton": {"spine": "3.8.75", "width": canvas[0], "height": canvas[1],
