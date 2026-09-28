@@ -10,7 +10,8 @@ if (!fs.existsSync(path.join(build,'index.html'))) throw new Error('Run npm run 
 const output = path.join(root,'release',new Date().toISOString().replaceAll(':','-').replace(/\.\d+Z$/,'Z'));
 const unused = new Set([
   'assets/miami_loadscreen.webp', 'assets/slot3_bg.webp', 'assets/miami_marina_gameplay_v1.webp',
-  'assets/symbols/packed.png', 'assets/symbols/cyan_car_wild.png', 'assets/highway_loop.jpg', 'assets/wanted_star.webp'
+  'assets/symbols/packed.png', 'assets/symbols/cyan_car_wild.png', 'assets/highway_loop.jpg', 'assets/wanted_star.webp',
+  'assets/getaway_building.webp', 'assets/getaway_palm.webp', 'assets/chase_city.webp'
 ]);
 function files(dir, prefix='') {
   return fs.readdirSync(dir,{withFileTypes:true}).flatMap(item=>{
@@ -18,6 +19,10 @@ function files(dir, prefix='') {
     return item.isDirectory()?files(path.join(dir,item.name),relative+'/'):[relative];
   });
 }
+// Gate the uncompressed delivery, not just the smaller ZIP archive.
+const frontendBytes = files(build).filter(file => !unused.has(file))
+  .reduce((total, file) => total + fs.statSync(path.join(build, file)).size, 0);
+if (frontendBytes > 30_000_000) throw new Error(`Frontend exceeds 30 MB: ${frontendBytes} bytes.`);
 const manifest={createdAt:new Date().toISOString(),status:'LOCAL_RELEASE_CANDIDATE',stakeApproval:'Pending, including earned star-mode eligibility',files:[]};
 for (const [name, source] of [['frontend',build],['math',path.join(root,'stake-math/publish_files')]]) {
   for (const file of files(source)) {

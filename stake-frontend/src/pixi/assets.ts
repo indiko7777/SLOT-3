@@ -93,8 +93,10 @@ const EXTRA_ASSETS: Record<string, string> = {
   "char_piece_8": "bodycharachter1/head1.png.webp",
   "char_full": "bodycharachter1/full_image1.png.webp",
   "real_bill": "real_bill.webp",
-  "getaway_palm": "getaway_palm.webp",
-  "getaway_building": "getaway_building.webp",
+  "getaway_palm": "chase_palm_depth.webp",
+  "chase_hotel": "chase_hotel.webp",
+  "chase_club": "chase_club.webp",
+  "chase_apartments": "chase_apartments.webp",
 
   "char2_silhouette": "bodycharachter2/silhouette.webp",
   "char2_piece_1": "bodycharachter2/right foot.webp",
@@ -147,10 +149,9 @@ export function silhouetteOffset(
 /** Optional images — loaded per-file so a missing one never blocks the game.
  *  The Getaway (POV chase) bonus renders procedural fallbacks until these exist. */
 const OPTIONAL_ASSETS: Record<string, string> = {
-  // The "driving off" night-highway backdrop for the Getaway bonus — a wide
-  // perspective still (vanishing point centred, motion-blur baked in) that
-  // BonusView dolly-zooms for a 3D forward-flight feel.
-  "getaway_highway": "getaway_highway.webp",
+  // Distant illustrated night city. Independent scenery passes in MiamiStreet;
+  // the original getaway_highway image remains on the Super confirmation card.
+  "chase_city": "chase_skyline.webp",
   "brinks_truck_frame": "brinks_truck_frame.webp",
   // Door-reveal set, built by tools/asset-pipeline/prep_truck_doors.py. The
   // frame's cargo opening is transparent, so the reels show through it, and the

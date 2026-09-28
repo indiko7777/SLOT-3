@@ -1,0 +1,1949 @@
+[
+  {
+    "id": "combo",
+    "title": "Winning symbol combination",
+    "status": "Missing reward layer",
+    "purpose": "One clear reward accent when a winning cluster highlights. Keep the physical symbol texture underneath. Start here: choose the main sound language before individual symbols.",
+    "profile": "reward",
+    "current": null,
+    "evidence": "src/audio.ts: cluster_win does nothing; PixiGameScene.playCombinationAnimation draws links only.",
+    "group": "Gameplay"
+  },
+  {
+    "id": "cascade",
+    "title": "Consecutive winning cascade",
+    "status": "Missing dedicated layer",
+    "purpose": "Short melodic step for each additional winning cascade; same motif, modest pitch progression, reset each round.",
+    "profile": "ladder",
+    "current": null,
+    "evidence": "No cascade-index audio motif in EventAudioBus.route.",
+    "group": "Gameplay"
+  },
+  {
+    "id": "refill",
+    "title": "Tumble refill / settle",
+    "status": "Missing dedicated layer",
+    "purpose": "Brief falling-air movement and a soft settled tick as the replacement symbols finish dropping. Avoid a sound for every cell.",
+    "profile": "whoosh",
+    "current": null,
+    "evidence": "tumble_drop has no audio route; symbol animation details may still play.",
+    "group": "Gameplay"
+  },
+  {
+    "id": "heat1",
+    "title": "First Wanted star",
+    "status": "Missing explicit cue",
+    "purpose": "A compact star-lock ping when the first earned star fills. Higher levels already use heat_rise / siren.",
+    "profile": "metal",
+    "current": null,
+    "evidence": "heat_advance only fires at to >= 2.",
+    "group": "Gameplay"
+  },
+  {
+    "id": "dynamite",
+    "title": "Dynamite landing",
+    "status": "Emitted but unhandled",
+    "purpose": "A dry mechanical landing before the fuse starts.",
+    "profile": "impact",
+    "current": null,
+    "evidence": "BonusView emits this moment; main.ts onGetawayCue handles only boom.",
+    "group": "Getaway"
+  },
+  {
+    "id": "fuse",
+    "title": "Burning fuse",
+    "status": "Emitted but unhandled",
+    "purpose": "A continuous fizz for the actual arming duration, cancelled at explosion or dismissal.",
+    "profile": "noise",
+    "current": null,
+    "evidence": "BonusView emits this moment; main.ts onGetawayCue handles only boom.",
+    "group": "Getaway"
+  },
+  {
+    "id": "double",
+    "title": "Each gold-bar ×2",
+    "status": "Emitted but unhandled",
+    "purpose": "One short bright accent exactly as each affected value doubles; pitch by reveal order.",
+    "profile": "ladder",
+    "current": null,
+    "evidence": "BonusView emits this moment; main.ts onGetawayCue handles only boom.",
+    "group": "Getaway"
+  },
+  {
+    "id": "held",
+    "title": "Respins replenished / held",
+    "status": "Emitted but unhandled",
+    "purpose": "A compact confirmation when the respin meter is held or replenished.",
+    "profile": "metal",
+    "current": null,
+    "evidence": "BonusView emits this moment; main.ts onGetawayCue handles only boom.",
+    "group": "Getaway"
+  },
+  {
+    "id": "spent",
+    "title": "Respin consumed",
+    "status": "Emitted but unhandled",
+    "purpose": "A quiet mechanical decrement; distinct from a reward.",
+    "profile": "tick",
+    "current": null,
+    "evidence": "BonusView emits this moment; main.ts onGetawayCue handles only boom.",
+    "group": "Getaway"
+  },
+  {
+    "id": "dud",
+    "title": "Dynamite without a target",
+    "status": "Emitted but unhandled",
+    "purpose": "A dry, neutral dud click. No winning flourish.",
+    "profile": "tick",
+    "current": null,
+    "evidence": "BonusView emits this moment; main.ts onGetawayCue handles only boom.",
+    "group": "Getaway"
+  },
+  {
+    "id": "bonusspin",
+    "title": "Getaway spin start",
+    "status": "Emitted but unhandled",
+    "purpose": "A short mechanical start cue for the bonus reels.",
+    "profile": "whoosh",
+    "current": null,
+    "evidence": "BonusView emits this moment; main.ts onGetawayCue handles only boom.",
+    "group": "Getaway"
+  },
+  {
+    "id": "bonusstop",
+    "title": "Getaway column stop",
+    "status": "Emitted but unhandled",
+    "purpose": "A restrained click at each bonus column stop; below the gold-bar landing.",
+    "profile": "impact",
+    "current": null,
+    "evidence": "BonusView emits this moment; main.ts onGetawayCue handles only boom.",
+    "group": "Getaway"
+  },
+  {
+    "id": "scatter",
+    "title": "Individual scatter landing",
+    "status": "Optional / intentionally quiet",
+    "purpose": "Optional subtle identity accent, separate from bonus trigger. Existing code deliberately omits per-scatter tease audio; decide whether to restore it.",
+    "profile": "metal",
+    "current": null,
+    "evidence": "audio.ts scatter_tease; BoardView.scatterTease.",
+    "group": "Gameplay"
+  },
+  {
+    "id": "uierror",
+    "title": "Unavailable action / error",
+    "status": "Optional proposal",
+    "purpose": "A quiet neutral error tick, only when an action is rejected. Confirm the exact UI trigger before implementation.",
+    "profile": "tick",
+    "current": null,
+    "evidence": "New design proposal, not a confirmed missing runtime callback.",
+    "group": "Interface"
+  },
+  {
+    "id": "anticipation",
+    "title": "Scatter anticipation",
+    "status": "Existing procedural / mixed",
+    "purpose": "Rising cue while the anticipation reel is visibly slowing.",
+    "profile": "riser",
+    "current": {
+      "kind": "method",
+      "method": "anticipation",
+      "args": [
+        false
+      ]
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects"
+  },
+  {
+    "id": "miss",
+    "title": "Anticipation ends without bonus",
+    "status": "Existing procedural / mixed",
+    "purpose": "Existing descending sting; consider shortening or removing it.",
+    "profile": "down",
+    "current": {
+      "kind": "method",
+      "method": "anticipationMiss",
+      "args": []
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects"
+  },
+  {
+    "id": "dead",
+    "title": "Getaway empty spin",
+    "status": "Existing procedural / mixed",
+    "purpose": "Existing losing-spin cue; assess whether its weight fits the moment.",
+    "profile": "down",
+    "current": {
+      "kind": "method",
+      "method": "deadSpin",
+      "args": [
+        1
+      ]
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects"
+  },
+  {
+    "id": "truck",
+    "title": "Truck drive-off",
+    "status": "Existing procedural / mixed",
+    "purpose": "Engine movement as trucks drive away into the bonus.",
+    "profile": "engine",
+    "current": {
+      "kind": "method",
+      "method": "truckDriveOff",
+      "args": []
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects"
+  },
+  {
+    "id": "doors",
+    "title": "Truck doors",
+    "status": "Existing procedural / mixed",
+    "purpose": "Latch / door impact as the truck opens.",
+    "profile": "impact",
+    "current": {
+      "kind": "method",
+      "method": "truckDoors",
+      "args": []
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects"
+  },
+  {
+    "id": "piece",
+    "title": "Collection piece movement",
+    "status": "Existing procedural / mixed",
+    "purpose": "Whoosh during the collection reveal.",
+    "profile": "whoosh",
+    "current": {
+      "kind": "method",
+      "method": "pieceWhoosh",
+      "args": []
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects"
+  },
+  {
+    "id": "impact_low",
+    "title": "Banner impact: low",
+    "status": "Existing procedural / mixed",
+    "purpose": "Layer under the corresponding win-banner reveal.",
+    "profile": "impact",
+    "current": {
+      "kind": "method",
+      "method": "bannerImpact",
+      "args": [
+        "low"
+      ]
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects"
+  },
+  {
+    "id": "impact_mid",
+    "title": "Banner impact: mid",
+    "status": "Existing procedural / mixed",
+    "purpose": "Layer under the corresponding win-banner reveal.",
+    "profile": "impact",
+    "current": {
+      "kind": "method",
+      "method": "bannerImpact",
+      "args": [
+        "mid"
+      ]
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects"
+  },
+  {
+    "id": "impact_high",
+    "title": "Banner impact: high",
+    "status": "Existing procedural / mixed",
+    "purpose": "Layer under the corresponding win-banner reveal.",
+    "profile": "impact",
+    "current": {
+      "kind": "method",
+      "method": "bannerImpact",
+      "args": [
+        "high"
+      ]
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects"
+  },
+  {
+    "id": "impact_grand",
+    "title": "Banner impact: grand",
+    "status": "Existing procedural / mixed",
+    "purpose": "Layer under the corresponding win-banner reveal.",
+    "profile": "impact",
+    "current": {
+      "kind": "method",
+      "method": "bannerImpact",
+      "args": [
+        "grand"
+      ]
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects"
+  },
+  {
+    "id": "counter",
+    "title": "Money counter (2-second demo)",
+    "status": "Existing procedural / mixed",
+    "purpose": "Existing count loop and stop accent, demonstrated for two seconds.",
+    "profile": "counter",
+    "current": {
+      "kind": "method",
+      "method": "startWinCounter",
+      "args": []
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects"
+  },
+  {
+    "id": "result",
+    "title": "Getaway result (4-second demo)",
+    "status": "Existing procedural / mixed",
+    "purpose": "Current result opening, counter, tier accent, end and exit. Demonstration timing, not gameplay timing.",
+    "profile": "reward",
+    "current": {
+      "kind": "method",
+      "method": "resultDemo",
+      "args": []
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects"
+  },
+  {
+    "id": "helicopter",
+    "title": "Maximum chase heat",
+    "status": "Existing procedural / mixed",
+    "purpose": "Existing siren plus procedural rotor at maximum bonus heat.",
+    "profile": "engine",
+    "current": {
+      "kind": "method",
+      "method": "setBonusHeat",
+      "args": [
+        3
+      ]
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects"
+  },
+  {
+    "id": "foley_PISTOL_fire",
+    "title": "PISTOL: fire",
+    "status": "Existing quiet texture",
+    "purpose": "Physical fire detail for PISTOL. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "PISTOL",
+      "cue": "fire"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_PISTOL_casing",
+    "title": "PISTOL: casing",
+    "status": "Existing quiet texture",
+    "purpose": "Physical casing detail for PISTOL. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "PISTOL",
+      "cue": "casing"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_PISTOL_tink",
+    "title": "PISTOL: tink",
+    "status": "Existing quiet texture",
+    "purpose": "Physical tink detail for PISTOL. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "metal",
+    "current": {
+      "kind": "foley",
+      "symbol": "PISTOL",
+      "cue": "tink"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_PISTOL_slidelock",
+    "title": "PISTOL: slidelock",
+    "status": "Existing quiet texture",
+    "purpose": "Physical slidelock detail for PISTOL. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "PISTOL",
+      "cue": "slidelock"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_PISTOL_strip",
+    "title": "PISTOL: strip",
+    "status": "Existing quiet texture",
+    "purpose": "Physical strip detail for PISTOL. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "whoosh",
+    "current": {
+      "kind": "foley",
+      "symbol": "PISTOL",
+      "cue": "strip"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_PISTOL_impact",
+    "title": "PISTOL: impact",
+    "status": "Existing quiet texture",
+    "purpose": "Physical impact detail for PISTOL. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "PISTOL",
+      "cue": "impact"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_AMMO_jolt",
+    "title": "AMMO: jolt",
+    "status": "Existing quiet texture",
+    "purpose": "Physical jolt detail for AMMO. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "AMMO",
+      "cue": "jolt"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_AMMO_rattle",
+    "title": "AMMO: rattle",
+    "status": "Existing quiet texture",
+    "purpose": "Physical rattle detail for AMMO. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "AMMO",
+      "cue": "rattle"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_AMMO_scatter",
+    "title": "AMMO: scatter",
+    "status": "Existing quiet texture",
+    "purpose": "Physical scatter detail for AMMO. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "AMMO",
+      "cue": "scatter"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_AMMO_impact",
+    "title": "AMMO: impact",
+    "status": "Existing quiet texture",
+    "purpose": "Physical impact detail for AMMO. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "AMMO",
+      "cue": "impact"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_CASH_riffle",
+    "title": "CASH: riffle",
+    "status": "Existing quiet texture",
+    "purpose": "Physical riffle detail for CASH. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "whoosh",
+    "current": {
+      "kind": "foley",
+      "symbol": "CASH",
+      "cue": "riffle"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_CASH_flutter",
+    "title": "CASH: flutter",
+    "status": "Existing quiet texture",
+    "purpose": "Physical flutter detail for CASH. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "whoosh",
+    "current": {
+      "kind": "foley",
+      "symbol": "CASH",
+      "cue": "flutter"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_CASH_snap",
+    "title": "CASH: snap",
+    "status": "Existing quiet texture",
+    "purpose": "Physical snap detail for CASH. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "CASH",
+      "cue": "snap"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_CASH_flick",
+    "title": "CASH: flick",
+    "status": "Existing quiet texture",
+    "purpose": "Physical flick detail for CASH. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "CASH",
+      "cue": "flick"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_CASH_impact",
+    "title": "CASH: impact",
+    "status": "Existing quiet texture",
+    "purpose": "Physical impact detail for CASH. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "CASH",
+      "cue": "impact"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_DUFFEL_thump",
+    "title": "DUFFEL: thump",
+    "status": "Existing quiet texture",
+    "purpose": "Physical thump detail for DUFFEL. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "DUFFEL",
+      "cue": "thump"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_DUFFEL_jingle",
+    "title": "DUFFEL: jingle",
+    "status": "Existing quiet texture",
+    "purpose": "Physical jingle detail for DUFFEL. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "metal",
+    "current": {
+      "kind": "foley",
+      "symbol": "DUFFEL",
+      "cue": "jingle"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_DUFFEL_burst",
+    "title": "DUFFEL: burst",
+    "status": "Existing quiet texture",
+    "purpose": "Physical burst detail for DUFFEL. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "DUFFEL",
+      "cue": "burst"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_DUFFEL_thud",
+    "title": "DUFFEL: thud",
+    "status": "Existing quiet texture",
+    "purpose": "Physical thud detail for DUFFEL. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "DUFFEL",
+      "cue": "thud"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_KNIFE_swish",
+    "title": "KNIFE: swish",
+    "status": "Existing quiet texture",
+    "purpose": "Physical swish detail for KNIFE. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "whoosh",
+    "current": {
+      "kind": "foley",
+      "symbol": "KNIFE",
+      "cue": "swish"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_KNIFE_catch",
+    "title": "KNIFE: catch",
+    "status": "Existing quiet texture",
+    "purpose": "Physical catch detail for KNIFE. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "KNIFE",
+      "cue": "catch"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_KNIFE_shing",
+    "title": "KNIFE: shing",
+    "status": "Existing quiet texture",
+    "purpose": "Physical shing detail for KNIFE. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "metal",
+    "current": {
+      "kind": "foley",
+      "symbol": "KNIFE",
+      "cue": "shing"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_KNIFE_tick",
+    "title": "KNIFE: tick",
+    "status": "Existing quiet texture",
+    "purpose": "Physical tick detail for KNIFE. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "KNIFE",
+      "cue": "tick"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_KNIFE_slice",
+    "title": "KNIFE: slice",
+    "status": "Existing quiet texture",
+    "purpose": "Physical slice detail for KNIFE. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "whoosh",
+    "current": {
+      "kind": "foley",
+      "symbol": "KNIFE",
+      "cue": "slice"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_DIAMOND_chime",
+    "title": "DIAMOND: chime",
+    "status": "Existing quiet texture",
+    "purpose": "Physical chime detail for DIAMOND. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "metal",
+    "current": {
+      "kind": "foley",
+      "symbol": "DIAMOND",
+      "cue": "chime"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_DIAMOND_ping",
+    "title": "DIAMOND: ping",
+    "status": "Existing quiet texture",
+    "purpose": "Physical ping detail for DIAMOND. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "metal",
+    "current": {
+      "kind": "foley",
+      "symbol": "DIAMOND",
+      "cue": "ping"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_DIAMOND_shatter",
+    "title": "DIAMOND: shatter",
+    "status": "Existing quiet texture",
+    "purpose": "Physical shatter detail for DIAMOND. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "DIAMOND",
+      "cue": "shatter"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_DIAMOND_fire",
+    "title": "DIAMOND: fire",
+    "status": "Existing quiet texture",
+    "purpose": "Physical fire detail for DIAMOND. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "DIAMOND",
+      "cue": "fire"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_BRASS_punch",
+    "title": "BRASS: punch",
+    "status": "Existing quiet texture",
+    "purpose": "Physical punch detail for BRASS. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "BRASS",
+      "cue": "punch"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_BRASS_drop",
+    "title": "BRASS: drop",
+    "status": "Existing quiet texture",
+    "purpose": "Physical drop detail for BRASS. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "BRASS",
+      "cue": "drop"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_BRASS_thud",
+    "title": "BRASS: thud",
+    "status": "Existing quiet texture",
+    "purpose": "Physical thud detail for BRASS. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "BRASS",
+      "cue": "thud"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_BIKE_rev",
+    "title": "BIKE: rev",
+    "status": "Existing quiet texture",
+    "purpose": "Physical rev detail for BIKE. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "engine",
+    "current": {
+      "kind": "foley",
+      "symbol": "BIKE",
+      "cue": "rev"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_BIKE_wheelie",
+    "title": "BIKE: wheelie",
+    "status": "Existing quiet texture",
+    "purpose": "Physical wheelie detail for BIKE. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "engine",
+    "current": {
+      "kind": "foley",
+      "symbol": "BIKE",
+      "cue": "wheelie"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_BIKE_vroom",
+    "title": "BIKE: vroom",
+    "status": "Existing quiet texture",
+    "purpose": "Physical vroom detail for BIKE. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "engine",
+    "current": {
+      "kind": "foley",
+      "symbol": "BIKE",
+      "cue": "vroom"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_BIKE_thud",
+    "title": "BIKE: thud",
+    "status": "Existing quiet texture",
+    "purpose": "Physical thud detail for BIKE. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "BIKE",
+      "cue": "thud"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "foley_PHONE_SCATTER_thud",
+    "title": "PHONE_SCATTER: thud",
+    "status": "Existing quiet texture",
+    "purpose": "Physical thud detail for PHONE_SCATTER. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "PHONE_SCATTER",
+      "cue": "thud"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbol details"
+  },
+  {
+    "id": "track_bg_base",
+    "title": "bg base",
+    "status": "Existing file (routing varies)",
+    "purpose": "Music / radio track. Review separately from gameplay effects.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/turbo_night.mp3"
+    },
+    "evidence": "Track bg_base → assets/audio/turbo_night.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_bg_bonus",
+    "title": "bg bonus",
+    "status": "Existing file (routing varies)",
+    "purpose": "Current background loop for the bonus.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new new sound/continuous looping getaway background sound play after the intro sound.mp3"
+    },
+    "evidence": "Track bg_bonus → assets/new new sound/continuous looping getaway background sound play after the intro sound.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_spin_loop",
+    "title": "spin loop",
+    "status": "Existing file (routing varies)",
+    "purpose": "Loaded track name; availability alone does not establish active gameplay use. See source routing during integration.",
+    "profile": "counter",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/spin_loop.mp3"
+    },
+    "evidence": "Track spin_loop → assets/audio/spin_loop.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_win_small",
+    "title": "win small",
+    "status": "Existing file (routing varies)",
+    "purpose": "Loaded track name; availability alone does not establish active gameplay use. See source routing during integration.",
+    "profile": "reward",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/win_small.mp3"
+    },
+    "evidence": "Track win_small → assets/audio/win_small.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_win_big",
+    "title": "win big",
+    "status": "Existing file (routing varies)",
+    "purpose": "Loaded track name; availability alone does not establish active gameplay use. See source routing during integration.",
+    "profile": "reward",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/win_big.mp3"
+    },
+    "evidence": "Track win_big → assets/audio/win_big.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_mega_win",
+    "title": "mega win",
+    "status": "Missing file / fallback",
+    "purpose": "Loaded track name; availability alone does not establish active gameplay use. See source routing during integration.",
+    "profile": "reward",
+    "current": {
+      "kind": "method",
+      "method": "fire",
+      "args": [
+        "mega_win"
+      ]
+    },
+    "evidence": "Track mega_win → assets/audio/mega_win.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_bonus_trigger",
+    "title": "bonus trigger",
+    "status": "Missing file / fallback",
+    "purpose": "Loaded track name; availability alone does not establish active gameplay use. See source routing during integration.",
+    "profile": "impact",
+    "current": {
+      "kind": "method",
+      "method": "fire",
+      "args": [
+        "bonus_trigger"
+      ]
+    },
+    "evidence": "Track bonus_trigger → assets/audio/bonus_trigger.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_vault_lock",
+    "title": "vault lock",
+    "status": "Missing file / fallback",
+    "purpose": "Loaded track name; availability alone does not establish active gameplay use. See source routing during integration.",
+    "profile": "impact",
+    "current": {
+      "kind": "method",
+      "method": "fire",
+      "args": [
+        "vault_lock"
+      ]
+    },
+    "evidence": "Track vault_lock → assets/audio/vault_lock.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_heat_rise",
+    "title": "heat rise",
+    "status": "Missing file / fallback",
+    "purpose": "Loaded track name; availability alone does not establish active gameplay use. See source routing during integration.",
+    "profile": "riser",
+    "current": {
+      "kind": "method",
+      "method": "fire",
+      "args": [
+        "heat_rise"
+      ]
+    },
+    "evidence": "Track heat_rise → assets/audio/heat_rise.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_siren",
+    "title": "siren",
+    "status": "Missing file / fallback",
+    "purpose": "Loaded track name; availability alone does not establish active gameplay use. See source routing during integration.",
+    "profile": "impact",
+    "current": {
+      "kind": "method",
+      "method": "fire",
+      "args": [
+        "siren"
+      ]
+    },
+    "evidence": "Track siren → assets/audio/siren.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_count_up_tick",
+    "title": "count up tick",
+    "status": "Existing file (routing varies)",
+    "purpose": "Loaded track name; availability alone does not establish active gameplay use. See source routing during integration.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/count_up_tick.mp3"
+    },
+    "evidence": "Track count_up_tick → assets/audio/count_up_tick.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_dynamite_explode",
+    "title": "dynamite explode",
+    "status": "Existing file (routing varies)",
+    "purpose": "Loaded track name; availability alone does not establish active gameplay use. See source routing during integration.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/dynamite_explode.mp3"
+    },
+    "evidence": "Track dynamite_explode → assets/audio/dynamite_explode.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_girl_complete",
+    "title": "girl complete",
+    "status": "Existing file (routing varies)",
+    "purpose": "Loaded track name; availability alone does not establish active gameplay use. See source routing during integration.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/girl_complete.mp3"
+    },
+    "evidence": "Track girl_complete → assets/audio/girl_complete.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_mega_wild_place",
+    "title": "mega wild place",
+    "status": "Existing file (routing varies)",
+    "purpose": "Loaded track name; availability alone does not establish active gameplay use. See source routing during integration.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/mega_wild_place.mp3"
+    },
+    "evidence": "Track mega_wild_place → assets/audio/mega_wild_place.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_radio_dial",
+    "title": "radio dial",
+    "status": "Existing file (routing varies)",
+    "purpose": "Loaded track name; availability alone does not establish active gameplay use. See source routing during integration.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/radio_dial.mp3"
+    },
+    "evidence": "Track radio_dial → assets/audio/radio_dial.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_reel_stop",
+    "title": "reel stop",
+    "status": "Existing file (routing varies)",
+    "purpose": "Loaded track name; availability alone does not establish active gameplay use. See source routing during integration.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/reel_stop.mp3"
+    },
+    "evidence": "Track reel_stop → assets/audio/reel_stop.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_scatter_land",
+    "title": "scatter land",
+    "status": "Existing file (routing varies)",
+    "purpose": "Loaded track name; availability alone does not establish active gameplay use. See source routing during integration.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/scatter_land.mp3"
+    },
+    "evidence": "Track scatter_land → assets/audio/scatter_land.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_tumble_pop",
+    "title": "tumble pop",
+    "status": "Existing file (routing varies)",
+    "purpose": "Current removal accent for winning symbols.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/tumble_pop.mp3"
+    },
+    "evidence": "Track tumble_pop → assets/audio/tumble_pop.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_ui_buy",
+    "title": "ui buy",
+    "status": "Existing file (routing varies)",
+    "purpose": "Loaded track name; availability alone does not establish active gameplay use. See source routing during integration.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/ui_buy.mp3"
+    },
+    "evidence": "Track ui_buy → assets/audio/ui_buy.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_ui_click",
+    "title": "ui click",
+    "status": "Existing file (routing varies)",
+    "purpose": "Loaded track name; availability alone does not establish active gameplay use. See source routing during integration.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/ui_click.mp3"
+    },
+    "evidence": "Track ui_click → assets/audio/ui_click.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_coin_sound",
+    "title": "coin sound",
+    "status": "Existing file (routing varies)",
+    "purpose": "Loaded track name; availability alone does not establish active gameplay use. See source routing during integration.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/coin_sound.mp3"
+    },
+    "evidence": "Track coin_sound → assets/audio/coin_sound.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_police_sound_loop",
+    "title": "police sound loop",
+    "status": "Existing file (routing varies)",
+    "purpose": "Loaded track name; availability alone does not establish active gameplay use. See source routing during integration.",
+    "profile": "counter",
+    "current": {
+      "kind": "file",
+      "url": "/assets/sound/police sound loop.mp3"
+    },
+    "evidence": "Track police_sound_loop → assets/sound/police sound loop.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_normal_win_sound",
+    "title": "normal win sound",
+    "status": "Existing file (routing varies)",
+    "purpose": "Loaded track name; availability alone does not establish active gameplay use. See source routing during integration.",
+    "profile": "reward",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/normal_win_sound.mp3"
+    },
+    "evidence": "Track normal_win_sound → assets/audio/normal_win_sound.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_big_win_sound",
+    "title": "big win sound",
+    "status": "Existing file (routing varies)",
+    "purpose": "Loaded track name; availability alone does not establish active gameplay use. See source routing during integration.",
+    "profile": "reward",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/big_win_sound.mp3"
+    },
+    "evidence": "Track big_win_sound → assets/audio/big_win_sound.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_new_reel_stop",
+    "title": "new reel stop",
+    "status": "Existing file (routing varies)",
+    "purpose": "Current base-reel impact callback. Active through PixiGameScene.onReelImpact.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/new reel stop sound.mp3"
+    },
+    "evidence": "Track new_reel_stop → assets/new sound/new reel stop sound.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_wild_sound",
+    "title": "wild sound",
+    "status": "Existing file (routing varies)",
+    "purpose": "Current WILD landing accent.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/wild sound.mp3"
+    },
+    "evidence": "Track wild_sound → assets/new sound/wild sound.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_good_win_combo",
+    "title": "good win combo",
+    "status": "Existing file (routing varies)",
+    "purpose": "Candidate existing combination jingle. Loaded, but no current play call found; not the sound of cluster_win.",
+    "profile": "reward",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/good winning combination soun.mp3"
+    },
+    "evidence": "Track good_win_combo → assets/new sound/good winning combination soun.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_poker_machine_win",
+    "title": "poker machine win",
+    "status": "Existing file (routing varies)",
+    "purpose": "Transformation accent; invoked from multiple paths. Check overlapping playback in the integration pass.",
+    "profile": "reward",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/poker_machine_win.mp3"
+    },
+    "evidence": "Track poker_machine_win → assets/new sound/poker_machine_win.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_milestone2_girl1",
+    "title": "milestone2 girl1",
+    "status": "Existing file (routing varies)",
+    "purpose": "Character milestone voice. Review each voice separately; keep performance, pacing and loudness consistent.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/milestone2 girl1.mp3"
+    },
+    "evidence": "Track milestone2_girl1 → assets/new sound/milestone2 girl1.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_mileston3_girl1",
+    "title": "mileston3 girl1",
+    "status": "Existing file (routing varies)",
+    "purpose": "Character milestone voice. Review each voice separately; keep performance, pacing and loudness consistent.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/mileston3 girl1.mp3"
+    },
+    "evidence": "Track mileston3_girl1 → assets/new sound/mileston3 girl1.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_mileston4_girl1",
+    "title": "mileston4 girl1",
+    "status": "Existing file (routing varies)",
+    "purpose": "Character milestone voice. Review each voice separately; keep performance, pacing and loudness consistent.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/mileston4 girl1.mp3"
+    },
+    "evidence": "Track mileston4_girl1 → assets/new sound/mileston4 girl1.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_milstone1_girl2",
+    "title": "milstone1 girl2",
+    "status": "Existing file (routing varies)",
+    "purpose": "Character milestone voice. Review each voice separately; keep performance, pacing and loudness consistent.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/milstone1 girl2.mp3"
+    },
+    "evidence": "Track milstone1_girl2 → assets/new sound/milstone1 girl2.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_milestone2_girl2",
+    "title": "milestone2 girl2",
+    "status": "Existing file (routing varies)",
+    "purpose": "Character milestone voice. Review each voice separately; keep performance, pacing and loudness consistent.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/milestone2 girl2.mp3"
+    },
+    "evidence": "Track milestone2_girl2 → assets/new sound/milestone2 girl2.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_mileston3_girl2",
+    "title": "mileston3 girl2",
+    "status": "Existing file (routing varies)",
+    "purpose": "Character milestone voice. Review each voice separately; keep performance, pacing and loudness consistent.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/mileston3 girl2.mp3"
+    },
+    "evidence": "Track mileston3_girl2 → assets/new sound/mileston3 girl2.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_mileston4_girl2",
+    "title": "mileston4 girl2",
+    "status": "Existing file (routing varies)",
+    "purpose": "Character milestone voice. Review each voice separately; keep performance, pacing and loudness consistent.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/mileston4 girl2 (2).mp3"
+    },
+    "evidence": "Track mileston4_girl2 → assets/new sound/mileston4 girl2 (2).mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_mileston1_girl3",
+    "title": "mileston1 girl3",
+    "status": "Existing file (routing varies)",
+    "purpose": "Character milestone voice. Review each voice separately; keep performance, pacing and loudness consistent.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/mileston1 girl3.mp3"
+    },
+    "evidence": "Track mileston1_girl3 → assets/new sound/mileston1 girl3.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_mileston2_girl3",
+    "title": "mileston2 girl3",
+    "status": "Existing file (routing varies)",
+    "purpose": "Character milestone voice. Review each voice separately; keep performance, pacing and loudness consistent.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/mileston2 girl3.mp3"
+    },
+    "evidence": "Track mileston2_girl3 → assets/new sound/mileston2 girl3.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_mileston3_girl3",
+    "title": "mileston3 girl3",
+    "status": "Existing file (routing varies)",
+    "purpose": "Character milestone voice. Review each voice separately; keep performance, pacing and loudness consistent.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/mileston3 girl3.mp3"
+    },
+    "evidence": "Track mileston3_girl3 → assets/new sound/mileston3 girl3.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_mileston4_girl3",
+    "title": "mileston4 girl3",
+    "status": "Existing file (routing varies)",
+    "purpose": "Character milestone voice. Review each voice separately; keep performance, pacing and loudness consistent.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/mileston4 girl3.mp3"
+    },
+    "evidence": "Track mileston4_girl3 → assets/new sound/mileston4 girl3.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_getaway_end",
+    "title": "getaway end",
+    "status": "Existing file (routing varies)",
+    "purpose": "Loaded track name; availability alone does not establish active gameplay use. See source routing during integration.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new new sound/end of getaway sound.mp3"
+    },
+    "evidence": "Track getaway_end → assets/new new sound/end of getaway sound.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_money_counter_end",
+    "title": "money counter end",
+    "status": "Existing file (routing varies)",
+    "purpose": "Raw ending recording. Game uses only a 0.28-second fading excerpt.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new new sound/end of money counter sound.mp3"
+    },
+    "evidence": "Track money_counter_end → assets/new new sound/end of money counter sound.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_money_counter_loop",
+    "title": "money counter loop",
+    "status": "Existing file (routing varies)",
+    "purpose": "Current count-up loop; follows visual count duration.",
+    "profile": "counter",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new new sound/money_counter_sound it is a loop so feel free to make it the exact length of the actual counting animation.mp3"
+    },
+    "evidence": "Track money_counter_loop → assets/new new sound/money_counter_sound it is a loop so feel free to make it the exact length of the actual counting animation.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_reel_loop",
+    "title": "reel loop",
+    "status": "Existing file (routing varies)",
+    "purpose": "Current base reel loop, stopped on the final column impact.",
+    "profile": "counter",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new new sound/slot reel sound is a loop too so feel free to adapt it for turbo spins etc.mp3"
+    },
+    "evidence": "Track reel_loop → assets/new new sound/slot reel sound is a loop too so feel free to adapt it for turbo spins etc.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_win_mega_grand",
+    "title": "win mega grand",
+    "status": "Existing file (routing varies)",
+    "purpose": "Shared middle large-win banner recording.",
+    "profile": "reward",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new new sound/sound for 2 and 3 biggest winning banner.mp3"
+    },
+    "evidence": "Track win_mega_grand → assets/new new sound/sound for 2 and 3 biggest winning banner.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_win_max",
+    "title": "win max",
+    "status": "Existing file (routing varies)",
+    "purpose": "Largest win-banner recording.",
+    "profile": "reward",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new new sound/sound for biggest winning banner.mp3"
+    },
+    "evidence": "Track win_max → assets/new new sound/sound for biggest winning banner.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_getaway_explosive",
+    "title": "getaway explosive",
+    "status": "Existing file (routing varies)",
+    "purpose": "Current dynamite explosion at the blast frame.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new new sound/sound for explosive multiples in the getaway play once per explosive.mp3"
+    },
+    "evidence": "Track getaway_explosive → assets/new new sound/sound for explosive multiples in the getaway play once per explosive.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_getaway_intro",
+    "title": "getaway intro",
+    "status": "Existing file (routing varies)",
+    "purpose": "Bonus entry sting; played at 1.25× speed in game.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new new sound/sound for getaway intro play in same time as the banner appear that give the cinematic look.mp3"
+    },
+    "evidence": "Track getaway_intro → assets/new new sound/sound for getaway intro play in same time as the banner appear that give the cinematic look.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_win_big_lowest",
+    "title": "win big lowest",
+    "status": "Existing file (routing varies)",
+    "purpose": "Lowest large-win banner sound.",
+    "profile": "reward",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new new sound/sound for lowest paying winning banner animation.mp3"
+    },
+    "evidence": "Track win_big_lowest → assets/new new sound/sound for lowest paying winning banner animation.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_sticky_gold_bar",
+    "title": "sticky gold bar",
+    "status": "Existing file (routing varies)",
+    "purpose": "Current gold-bar / safe landing and Wanted-star sequence accent.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new new sound/sound for sticky gold bar in getaway mode.mp3"
+    },
+    "evidence": "Track sticky_gold_bar → assets/new new sound/sound for sticky gold bar in getaway mode.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_typewriter",
+    "title": "typewriter",
+    "status": "Existing file (routing varies)",
+    "purpose": "Current typing accompaniment for bonus intro.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new new sound/type writer sound.mp3"
+    },
+    "evidence": "Track typewriter → assets/new new sound/type writer sound.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_sunset_synths",
+    "title": "sunset synths",
+    "status": "Existing file (routing varies)",
+    "purpose": "Music / radio track. Review separately from gameplay effects.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/sunset_synths.mp3"
+    },
+    "evidence": "Track sunset_synths → assets/audio/sunset_synths.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_turbo_night",
+    "title": "turbo night",
+    "status": "Existing file (routing varies)",
+    "purpose": "Music / radio track. Review separately from gameplay effects.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/turbo_night.mp3"
+    },
+    "evidence": "Track turbo_night → assets/audio/turbo_night.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_vice_nights",
+    "title": "vice nights",
+    "status": "Existing file (routing varies)",
+    "purpose": "Music / radio track. Review separately from gameplay effects.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/vice_nights.mp3"
+    },
+    "evidence": "Track vice_nights → assets/audio/vice_nights.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "track_open_lines",
+    "title": "open lines",
+    "status": "Existing file (routing varies)",
+    "purpose": "Music / radio track. Review separately from gameplay effects.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/Open Lines 97.mp3"
+    },
+    "evidence": "Track open_lines → assets/Open Lines 97.mp3",
+    "group": "Track library"
+  },
+  {
+    "id": "asset_assets/audio/getaway/bar_big.mp3",
+    "title": "bar_big.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/bar_big.mp3"
+    },
+    "evidence": "assets/audio/getaway/bar_big.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/bar_land_0.mp3",
+    "title": "bar_land_0.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/bar_land_0.mp3"
+    },
+    "evidence": "assets/audio/getaway/bar_land_0.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/bar_land_1.mp3",
+    "title": "bar_land_1.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/bar_land_1.mp3"
+    },
+    "evidence": "assets/audio/getaway/bar_land_1.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/bar_land_2.mp3",
+    "title": "bar_land_2.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/bar_land_2.mp3"
+    },
+    "evidence": "assets/audio/getaway/bar_land_2.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/bar_land_3.mp3",
+    "title": "bar_land_3.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/bar_land_3.mp3"
+    },
+    "evidence": "assets/audio/getaway/bar_land_3.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/bar_land_4.mp3",
+    "title": "bar_land_4.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/bar_land_4.mp3"
+    },
+    "evidence": "assets/audio/getaway/bar_land_4.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/boom.mp3",
+    "title": "boom.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/boom.mp3"
+    },
+    "evidence": "assets/audio/getaway/boom.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/column_stop.mp3",
+    "title": "column_stop.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/column_stop.mp3"
+    },
+    "evidence": "assets/audio/getaway/column_stop.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/dead_1.mp3",
+    "title": "dead_1.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/dead_1.mp3"
+    },
+    "evidence": "assets/audio/getaway/dead_1.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/dead_2.mp3",
+    "title": "dead_2.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/dead_2.mp3"
+    },
+    "evidence": "assets/audio/getaway/dead_2.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/dead_3.mp3",
+    "title": "dead_3.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/dead_3.mp3"
+    },
+    "evidence": "assets/audio/getaway/dead_3.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/door.mp3",
+    "title": "door.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/door.mp3"
+    },
+    "evidence": "assets/audio/getaway/door.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/double.mp3",
+    "title": "double.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/double.mp3"
+    },
+    "evidence": "assets/audio/getaway/double.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/dud.mp3",
+    "title": "dud.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/dud.mp3"
+    },
+    "evidence": "assets/audio/getaway/dud.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/dynamite_land.mp3",
+    "title": "dynamite_land.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/dynamite_land.mp3"
+    },
+    "evidence": "assets/audio/getaway/dynamite_land.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/fuse.mp3",
+    "title": "fuse.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/fuse.mp3"
+    },
+    "evidence": "assets/audio/getaway/fuse.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/held.mp3",
+    "title": "held.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/held.mp3"
+    },
+    "evidence": "assets/audio/getaway/held.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/last_spin.mp3",
+    "title": "last_spin.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/last_spin.mp3"
+    },
+    "evidence": "assets/audio/getaway/last_spin.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/music_main.mp3",
+    "title": "music_main.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/music_main.mp3"
+    },
+    "evidence": "assets/audio/getaway/music_main.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/music_tension.mp3",
+    "title": "music_tension.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/music_tension.mp3"
+    },
+    "evidence": "assets/audio/getaway/music_tension.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/result_end.mp3",
+    "title": "result_end.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/result_end.mp3"
+    },
+    "evidence": "assets/audio/getaway/result_end.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/result_exit.mp3",
+    "title": "result_exit.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/result_exit.mp3"
+    },
+    "evidence": "assets/audio/getaway/result_exit.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/result_open.mp3",
+    "title": "result_open.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/result_open.mp3"
+    },
+    "evidence": "assets/audio/getaway/result_open.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/result_tick.mp3",
+    "title": "result_tick.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/result_tick.mp3"
+    },
+    "evidence": "assets/audio/getaway/result_tick.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/result_tier_0.mp3",
+    "title": "result_tier_0.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/result_tier_0.mp3"
+    },
+    "evidence": "assets/audio/getaway/result_tier_0.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/result_tier_1.mp3",
+    "title": "result_tier_1.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/result_tier_1.mp3"
+    },
+    "evidence": "assets/audio/getaway/result_tier_1.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/result_tier_2.mp3",
+    "title": "result_tier_2.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/result_tier_2.mp3"
+    },
+    "evidence": "assets/audio/getaway/result_tier_2.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/result_tier_3.mp3",
+    "title": "result_tier_3.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/result_tier_3.mp3"
+    },
+    "evidence": "assets/audio/getaway/result_tier_3.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/spin_start.mp3",
+    "title": "spin_start.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/spin_start.mp3"
+    },
+    "evidence": "assets/audio/getaway/spin_start.mp3",
+    "group": "Additional assets"
+  },
+  {
+    "id": "asset_assets/audio/getaway/tick.mp3",
+    "title": "tick.mp3",
+    "status": "Additional asset / verify use",
+    "purpose": "Available recording for audition. Getaway sample files belong to a separate sound class that is not instantiated in the current game; they are options, not proof of active sound.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/getaway/tick.mp3"
+    },
+    "evidence": "assets/audio/getaway/tick.mp3",
+    "group": "Additional assets"
+  }
+]

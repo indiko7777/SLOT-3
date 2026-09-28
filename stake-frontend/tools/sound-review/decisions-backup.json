@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "exportedAt": "2026-09-28T17:32:38.621Z",
+  "decisions": {
+    "combo": {
+      "choice": "own-file",
+      "updatedAt": "2026-09-28T17:17:25.428Z",
+      "fileName": "gta-pick-up.mp3"
+    },
+    "cascade": {
+      "choice": "option-0",
+      "updatedAt": "2026-09-28T17:14:29.556Z"
+    },
+    "refill": {
+      "choice": "option-2",
+      "updatedAt": "2026-09-28T17:14:53.612Z"
+    },
+    "heat1": {
+      "choice": "option-2",
+      "updatedAt": "2026-09-28T17:18:02.113Z"
+    },
+    "dynamite": {
+      "choice": "option-0",
+      "updatedAt": "2026-09-28T17:18:11.697Z"
+    },
+    "fuse": {
+      "choice": "option-0",
+      "updatedAt": "2026-09-28T17:18:20.487Z"
+    },
+    "double": {
+      "choice": "silent",
+      "updatedAt": "2026-09-28T17:18:41.235Z",
+      "fileName": "gta-menu.mp3"
+    },
+    "held": {
+      "choice": "option-2",
+      "updatedAt": "2026-09-28T17:21:03.736Z"
+    },
+    "spent": {
+      "choice": "option-0",
+      "updatedAt": "2026-09-28T17:21:12.459Z"
+    },
+    "dud": {
+      "fileName": "biww-small-explosion-blast-impact-561896.mp3",
+      "choice": "own-file",
+      "updatedAt": "2026-09-28T17:23:02.116Z"
+    },
+    "bonusstop": {
+      "choice": "option-1",
+      "updatedAt": "2026-09-28T17:23:45.210Z"
+    },
+    "uierror": {
+      "choice": "option-0",
+      "updatedAt": "2026-09-28T17:24:24.955Z"
+    },
+    "anticipation": {
+      "choice": "option-2",
+      "updatedAt": "2026-09-28T17:24:32.635Z"
+    },
+    "miss": {
+      "choice": "option-2",
+      "updatedAt": "2026-09-28T17:24:37.221Z"
+    },
+    "dead": {
+      "choice": "option-1",
+      "updatedAt": "2026-09-28T17:24:47.364Z"
+    },
+    "truck": {
+      "choice": "keep-current",
+      "updatedAt": "2026-09-28T17:25:06.559Z"
+    },
+    "doors": {
+      "choice": "option-1",
+      "updatedAt": "2026-09-28T17:25:32.968Z"
+    },
+    "piece": {
+      "choice": "option-1",
+      "updatedAt": "2026-09-28T17:25:50.133Z"
+    },
+    "impact_high": {
+      "choice": "keep-current",
+      "updatedAt": "2026-09-28T17:26:24.304Z"
+    },
+    "impact_mid": {
+      "choice": "keep-current",
+      "updatedAt": "2026-09-28T17:26:33.831Z"
+    },
+    "impact_grand": {
+      "choice": "keep-current",
+      "updatedAt": "2026-09-28T17:26:35.603Z"
+    },
+    "impact_low": {
+      "choice": "option-1",
+      "updatedAt": "2026-09-28T17:26:43.654Z"
+    },
+    "counter": {
+      "choice": "option-2",
+      "updatedAt": "2026-09-28T17:26:55.427Z"
+    },
+    "result": {
+      "choice": "option-1",
+      "updatedAt": "2026-09-28T17:27:17.002Z"
+    },
+    "foley_PISTOL_fire": {
+      "fileName": "gta-san-andreas-pistol-gun-shot-sound-effect.mp3"
+    },
+    "foley_PISTOL_tink": {
+      "choice": "option-2",
+      "updatedAt": "2026-09-28T17:29:14.440Z"
+    }
+  }
+}

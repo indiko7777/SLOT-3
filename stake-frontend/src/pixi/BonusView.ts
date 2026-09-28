@@ -1103,7 +1103,7 @@ export class BonusView extends Container {
     const W = this.rect.width;
     const H = this.rect.height;
 
-    const tex = getExtraTexture("getaway_highway");
+    const tex = getExtraTexture("chase_city");
     if (!tex) {
       // No art: fall back to the old near-black backdrop with a faint centre
       // glow so it still reads as a distant night skyline, not a dead void.
@@ -1115,7 +1115,9 @@ export class BonusView extends Container {
       return;
     }
 
-    this.miamiStreet = new MiamiStreet(tex, W, H, getExtraTexture("getaway_palm"), getExtraTexture("getaway_building"));
+    const buildings = ["chase_hotel", "chase_club", "chase_apartments"]
+      .map(key => getExtraTexture(key)).filter((texture): texture is Texture => !!texture);
+    this.miamiStreet = new MiamiStreet(tex, W, H, getExtraTexture("getaway_palm"), buildings);
     this.bgLayer.addChild(this.miamiStreet);
     this.updateHighway(0, 0);
   }
@@ -1159,6 +1161,17 @@ export class BonusView extends Container {
       o.x + o.width / 2 - (TRUCK_OPENING.cxFrac - 0.5) * frameTex.width * scale,
       o.y + o.height / 2 - (TRUCK_OPENING.cyFrac - 0.5) * frameTex.height * scale
     );
+    // The source's black-background key also erased dark paint/bumper pixels.
+    // Seat the unchanged artwork on opaque steel INSIDE its existing outline.
+    // This follows the exact sprite transform and stays behind the cargo panel;
+    // no city scenery can show through the chassis or taillight housings.
+    const steel = new Graphics();
+    const outline = [64,74, 982,74, 982,730, 1001,881, 1035,906,
+      1035,959, 984,978, 64,978, 12,959, 12,907, 35,887, 49,730];
+    steel.poly(outline.map((value, index) => value - (index % 2 ? 983 : 1048) / 2)).fill(0x16191c);
+    steel.scale.set(scale * frameTex.width / 1048, scale * frameTex.height / 983);
+    steel.position.copyFrom(sprite.position);
+    truck.addChildAt(steel, 0);
     truck.addChild(sprite);
     this.truckLayer.addChild(truck);
     this.truck = truck;

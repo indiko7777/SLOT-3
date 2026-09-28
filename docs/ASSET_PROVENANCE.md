@@ -20,8 +20,9 @@ Every packaged file is recorded by relative path, byte size and SHA-256 in the r
 
 | Asset | Source / evidence | Handling |
 |---|---|---|
-| `getaway_highway.webp` | Original image-tool night Miami boulevard illustration; generated 27 September. | Quiet background behind the original truck. |
-| `getaway_building.webp`, `getaway_palm.webp` | Original isolated Art Deco building and royal palm, generated for this task. | Recycled side scenery; original truck untouched. |
+| `getaway_highway.webp` | Original image-tool night Miami boulevard illustration; generated 27 September. | Super Getaway confirmation card. |
+| `getaway_building.webp`, `getaway_palm.webp`, `chase_city.webp` | Original scenery candidates generated for this task. | Superseded and omitted from release. |
+| `chase_skyline.webp`, `chase_hotel.webp`, `chase_club.webp`, `chase_apartments.webp`, `chase_palm_depth.webp` | Built-in image tool, using original project artwork as style/edit references. Exact prompts and output metadata in CHASE_SCENERY_PROMPTS.md. | Perspective city walls, distant skyline and dimensional palm art; 705,766 bytes combined. Original truck art unchanged, with renderer backing to correct keyed-out chassis paint. |
 | `symbols/cash.webp`, cash atlas | Original unbound wad with fictional palm banknote design. Source `cash-wad.source.png`; six airborne sheets use `cash-note.source.png`. | Idle shows only one wad. Reproducible semantic generator and motion authoring included. |
 | `real_bill.webp` | Original fictional palm note source, generated in this task. | Replaces earlier money-rain artwork. |
 | Anton Regular | Official Google Fonts `ofl/anton`, SIL Open Font License. | Bundled as Heat Display with `OFL-Anton.txt`. |
