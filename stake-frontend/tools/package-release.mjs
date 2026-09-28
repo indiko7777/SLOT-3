@@ -13,6 +13,8 @@ const unused = new Set([
   'assets/symbols/packed.png', 'assets/symbols/cyan_car_wild.png', 'assets/highway_loop.jpg', 'assets/wanted_star.webp',
   'assets/getaway_building.webp', 'assets/getaway_palm.webp', 'assets/chase_city.webp'
 ]);
+// This sample bank has no runtime instance; reviewed choices live in audio/approved.
+const isUnused = file => unused.has(file) || file.startsWith('assets/audio/getaway/');
 function files(dir, prefix='') {
   return fs.readdirSync(dir,{withFileTypes:true}).flatMap(item=>{
     const relative=prefix+item.name;
@@ -20,13 +22,13 @@ function files(dir, prefix='') {
   });
 }
 // Gate the uncompressed delivery, not just the smaller ZIP archive.
-const frontendBytes = files(build).filter(file => !unused.has(file))
+const frontendBytes = files(build).filter(file => !isUnused(file))
   .reduce((total, file) => total + fs.statSync(path.join(build, file)).size, 0);
 if (frontendBytes > 30_000_000) throw new Error(`Frontend exceeds 30 MB: ${frontendBytes} bytes.`);
 const manifest={createdAt:new Date().toISOString(),status:'LOCAL_RELEASE_CANDIDATE',stakeApproval:'Pending, including earned star-mode eligibility',files:[]};
 for (const [name, source] of [['frontend',build],['math',path.join(root,'stake-math/publish_files')]]) {
   for (const file of files(source)) {
-    if (name==='frontend' && unused.has(file)) continue;
+    if (name==='frontend' && isUnused(file)) continue;
     const data=fs.readFileSync(path.join(source,file));
     const target=path.join(output,name,file);
     fs.mkdirSync(path.dirname(target),{recursive:true});

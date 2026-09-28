@@ -4,7 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Exercise the built files at a CDN-like subpath. No dev-server transforms.
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist');
+const root = process.argv[2] ? path.resolve(process.argv[2]) : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist');
+if (!fs.existsSync(path.join(root,'index.html'))) throw new Error('Preview folder must contain index.html');
 const types = {'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json','.webp':'image/webp','.png':'image/png','.jpg':'image/jpeg','.ttf':'font/ttf','.mp3':'audio/mpeg'};
 http.createServer((req,res) => {
   try {

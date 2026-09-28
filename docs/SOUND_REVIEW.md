@@ -1,5 +1,15 @@
 # Sound review — 28 September 2026
 
+## Approved sounds integrated
+
+The completed saved decisions are now installed in the game through `src/audio/approvedManifest.json` and `src/audio/ApprovedAudio.ts`. Symbol wins play one approved identity sound per combination; secondary symbol-detail layers are suppressed. The pistol is the edited single shot. Explicit silent choices remain silent. Combination/cascade, refill, first Wanted star, Getaway cues, counters and result feedback use the approved selections. Fuse and counter loops stop with their gameplay lifecycle, and mute cancels active approved effects.
+
+`tools/sound-review/install-approved.mjs` installs the saved selections, using `legacy-renders.json` for frozen legacy sketches, retaining supplied MP3 files and encoding generated WAVs as compact mono MP3s. `installed.json` records source provenance. The release includes 25 selected audio files and excludes the review workshop and unused Getaway sample bank.
+
+Validation: existing suite passed (158 tests); eight additional approval-routing tests passed alongside the counter/symbol tests; TypeScript and production build passed. All 25 installed audio URLs returned HTTP 200 from the actual packaged release at a nested preview path. Release: `release/2026-09-28T17-59-09Z/frontend` (19,006,747 bytes), ZIP 17,172,593 bytes. This package is prepared locally and has not been submitted to the platform.
+
+The sections below document the earlier audition phase; their statements about sounds not yet being integrated describe that earlier state.
+
 ## Revised review (v2)
 
 The current page replaces the overwhelming 147-item inventory with a Remaining queue and a separate Confirmed view. The initial main queue has 10 remaining decisions. Music, voices and other effects are separate sections. Each symbol has exactly one review entry and two complete, materially different sound options. Forty original WAV designs were rendered by `tools/sound-review/render-designs.mjs`; descriptions identify their actual sequence, material and duration instead of generic style labels.

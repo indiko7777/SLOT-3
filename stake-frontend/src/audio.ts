@@ -1,6 +1,8 @@
 import type { GameEvent } from "./domain";
 import { GetawayResultSound } from "./audio/GetawayResultSound";
 import { FoleyGate, hasFoley, playFoley } from "./audio/SymbolFoley";
+import { ApprovedAudio } from "./audio/ApprovedAudio";
+import type { GetawayCue } from "./audio/GetawaySound";
 
 /* ═══════════════════════════════════════════════════
    Layered Audio Bus – GTA 6 Miami Heist theme
@@ -184,11 +186,40 @@ interface ActiveLoop {
 /* ═══════════════════════════════════════════════════ */
 
 export class EventAudioBus {
+  private readonly approved = new ApprovedAudio();
+  private readonly pendingSymbolSounds = new Set<string>();
+  private cascadeIndex = 0;
+  private lastSoundCascade = -1;
+  private approvedResult = false;
+  private readonly signatureCues: Record<string,string> = { PISTOL: "fire", CASH: "riffle", AMMO: "jolt", KNIFE: "swish", DUFFEL: "thump", DIAMOND: "chime", BRASS: "punch", BIKE: "rev", PHONE_SCATTER: "thud" };
+
+  /** True means a reviewed replacement (including deliberate silence) owns this cue. */
+  private reviewed(id: string, options: Parameters<ApprovedAudio["play"]>[1] = {}): boolean {
+    if (!this.approved.ready || !this.approved.has(id)) return false;
+    if (!this.silenced && !document.hidden) this.approved.play(id, options);
+    return true;
+  }
+  playApprovedEffect(id: string): void { this.reviewed(id); }
+  getawayCue(cue: GetawayCue, turbo: boolean): void {
+    const gain = turbo ? .5 : .8;
+    if (cue.kind === "boom") { this.approved.stop("fuse"); this.dynamiteBlast(turbo); return; }
+    if (cue.kind === "fuse") { this.reviewed("fuse", {gain,loop:true,duration:cue.seconds}); return; }
+    const ids: Partial<Record<GetawayCue["kind"],string>> = { dynamite:"dynamite",double:"double",held:"held",spent:"spent",dud:"dud",spin_start:"bonusspin",column_stop:"bonusstop" };
+    if (cue.kind === "dud") this.approved.stop("fuse");
+    const id=ids[cue.kind]; if(id)this.reviewed(id,{gain});
+  }
   private readonly symbolFoleyGate = new FoleyGate(90, 4, 140);
 
   /** Called by skeletal event timelines, at the visual contact frame. */
   symbolFoley(id: string, cue: string, turbo: boolean): void {
     if (!this.ctx || !this.master || this.silenced || document.hidden || this.ctx.state !== "running") return;
+    const signature = this.signatureCues[id];
+    if (this.approved.ready && signature) {
+      // One selected sound per winning symbol type, at its authored action frame.
+      // Casing/landing/destroy details never add extra shots or layers.
+      if (cue === signature && this.pendingSymbolSounds.delete(id)) this.reviewed(`foley_${id}_${signature}`, {gain:turbo?.5:.8});
+      return;
+    }
     if (!hasFoley(id, cue) || !this.symbolFoleyGate.allow(cue, turbo, performance.now())) return;
     playFoley(this.ctx, this.output, id, cue, turbo ? .24 : .38);
   }
@@ -203,6 +234,7 @@ export class EventAudioBus {
   constructor() {
     document.addEventListener("visibilitychange", () => {
       this.updateMaster();
+      if (document.hidden) { this.approved.stopAll(); this.pendingSymbolSounds.clear(); }
       if (!this.ctx) return;
       if (document.hidden) void this.ctx.suspend().catch(() => undefined);
       else void this.ctx.resume().catch(() => undefined);
@@ -220,6 +252,7 @@ export class EventAudioBus {
 
   setMuted(muted: boolean): void {
     this.silenced = muted;
+    if (muted) { this.approved.stopAll(); this.pendingSymbolSounds.clear(); }
     this.updateMaster();
   }
   /** In-flight prefetch, so boot can fire it without awaiting (keeps the ~6 MB
@@ -269,8 +302,9 @@ export class EventAudioBus {
   prefetch(): Promise<void> {
     if (this.fetchPromise) return this.fetchPromise;
     this.fetched = true;
-    this.fetchPromise = Promise.all(
-      ALL_TRACKS.map(async (t) => {
+    this.fetchPromise = Promise.all([
+      this.approved.prefetch(),
+      ...ALL_TRACKS.filter(t => !["mega_win", "bonus_trigger", "vault_lock", "heat_rise", "siren"].includes(t)).map(async (t) => {
         try {
           const rawPath = TRACK_PATHS[t] ?? `${AUDIO_BASE}${t}.mp3`;
           const path = encodeURI(rawPath);
@@ -279,7 +313,7 @@ export class EventAudioBus {
           this.rawData.set(t, await r.arrayBuffer());
         } catch { /* missing file — synth fallback */ }
       })
-    ).then(() => undefined);
+    ]).then(() => undefined);
     return this.fetchPromise;
   }
 
@@ -313,6 +347,7 @@ export class EventAudioBus {
       });
     }
     await this.decodePromise;
+    await this.approved.init(this.ctx, this.output);
   }
 
   /** Decode all pre-fetched ArrayBuffers → AudioBuffers */
@@ -347,7 +382,7 @@ export class EventAudioBus {
       this.killAll();
       return;
     }
-    void this.unlock().then(() => this.route(event, turbo));
+    void this.unlock().then(() => { if (!this.silenced && !document.hidden) this.route(event, turbo); });
   }
 
   /** Fire vault sound for each safe landing during grand reveal — synced with visual */
@@ -445,6 +480,7 @@ export class EventAudioBus {
   /** Rising tension riser when 2+ scatters are in play (anticipation spin). */
   anticipation(muted: boolean): void {
     if (muted || this.riserActive) return;
+    if (this.reviewed("anticipation")) return;
     this.riserActive = true;
     void this.unlock().then(() => {
       if (!this.ctx) return;
@@ -480,6 +516,12 @@ export class EventAudioBus {
     if (level === this.lastHeat) return;
     const rising = level > this.lastHeat;
     this.lastHeat = level;
+    if (this.approved.ready && this.approved.has("helicopter")) {
+      this.stopHeli();
+      if (level >= 3) this.reviewed("helicopter", {gain:.45,loop:true});
+      else this.approved.stop("helicopter");
+      return;
+    }
     void this.unlock().then(() => {
       if (level > 0 && rising) this.fire("siren", 0.35 + level * 0.22);
       if (level >= 3) this.startHeli();
@@ -685,6 +727,10 @@ export class EventAudioBus {
 
       /* ── spin lifecycle ──────────────────────── */
       case "round_start":
+        this.approved.stopAll();
+        this.pendingSymbolSounds.clear();
+        this.cascadeIndex = 0;
+        this.lastSoundCascade = -1;
         // Start the procedural synth reel sound the instant the player
         // fires a spin. reelStop(lastCol) stops it when the final column
         // lands, keeping it perfectly in sync with the visual animation.
@@ -698,12 +744,22 @@ export class EventAudioBus {
 
       /* ── wins ────────────────────────────────── */
       case "cluster_win":
-        // Physical accents are emitted by the symbols at their action frames.
+        this.pendingSymbolSounds.add(ev.symbol);
+        if (this.lastSoundCascade !== this.cascadeIndex) {
+          this.reviewed("combo", {gain:vol*.8});
+          if (this.cascadeIndex > 0) this.reviewed("cascade", {gain:vol*.42,rate:1+Math.min(4,this.cascadeIndex-1)*.04});
+          this.lastSoundCascade = this.cascadeIndex;
+        }
+        break;
+      case "tumble_drop":
+        this.pendingSymbolSounds.clear();
+        this.cascadeIndex++;
         break;
 
       /* ── heat system ─────────────────────────── */
       case "heat_advance":
-        if (ev.to >= 4)          this.fire("siren", vol * 0.7);
+        if (ev.to === 1)         this.reviewed("heat1", {gain:vol*.8});
+        else if (ev.to >= 4)     this.fire("siren", vol * 0.7);
         else if (ev.to >= 2)     this.fire("heat_rise", vol);
         break;
 
@@ -751,6 +807,8 @@ export class EventAudioBus {
         break;
 
       case "bonus_end":
+        this.approved.stop("fuse");
+        this.approved.stop("helicopter");
         // The Getaway result owns a separate sound stage, opened by the view.
         break;
 
@@ -882,6 +940,7 @@ export class EventAudioBus {
      Every banner that pops calls this; each tier crossing inside the big
      cinematic counter calls it again, so stacked banners each bang. */
   bannerImpact(intensity: "low" | "mid" | "high" | "grand" = "mid"): void {
+    if (this.reviewed(`impact_${intensity}`)) return;
     void this.unlock().then(() => {
       if (!this.ctx) return;
       const t = this.ctx.currentTime;
@@ -985,6 +1044,7 @@ export class EventAudioBus {
      for attack. Escalates slightly with heat (consecutive misses).
      ═══════════════════════════════════════════════ */
   deadSpin(heat: number): void {
+    if (this.reviewed("dead")) return;
     void this.unlock().then(() => {
       if (!this.ctx) return;
       const ctx = this.ctx;
@@ -1088,6 +1148,8 @@ export class EventAudioBus {
    * the two are never confused.
    */
   anticipationMiss(): void {
+    this.approved.stop("anticipation");
+    if (this.reviewed("miss")) return;
     void this.unlock().then(() => {
       if (!this.ctx) return;
       const ctx = this.ctx;
@@ -1261,6 +1323,7 @@ export class EventAudioBus {
    * the hinges take the weight, and a resonant boom as they come to rest.
    */
   truckDoors(): void {
+    if (this.reviewed("doors")) return;
     void this.unlock().then(() => {
       if (!this.ctx) return;
       const ctx = this.ctx;
@@ -1340,6 +1403,7 @@ export class EventAudioBus {
      right at the moment of impact (bannerImpact fires there).
      ═══════════════════════════════════════════════ */
   pieceWhoosh(): void {
+    if (this.reviewed("piece")) return;
     void this.unlock().then(() => {
       if (!this.ctx) return;
       const t = this.ctx.currentTime;
@@ -1388,17 +1452,24 @@ export class EventAudioBus {
   startWinCounter(): void {
     this.cancelWinCounter();
     if (this.silenced) return;
+    if (this.reviewed("counter", {loop:true,gain:.65})) return;
     this.startLoop("money_counter_loop", "counter");
   }
 
   /** Drive the roller from the count-up. */
   updateWinCounter(p: number, tier: "none" | "big" | "mega" | "grand" | "max"): void {
+    if (this.approved.ready && this.approved.has("counter")) { this.approved.rate("counter", .96+Math.max(0,Math.min(1,p))*.12); return; }
     if (!this.ctx || !this.counterLoop) return;
     this.counterLoop.source.playbackRate.setTargetAtTime(0.96 + Math.max(0, Math.min(1, p)) * 0.12, this.ctx.currentTime, 0.04);
   }
 
   /** Resolve the roller: a quick upward flourish, then a clean fade-and-stop. */
   stopWinCounter(): void {
+    if (this.approved.ready && this.approved.has("counter")) {
+      const wasCounting=this.approved.playing("counter"); this.approved.stop("counter");
+      if(wasCounting)this.reviewed("counter_end", {gain:.65});
+      return;
+    }
     const wasCounting = this.counterLoop !== null;
     this.stopCounterLoop();
     if (!wasCounting || !this.ctx || this.silenced) return;
@@ -1427,6 +1498,8 @@ export class EventAudioBus {
 
   /** Dismissal/mute must never launch another ending sound. */
   cancelWinCounter(): void {
+    this.approved.stop("counter");
+    this.approved.stop("counter_end");
     this.stopCounterLoop();
     if (!this.counterEnd || !this.ctx) return;
     const voice = this.counterEnd;
@@ -1439,6 +1512,10 @@ export class EventAudioBus {
   }
 
   finishBonus(): void {
+    this.approved.stop("fuse");
+    this.approved.stop("helicopter");
+    this.stopHeli();
+    this.lastHeat = -1;
     this.cancelGetawayResult();
     this.inGetawayResult = false;
     this.cancelWinCounter();
@@ -1452,16 +1529,18 @@ export class EventAudioBus {
     this.fadeOut("bg");
     this.stopBonusOutro();
     if (!this.ctx || this.silenced) return;
+    this.approvedResult = this.reviewed("result", {slot:"result"});
+    if (this.approvedResult) return;
     this.getawayResultSound ??= new GetawayResultSound(this.ctx, this.output);
     this.getawayResultSound.open();
   }
 
-  startGetawayResultCount(): void { if (!this.silenced) this.getawayResultSound?.start(); }
-  updateGetawayResultCount(progress: number): void { if (!this.silenced) this.getawayResultSound?.progress(progress); }
-  getawayResultTier(level: number): void { if (!this.silenced) this.getawayResultSound?.tier(level); }
-  endGetawayResultCount(): void { if (!this.silenced) this.getawayResultSound?.end(); }
-  getawayResultExit(): void { if (!this.silenced) this.getawayResultSound?.exit(); }
-  cancelGetawayResult(): void { this.getawayResultSound?.cancel(); }
+  startGetawayResultCount(): void { if(this.approvedResult){this.startWinCounter();return;} if (!this.silenced) this.getawayResultSound?.start(); }
+  updateGetawayResultCount(progress: number): void { if(this.approvedResult){this.updateWinCounter(progress,"none");return;} if (!this.silenced) this.getawayResultSound?.progress(progress); }
+  getawayResultTier(level: number): void { if(this.approvedResult){if(!this.silenced)this.bannerImpact(level>=3?"grand":level>=2?"high":"mid");return;} if (!this.silenced) this.getawayResultSound?.tier(level); }
+  endGetawayResultCount(): void { if(this.approvedResult){this.stopWinCounter();return;} if (!this.silenced) this.getawayResultSound?.end(); }
+  getawayResultExit(): void { if(this.approvedResult){this.approved.stop("result");this.cancelWinCounter();return;} if (!this.silenced) this.getawayResultSound?.exit(); }
+  cancelGetawayResult(): void { this.approved.stop("result");if(this.approvedResult)this.cancelWinCounter();this.approvedResult=false;this.getawayResultSound?.cancel(); }
 
   private stopBonusOutro(): void {
     if (!this.bonusOutro || !this.ctx) return;
@@ -1613,6 +1692,8 @@ export class EventAudioBus {
 
   /** Kill all loops immediately (for mute) */
   killAll(): void {
+    this.approved.stopAll();
+    this.stopHeli();
     this.setMuted(true);
     this.fadeOut("bg");
     this.fadeOut("spin");

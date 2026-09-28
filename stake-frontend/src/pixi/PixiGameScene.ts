@@ -386,6 +386,7 @@ export class PixiGameScene {
         return;
       case "tumble_drop":
         await this.board.tumbleTo(event.board, turbo);
+        this.runtime.playAudio?.("approved_refill");
         await this.checkAndPlayCollectionAnimation(event.board, turbo);
         return;
       case "heat_advance": {

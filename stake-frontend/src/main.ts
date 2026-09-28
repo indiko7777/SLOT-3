@@ -153,6 +153,7 @@ function hasFundsFor(modeKey: string): boolean {
   const cost = modeCost(modeKey);
   if (cost <= 0) return false;
   if (cost > balance + 1e-9) {
+    if (!muted) audioBus.playApprovedEffect("uierror");
     showToast("INSUFFICIENT BALANCE");
     return false;
   }
@@ -396,9 +397,7 @@ async function boot(): Promise<void> {
       if (!muted) audioBus.symbolFoley(id, cue, turbo);
     },
     onGetawayCue: (cue, turbo) => {
-      // The dynamite now arms before it blows: its original explosive sound
-      // plays on the blast frame. No other Getaway moment has a sound here.
-      if (!muted && cue.kind === "boom") audioBus.dynamiteBlast(turbo);
+      if (!muted) audioBus.getawayCue(cue, turbo);
     },
     onBonusHeat: (level) => {
       if (!muted) audioBus.setBonusHeat(level);
@@ -435,7 +434,8 @@ async function boot(): Promise<void> {
     },
     playAudio: (track, volumeScale) => {
       if (!muted) {
-        if (track === "win_tick_low") audioBus.playWinTick("normal");
+        if (track.startsWith("approved_")) audioBus.playApprovedEffect(track.slice(9));
+        else if (track === "win_tick_low") audioBus.playWinTick("normal");
         else if (track === "win_tick_mid") audioBus.playWinTick("medium");
         else if (track === "win_tick_high") audioBus.playWinTick("high");
         else if (track === "piece_whoosh") audioBus.pieceWhoosh();
@@ -949,6 +949,7 @@ async function startAutoplay(count: number): Promise<void> {
       // The player must be told WHY autoplay stopped, not left staring at a
       // stalled sequence.
       showToast("AUTOPLAY STOPPED — INSUFFICIENT BALANCE", 4200);
+      if (!muted) audioBus.playApprovedEffect("uierror");
       break;
     }
     await playRound(mode);
@@ -1013,6 +1014,7 @@ async function playRound(modeKey: string): Promise<void> {
     // from the scene, adding value-weighted points and revealing a card on cross.
   } catch (e) {
     isPlaying = false;
+    if (!muted) audioBus.playApprovedEffect("uierror");
     autoplayStop = true;
     autoplayRemaining = 0;
     // A timed-out play or settlement may already exist on the server. Never

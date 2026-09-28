@@ -1,0 +1,100 @@
+{
+  "foley_PISTOL_fire": {
+    "path": "assets/audio/approved/9e900f0244630d5f.mp3"
+  },
+  "foley_CASH_riffle": {
+    "path": "assets/audio/approved/08ba6361aae001c2.mp3"
+  },
+  "foley_AMMO_jolt": {
+    "path": "assets/audio/approved/b79a10ef6e483ded.mp3"
+  },
+  "foley_KNIFE_swish": {
+    "path": "assets/audio/approved/9aae3308cbff2716.mp3"
+  },
+  "foley_DUFFEL_thump": {
+    "path": "assets/audio/approved/e0b439588821eab9.mp3"
+  },
+  "foley_DIAMOND_chime": {
+    "path": "assets/audio/approved/f6b4b764a772933b.mp3"
+  },
+  "foley_BRASS_punch": {
+    "path": "assets/audio/approved/e7460d07953b55d0.mp3"
+  },
+  "foley_BIKE_rev": {
+    "path": "assets/audio/approved/590f08ddc816c403.mp3"
+  },
+  "foley_PHONE_SCATTER_thud": {
+    "silent": true
+  },
+  "combo": {
+    "path": "assets/audio/approved/2eeb3f59da52642b.mp3"
+  },
+  "cascade": {
+    "path": "assets/audio/approved/746f0f8caa7124ce.mp3"
+  },
+  "refill": {
+    "path": "assets/audio/approved/40c9243023083d87.mp3"
+  },
+  "heat1": {
+    "path": "assets/audio/approved/4ef43c3ee641cc28.mp3"
+  },
+  "dynamite": {
+    "path": "assets/audio/approved/6a3c088d40e91858.mp3"
+  },
+  "fuse": {
+    "path": "assets/audio/approved/baba05ce999650e3.mp3",
+    "loopEnd": 2
+  },
+  "double": {
+    "silent": true
+  },
+  "held": {
+    "path": "assets/audio/approved/4ef43c3ee641cc28.mp3"
+  },
+  "spent": {
+    "path": "assets/audio/approved/4fde6baeae226165.mp3"
+  },
+  "dud": {
+    "path": "assets/audio/approved/42a7bc0dbab9669e.mp3"
+  },
+  "bonusspin": {
+    "silent": true
+  },
+  "bonusstop": {
+    "path": "assets/audio/approved/c3be35abff9b3a95.mp3"
+  },
+  "uierror": {
+    "path": "assets/audio/approved/4fde6baeae226165.mp3"
+  },
+  "anticipation": {
+    "path": "assets/audio/approved/a1e47ce9639157ef.mp3"
+  },
+  "miss": {
+    "path": "assets/audio/approved/dd2a4953691f7cde.mp3"
+  },
+  "dead": {
+    "path": "assets/audio/approved/b64ff0d4420d7232.mp3"
+  },
+  "doors": {
+    "path": "assets/audio/approved/c3be35abff9b3a95.mp3"
+  },
+  "piece": {
+    "path": "assets/audio/approved/1780a42f4861734c.mp3"
+  },
+  "impact_low": {
+    "path": "assets/audio/approved/c3be35abff9b3a95.mp3"
+  },
+  "counter": {
+    "path": "assets/audio/approved/85376485ec5d215b.mp3",
+    "loopEnd": 1.87
+  },
+  "counter_end": {
+    "path": "assets/audio/approved/29709ba4eb2644e9.mp3"
+  },
+  "result": {
+    "path": "assets/audio/approved/e524d707c3aae800.mp3"
+  },
+  "helicopter": {
+    "path": "assets/audio/approved/31899a1a9ae33773.mp3"
+  }
+}

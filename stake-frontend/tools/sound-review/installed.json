@@ -1,0 +1,173 @@
+{
+  "savedAt": "2026-09-28T17:51:00.815Z",
+  "sources": [
+    {
+      "id": "foley_PISTOL_fire",
+      "choice": "keep-current",
+      "source": "/tools/sound-review/uploads/pistol-single-shot.wav",
+      "output": "assets/audio/approved/9e900f0244630d5f.mp3"
+    },
+    {
+      "id": "foley_CASH_riffle",
+      "choice": "own-file",
+      "source": "/tools/sound-review/uploads/user-9b1cdcf3-5901-47b1-b4ed-4759c1642a46.mp3",
+      "output": "assets/audio/approved/08ba6361aae001c2.mp3"
+    },
+    {
+      "id": "foley_AMMO_jolt",
+      "choice": "design:ammo-chamber",
+      "source": "/tools/sound-review/designs/ammo-chamber.wav",
+      "output": "assets/audio/approved/b79a10ef6e483ded.mp3"
+    },
+    {
+      "id": "foley_KNIFE_swish",
+      "choice": "design:knife-draw",
+      "source": "/tools/sound-review/designs/knife-draw.wav",
+      "output": "assets/audio/approved/9aae3308cbff2716.mp3"
+    },
+    {
+      "id": "foley_DUFFEL_thump",
+      "choice": "design:duffel-drop",
+      "source": "/tools/sound-review/designs/duffel-drop.wav",
+      "output": "assets/audio/approved/e0b439588821eab9.mp3"
+    },
+    {
+      "id": "foley_DIAMOND_chime",
+      "choice": "design:diamond-spark",
+      "source": "/tools/sound-review/designs/diamond-spark.wav",
+      "output": "assets/audio/approved/f6b4b764a772933b.mp3"
+    },
+    {
+      "id": "foley_BRASS_punch",
+      "choice": "design:brass-punch",
+      "source": "/tools/sound-review/designs/brass-punch.wav",
+      "output": "assets/audio/approved/e7460d07953b55d0.mp3"
+    },
+    {
+      "id": "foley_BIKE_rev",
+      "choice": "design:bike-launch",
+      "source": "/tools/sound-review/designs/bike-launch.wav",
+      "output": "assets/audio/approved/590f08ddc816c403.mp3"
+    },
+    {
+      "id": "combo",
+      "choice": "own-file",
+      "source": "/tools/sound-review/uploads/combo-user.mp3",
+      "output": "assets/audio/approved/2eeb3f59da52642b.mp3"
+    },
+    {
+      "id": "cascade",
+      "choice": "option-0",
+      "source": "/tools/sound-review/uploads/user-a3053f8a-1d01-4509-bab8-88d286a4a8d1.wav",
+      "output": "assets/audio/approved/746f0f8caa7124ce.mp3"
+    },
+    {
+      "id": "refill",
+      "choice": "option-2",
+      "source": "/tools/sound-review/uploads/user-ea937146-b6df-4919-97f0-372634e07dd8.wav",
+      "output": "assets/audio/approved/40c9243023083d87.mp3"
+    },
+    {
+      "id": "heat1",
+      "choice": "option-2",
+      "source": "/tools/sound-review/uploads/user-6f946d7d-44d7-40a0-8105-193d7b271767.wav",
+      "output": "assets/audio/approved/4ef43c3ee641cc28.mp3"
+    },
+    {
+      "id": "dynamite",
+      "choice": "option-0",
+      "source": "/tools/sound-review/uploads/user-d8a7be91-d724-4de9-94df-548e686f62ea.wav",
+      "output": "assets/audio/approved/6a3c088d40e91858.mp3"
+    },
+    {
+      "id": "fuse",
+      "choice": "option-0",
+      "source": "/tools/sound-review/uploads/user-b9c8e840-2bda-40b3-adec-5d33221dd2e7.wav",
+      "output": "assets/audio/approved/baba05ce999650e3.mp3"
+    },
+    {
+      "id": "held",
+      "choice": "option-2",
+      "source": "/tools/sound-review/uploads/user-6f946d7d-44d7-40a0-8105-193d7b271767.wav",
+      "output": "assets/audio/approved/4ef43c3ee641cc28.mp3"
+    },
+    {
+      "id": "spent",
+      "choice": "option-0",
+      "source": "/tools/sound-review/uploads/user-6f2d2928-3cce-46f4-9b28-56c12fd52da0.wav",
+      "output": "assets/audio/approved/4fde6baeae226165.mp3"
+    },
+    {
+      "id": "dud",
+      "choice": "own-file",
+      "source": "/tools/sound-review/uploads/dud-user.mp3",
+      "output": "assets/audio/approved/42a7bc0dbab9669e.mp3"
+    },
+    {
+      "id": "bonusstop",
+      "choice": "option-1",
+      "source": "/tools/sound-review/uploads/user-bc669fca-f0c3-49b7-9755-86d73cf515c2.wav",
+      "output": "assets/audio/approved/c3be35abff9b3a95.mp3"
+    },
+    {
+      "id": "uierror",
+      "choice": "option-0",
+      "source": "/tools/sound-review/uploads/user-6f2d2928-3cce-46f4-9b28-56c12fd52da0.wav",
+      "output": "assets/audio/approved/4fde6baeae226165.mp3"
+    },
+    {
+      "id": "anticipation",
+      "choice": "option-2",
+      "source": "/tools/sound-review/uploads/user-b3923d97-f500-48d2-8603-45314d898d80.wav",
+      "output": "assets/audio/approved/a1e47ce9639157ef.mp3"
+    },
+    {
+      "id": "miss",
+      "choice": "option-2",
+      "source": "/tools/sound-review/uploads/user-ccf9877c-ed3c-4a1b-aec4-4028c14177bc.wav",
+      "output": "assets/audio/approved/dd2a4953691f7cde.mp3"
+    },
+    {
+      "id": "dead",
+      "choice": "option-1",
+      "source": "/tools/sound-review/uploads/user-ab21a621-a9e0-4b75-a111-48d97cd7e47d.wav",
+      "output": "assets/audio/approved/b64ff0d4420d7232.mp3"
+    },
+    {
+      "id": "doors",
+      "choice": "option-1",
+      "source": "/tools/sound-review/uploads/user-bc669fca-f0c3-49b7-9755-86d73cf515c2.wav",
+      "output": "assets/audio/approved/c3be35abff9b3a95.mp3"
+    },
+    {
+      "id": "piece",
+      "choice": "option-1",
+      "source": "/tools/sound-review/uploads/user-9ebcce79-a7f2-4ae0-9661-e5ed430a71ef.wav",
+      "output": "assets/audio/approved/1780a42f4861734c.mp3"
+    },
+    {
+      "id": "impact_low",
+      "choice": "option-1",
+      "source": "/tools/sound-review/uploads/user-bc669fca-f0c3-49b7-9755-86d73cf515c2.wav",
+      "output": "assets/audio/approved/c3be35abff9b3a95.mp3"
+    },
+    {
+      "id": "counter",
+      "choice": "option-2",
+      "source": "/tools/sound-review/uploads/user-b1293f14-eb6b-4e9d-91bd-63ab0cedfaa1.wav",
+      "output": "assets/audio/approved/85376485ec5d215b.mp3"
+    },
+    {
+      "id": "result",
+      "choice": "option-1",
+      "source": "/tools/sound-review/uploads/user-8f6e6a8f-a6bc-4b63-8b6f-ab37db9df26a.wav",
+      "output": "assets/audio/approved/e524d707c3aae800.mp3"
+    },
+    {
+      "id": "helicopter",
+      "choice": "design:siren",
+      "source": "/tools/sound-review/designs/siren.wav",
+      "output": "assets/audio/approved/31899a1a9ae33773.mp3"
+    }
+  ]
+}
