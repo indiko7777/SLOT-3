@@ -1,6 +1,8 @@
 import { defineConfig } from "vite";
+import { soundReviewServer } from "./tools/sound-review/server";
 
 export default defineConfig({
+  plugins: [soundReviewServer()],
   // Stake serves each uploaded game from a hashed SUB-PATH, not the domain root,
   // so every asset URL must be relative. "./" makes Vite emit ./assets/... in
   // index.html instead of /assets/... (an absolute /assets/ 404s on Stake and

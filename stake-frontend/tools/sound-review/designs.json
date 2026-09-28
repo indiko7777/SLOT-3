@@ -1,0 +1,282 @@
+{
+  "cash-snap": {
+    "id": "cash-snap",
+    "name": "Banknote snap",
+    "description": "One sharp paper flick, a short rustle, then a soft stack landing. No melody.",
+    "duration": 0.36,
+    "url": "/tools/sound-review/designs/cash-snap.wav"
+  },
+  "cash-riffle": {
+    "id": "cash-riffle",
+    "name": "Cash fan",
+    "description": "A fast six-note paper riffle closing with a rubber-band snap. A longer, textured motion.",
+    "duration": 0.55,
+    "url": "/tools/sound-review/designs/cash-riffle.wav"
+  },
+  "ammo-chamber": {
+    "id": "ammo-chamber",
+    "name": "Chamber click",
+    "description": "Two tight mechanical clicks, followed by one small brass ring. Compact and dry.",
+    "duration": 0.3,
+    "url": "/tools/sound-review/designs/ammo-chamber.wav"
+  },
+  "ammo-spill": {
+    "id": "ammo-spill",
+    "name": "Cartridge scatter",
+    "description": "Three uneven brass collisions, descending in weight. Metallic, without a pitched reward tune.",
+    "duration": 0.51,
+    "url": "/tools/sound-review/designs/ammo-spill.wav"
+  },
+  "knife-draw": {
+    "id": "knife-draw",
+    "name": "Blade draw",
+    "description": "A rising air swipe into one sustained steel ring. Smooth and bright.",
+    "duration": 0.58,
+    "url": "/tools/sound-review/designs/knife-draw.wav"
+  },
+  "knife-cut": {
+    "id": "knife-cut",
+    "name": "Hard slice",
+    "description": "A short cutting swish with a blunt stop and a tiny blade tick. Much drier than Blade draw.",
+    "duration": 0.28,
+    "url": "/tools/sound-review/designs/knife-cut.wav"
+  },
+  "duffel-drop": {
+    "id": "duffel-drop",
+    "name": "Loaded bag drop",
+    "description": "One low padded impact, followed by fabric movement. Weight without a musical ping.",
+    "duration": 0.5,
+    "url": "/tools/sound-review/designs/duffel-drop.wav"
+  },
+  "duffel-zip": {
+    "id": "duffel-zip",
+    "name": "Zip and cash",
+    "description": "A short zipper rasp, then a banknote flap. A textured opening motion instead of a bass hit.",
+    "duration": 0.56,
+    "url": "/tools/sound-review/designs/duffel-zip.wav"
+  },
+  "diamond-prism": {
+    "id": "diamond-prism",
+    "name": "Prism ring",
+    "description": "One high glass strike with a clear, lingering shimmer. No sequence of reward notes.",
+    "duration": 0.86,
+    "url": "/tools/sound-review/designs/diamond-prism.wav"
+  },
+  "diamond-spark": {
+    "id": "diamond-spark",
+    "name": "Crystal sparkle",
+    "description": "Four tiny glass flecks sweep upward, ending in a higher crystal ping. Light and airy.",
+    "duration": 0.69,
+    "url": "/tools/sound-review/designs/diamond-spark.wav"
+  },
+  "brass-punch": {
+    "id": "brass-punch",
+    "name": "Knuckle impact",
+    "description": "One midrange punch with a low body and a very short metal edge. No ringing tail.",
+    "duration": 0.28,
+    "url": "/tools/sound-review/designs/brass-punch.wav"
+  },
+  "brass-clang": {
+    "id": "brass-clang",
+    "name": "Heavy brass clang",
+    "description": "A hard, resonant metal strike over a low drop. Rings longer and feels hollow.",
+    "duration": 0.68,
+    "url": "/tools/sound-review/designs/brass-clang.wav"
+  },
+  "bike-rev": {
+    "id": "bike-rev",
+    "name": "Throttle blip",
+    "description": "One short engine rev rising and releasing. Gritty pulses, no chime.",
+    "duration": 0.68,
+    "url": "/tools/sound-review/designs/bike-rev.wav"
+  },
+  "bike-launch": {
+    "id": "bike-launch",
+    "name": "Launch and skid",
+    "description": "A longer accelerating engine with a brief high tyre squeal at the exit.",
+    "duration": 1.1,
+    "url": "/tools/sound-review/designs/bike-launch.wav"
+  },
+  "truck-latch": {
+    "id": "truck-latch",
+    "name": "Armored latch",
+    "description": "Two heavy metal lock clicks with a short door-body thump.",
+    "duration": 0.47,
+    "url": "/tools/sound-review/designs/truck-latch.wav"
+  },
+  "radio-chirp": {
+    "id": "radio-chirp",
+    "name": "Radio dispatch chirp",
+    "description": "A pair of short radio tones ending in a dry static cut. Electronic, without an engine impact.",
+    "duration": 0.47,
+    "url": "/tools/sound-review/designs/radio-chirp.wav"
+  },
+  "reel-motor": {
+    "id": "reel-motor",
+    "name": "Reel motor kick",
+    "description": "A brief low motor rise and a dry latch at the start of movement.",
+    "duration": 0.39,
+    "url": "/tools/sound-review/designs/reel-motor.wav"
+  },
+  "reel-air": {
+    "id": "reel-air",
+    "name": "Reel air pull",
+    "description": "A clean sucked-air sweep followed by a small tick. Lighter and less mechanical.",
+    "duration": 0.36,
+    "url": "/tools/sound-review/designs/reel-air.wav"
+  },
+  "scatter-call": {
+    "id": "scatter-call",
+    "name": "Incoming call",
+    "description": "Two rounded telephone-style tones with a tiny electronic pop. Clear symbol identity.",
+    "duration": 0.52,
+    "url": "/tools/sound-review/designs/scatter-call.wav"
+  },
+  "scatter-metal": {
+    "id": "scatter-metal",
+    "name": "Scatter stamp",
+    "description": "A single heavy latch and a short bright metal ring. No phone tones.",
+    "duration": 0.38,
+    "url": "/tools/sound-review/designs/scatter-metal.wav"
+  },
+  "rotor": {
+    "id": "rotor",
+    "name": "Rotor pass",
+    "description": "A pulsing low rotor bed with a rising filtered wind texture. A 1.8-second audition.",
+    "duration": 1.8,
+    "url": "/tools/sound-review/designs/rotor.wav"
+  },
+  "siren": {
+    "id": "siren",
+    "name": "Police two-tone",
+    "description": "A sustained alternating siren sweep with a quiet low motor underneath. A 1.8-second audition.",
+    "duration": 1.8,
+    "url": "/tools/sound-review/designs/siren.wav"
+  },
+  "reward-coins": {
+    "id": "reward-coins",
+    "name": "Coin tumble",
+    "description": "Five scattered metallic coin strikes followed by one resolved bright bell. Irregular physical rhythm.",
+    "duration": 0.77,
+    "url": "/tools/sound-review/designs/reward-coins.wav"
+  },
+  "reward-brass": {
+    "id": "reward-brass",
+    "name": "Heist stamp",
+    "description": "One warm brass chord and a low punch. A single bold hit with no coin or arpeggio sequence.",
+    "duration": 0.67,
+    "url": "/tools/sound-review/designs/reward-brass.wav"
+  },
+  "counter-paper": {
+    "id": "counter-paper",
+    "name": "Paper roller",
+    "description": "Fast irregular paper flicks with a short stack tap at the end. A 1.5-second preview.",
+    "duration": 1.5,
+    "url": "/tools/sound-review/designs/counter-paper.wav"
+  },
+  "counter-metal": {
+    "id": "counter-metal",
+    "name": "Mechanical ticker",
+    "description": "Even dry metal ticks, slightly accelerating, with a closing register clack. A 1.5-second preview.",
+    "duration": 1.5,
+    "url": "/tools/sound-review/designs/counter-metal.wav"
+  },
+  "fuse-sparks": {
+    "id": "fuse-sparks",
+    "name": "Spark fuse",
+    "description": "Continuous fine hiss with sharp, irregular tiny sparks. Two-second preview; no melody.",
+    "duration": 2,
+    "url": "/tools/sound-review/designs/fuse-sparks.wav"
+  },
+  "fuse-grit": {
+    "id": "fuse-grit",
+    "name": "Coarse fuse",
+    "description": "A lower gritty burn, with a small sputter every quarter second. Two-second preview.",
+    "duration": 2,
+    "url": "/tools/sound-review/designs/fuse-grit.wav"
+  },
+  "ui-soft": {
+    "id": "ui-soft",
+    "name": "Soft UI pop",
+    "description": "A single rounded pop with a quick pitch drop. Short and non-metallic.",
+    "duration": 0.18,
+    "url": "/tools/sound-review/designs/ui-soft.wav"
+  },
+  "ui-click": {
+    "id": "ui-click",
+    "name": "Switch click",
+    "description": "One dry, high mechanical click with no pitched tail.",
+    "duration": 0.13,
+    "url": "/tools/sound-review/designs/ui-click.wav"
+  },
+  "impact-sub": {
+    "id": "impact-sub",
+    "name": "Sub impact",
+    "description": "One deep thump with a broad noise crack. Low and short.",
+    "duration": 0.47,
+    "url": "/tools/sound-review/designs/impact-sub.wav"
+  },
+  "impact-metal": {
+    "id": "impact-metal",
+    "name": "Metal slam",
+    "description": "A sharper steel impact with a resonant ringing tail. Bright and longer.",
+    "duration": 0.62,
+    "url": "/tools/sound-review/designs/impact-metal.wav"
+  },
+  "move-silk": {
+    "id": "move-silk",
+    "name": "Silk sweep",
+    "description": "A smooth rising air sweep. No impact or pitched reward notes.",
+    "duration": 0.46,
+    "url": "/tools/sound-review/designs/move-silk.wav"
+  },
+  "move-zip": {
+    "id": "move-zip",
+    "name": "Electric zip",
+    "description": "A sharply rising electronic glide with a thin scratch. Short, synthetic and pointed.",
+    "duration": 0.3,
+    "url": "/tools/sound-review/designs/move-zip.wav"
+  },
+  "rise-tremolo": {
+    "id": "rise-tremolo",
+    "name": "Pulsing charge",
+    "description": "Five tightening low pulses followed by a bright rise. Rhythmic rather than a sustained sweep.",
+    "duration": 0.98,
+    "url": "/tools/sound-review/designs/rise-tremolo.wav"
+  },
+  "rise-air": {
+    "id": "rise-air",
+    "name": "Air swell",
+    "description": "One continuous rising wash over a low tone. Smooth, with no repeated pulses.",
+    "duration": 0.98,
+    "url": "/tools/sound-review/designs/rise-air.wav"
+  },
+  "end-dry": {
+    "id": "end-dry",
+    "name": "Dry stop",
+    "description": "A neutral low stop tick. No sad melody or celebratory notes.",
+    "duration": 0.24,
+    "url": "/tools/sound-review/designs/end-dry.wav"
+  },
+  "end-fall": {
+    "id": "end-fall",
+    "name": "Power-down",
+    "description": "One short descending electronic glide, ending cleanly.",
+    "duration": 0.42,
+    "url": "/tools/sound-review/designs/end-fall.wav"
+  },
+  "star-lock": {
+    "id": "star-lock",
+    "name": "Star lock",
+    "description": "A mechanical click and a short bright harmonic ring. One compact event.",
+    "duration": 0.37,
+    "url": "/tools/sound-review/designs/star-lock.wav"
+  },
+  "star-chord": {
+    "id": "star-chord",
+    "name": "Star chord",
+    "description": "A rounded three-note chord struck at once, without a mechanical click.",
+    "duration": 0.49,
+    "url": "/tools/sound-review/designs/star-chord.wav"
+  }
+}

@@ -1,0 +1,151 @@
+{
+  "version": 2,
+  "decisions": {
+    "combo": {
+      "choice": "own-file",
+      "updatedAt": "2026-09-28T17:17:25.428Z",
+      "fileName": "gta-pick-up.mp3",
+      "assetUrl": "/tools/sound-review/uploads/combo-user.mp3"
+    },
+    "cascade": {
+      "choice": "option-0",
+      "updatedAt": "2026-09-28T17:14:29.556Z",
+      "designVersion": "legacy-v1"
+    },
+    "refill": {
+      "choice": "option-2",
+      "updatedAt": "2026-09-28T17:14:53.612Z",
+      "designVersion": "legacy-v1"
+    },
+    "heat1": {
+      "choice": "option-2",
+      "updatedAt": "2026-09-28T17:18:02.113Z",
+      "designVersion": "legacy-v1"
+    },
+    "dynamite": {
+      "choice": "option-0",
+      "updatedAt": "2026-09-28T17:18:11.697Z",
+      "designVersion": "legacy-v1"
+    },
+    "fuse": {
+      "choice": "option-0",
+      "updatedAt": "2026-09-28T17:18:20.487Z",
+      "designVersion": "legacy-v1"
+    },
+    "double": {
+      "choice": "silent",
+      "updatedAt": "2026-09-28T17:18:41.235Z",
+      "fileName": "gta-menu.mp3"
+    },
+    "held": {
+      "choice": "option-2",
+      "updatedAt": "2026-09-28T17:21:03.736Z",
+      "designVersion": "legacy-v1"
+    },
+    "spent": {
+      "choice": "option-0",
+      "updatedAt": "2026-09-28T17:21:12.459Z",
+      "designVersion": "legacy-v1"
+    },
+    "dud": {
+      "fileName": "biww-small-explosion-blast-impact-561896.mp3",
+      "choice": "own-file",
+      "updatedAt": "2026-09-28T17:23:02.116Z",
+      "assetUrl": "/tools/sound-review/uploads/dud-user.mp3"
+    },
+    "bonusstop": {
+      "choice": "option-1",
+      "updatedAt": "2026-09-28T17:23:45.210Z",
+      "designVersion": "legacy-v1"
+    },
+    "uierror": {
+      "choice": "option-0",
+      "updatedAt": "2026-09-28T17:24:24.955Z",
+      "designVersion": "legacy-v1"
+    },
+    "anticipation": {
+      "choice": "option-2",
+      "updatedAt": "2026-09-28T17:24:32.635Z",
+      "designVersion": "legacy-v1"
+    },
+    "miss": {
+      "choice": "option-2",
+      "updatedAt": "2026-09-28T17:24:37.221Z",
+      "designVersion": "legacy-v1"
+    },
+    "dead": {
+      "choice": "option-1",
+      "updatedAt": "2026-09-28T17:24:47.364Z",
+      "designVersion": "legacy-v1"
+    },
+    "truck": {
+      "choice": "keep-current",
+      "updatedAt": "2026-09-28T17:25:06.559Z"
+    },
+    "doors": {
+      "choice": "option-1",
+      "updatedAt": "2026-09-28T17:25:32.968Z",
+      "designVersion": "legacy-v1"
+    },
+    "piece": {
+      "choice": "option-1",
+      "updatedAt": "2026-09-28T17:25:50.133Z",
+      "designVersion": "legacy-v1"
+    },
+    "impact_high": {
+      "choice": "keep-current",
+      "updatedAt": "2026-09-28T17:26:24.304Z"
+    },
+    "impact_mid": {
+      "choice": "keep-current",
+      "updatedAt": "2026-09-28T17:26:33.831Z"
+    },
+    "impact_grand": {
+      "choice": "keep-current",
+      "updatedAt": "2026-09-28T17:26:35.603Z"
+    },
+    "impact_low": {
+      "choice": "option-1",
+      "updatedAt": "2026-09-28T17:26:43.654Z",
+      "designVersion": "legacy-v1"
+    },
+    "counter": {
+      "choice": "option-2",
+      "updatedAt": "2026-09-28T17:26:55.427Z",
+      "designVersion": "legacy-v1"
+    },
+    "result": {
+      "choice": "option-1",
+      "updatedAt": "2026-09-28T17:27:17.002Z",
+      "designVersion": "legacy-v1"
+    },
+    "foley_PISTOL_fire": {
+      "fileName": "gta-san-andreas-pistol-gun-shot-sound-effect.mp3",
+      "choice": "keep-current",
+      "assetUrl": "/tools/sound-review/uploads/pistol-single-shot.wav",
+      "confirmedBy": "User requested supplied pistol recording cut to one shot",
+      "updatedAt": "2026-09-28T17:43:55.400Z"
+    },
+    "foley_PISTOL_tink": {
+      "choice": "option-2",
+      "updatedAt": "2026-09-28T17:29:14.440Z",
+      "designVersion": "legacy-v1"
+    }
+  },
+  "archived": [
+    {
+      "id": "foley_PISTOL_tink",
+      "title": "PISTOL: tink",
+      "status": "Existing quiet texture",
+      "purpose": "Physical tink detail for PISTOL. Auditioned in isolation at the normal-game foley gain; actual playback depends on the authored animation and deduplication.",
+      "profile": "metal",
+      "current": {
+        "kind": "foley",
+        "symbol": "PISTOL",
+        "cue": "tink"
+      },
+      "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+      "group": "Symbol details"
+    }
+  ]
+}

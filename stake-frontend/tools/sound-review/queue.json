@@ -1,0 +1,1032 @@
+[
+  {
+    "id": "foley_PISTOL_fire",
+    "title": "Pistol · one shot",
+    "status": "One sound per symbol",
+    "purpose": "Your supplied recording, cut to exactly one shot. 0.290 seconds including the decay. The original repeated-shot file is preserved.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/tools/sound-review/uploads/pistol-single-shot.wav"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbols",
+    "designs": []
+  },
+  {
+    "id": "foley_CASH_riffle",
+    "title": "Cash",
+    "status": "One sound per symbol",
+    "purpose": "One sound for the cash winning animation. Choose one complete sound; no separate casing, impact or detail decisions.",
+    "profile": "whoosh",
+    "current": {
+      "kind": "foley",
+      "symbol": "CASH",
+      "cue": "riffle"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbols",
+    "designs": [
+      "cash-snap",
+      "cash-riffle"
+    ]
+  },
+  {
+    "id": "foley_AMMO_jolt",
+    "title": "Ammo",
+    "status": "One sound per symbol",
+    "purpose": "One sound for the ammo winning animation. Choose one complete sound; no separate casing, impact or detail decisions.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "AMMO",
+      "cue": "jolt"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbols",
+    "designs": [
+      "ammo-chamber",
+      "ammo-spill"
+    ]
+  },
+  {
+    "id": "foley_KNIFE_swish",
+    "title": "Knife",
+    "status": "One sound per symbol",
+    "purpose": "One sound for the knife winning animation. Choose one complete sound; no separate casing, impact or detail decisions.",
+    "profile": "whoosh",
+    "current": {
+      "kind": "foley",
+      "symbol": "KNIFE",
+      "cue": "swish"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbols",
+    "designs": [
+      "knife-draw",
+      "knife-cut"
+    ]
+  },
+  {
+    "id": "foley_DUFFEL_thump",
+    "title": "Duffel bag",
+    "status": "One sound per symbol",
+    "purpose": "One sound for the duffel bag winning animation. Choose one complete sound; no separate casing, impact or detail decisions.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "DUFFEL",
+      "cue": "thump"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbols",
+    "designs": [
+      "duffel-drop",
+      "duffel-zip"
+    ]
+  },
+  {
+    "id": "foley_DIAMOND_chime",
+    "title": "Diamond",
+    "status": "One sound per symbol",
+    "purpose": "One sound for the diamond winning animation. Choose one complete sound; no separate casing, impact or detail decisions.",
+    "profile": "metal",
+    "current": {
+      "kind": "foley",
+      "symbol": "DIAMOND",
+      "cue": "chime"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbols",
+    "designs": [
+      "diamond-prism",
+      "diamond-spark"
+    ]
+  },
+  {
+    "id": "foley_BRASS_punch",
+    "title": "Brass knuckles",
+    "status": "One sound per symbol",
+    "purpose": "One sound for the brass knuckles winning animation. Choose one complete sound; no separate casing, impact or detail decisions.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "BRASS",
+      "cue": "punch"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbols",
+    "designs": [
+      "brass-punch",
+      "brass-clang"
+    ]
+  },
+  {
+    "id": "foley_BIKE_rev",
+    "title": "Bike",
+    "status": "One sound per symbol",
+    "purpose": "One sound for the bike winning animation. Choose one complete sound; no separate casing, impact or detail decisions.",
+    "profile": "engine",
+    "current": {
+      "kind": "foley",
+      "symbol": "BIKE",
+      "cue": "rev"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbols",
+    "designs": [
+      "bike-rev",
+      "bike-launch"
+    ]
+  },
+  {
+    "id": "foley_PHONE_SCATTER_thud",
+    "title": "Scatter truck",
+    "status": "One sound per symbol",
+    "purpose": "One sound for the scatter truck winning animation. Choose one complete sound; no separate casing, impact or detail decisions.",
+    "profile": "impact",
+    "current": {
+      "kind": "foley",
+      "symbol": "PHONE_SCATTER",
+      "cue": "thud"
+    },
+    "evidence": "src/audio/SymbolFoley.ts; authored skeletal cues",
+    "group": "Symbols",
+    "designs": [
+      "truck-latch",
+      "radio-chirp"
+    ]
+  },
+  {
+    "id": "combo",
+    "title": "Winning symbol combination",
+    "status": "Missing reward layer",
+    "purpose": "One clear reward accent when a winning cluster highlights. Keep the physical symbol texture underneath. Start here: choose the main sound language before individual symbols.",
+    "profile": "reward",
+    "current": null,
+    "evidence": "src/audio.ts: cluster_win does nothing; PixiGameScene.playCombinationAnimation draws links only.",
+    "group": "Gameplay",
+    "designs": [
+      "reward-coins",
+      "reward-brass"
+    ]
+  },
+  {
+    "id": "cascade",
+    "title": "Consecutive winning cascade",
+    "status": "Missing dedicated layer",
+    "purpose": "Short melodic step for each additional winning cascade; same motif, modest pitch progression, reset each round.",
+    "profile": "ladder",
+    "current": null,
+    "evidence": "No cascade-index audio motif in EventAudioBus.route.",
+    "group": "Gameplay",
+    "designs": [
+      "reward-coins",
+      "star-chord"
+    ]
+  },
+  {
+    "id": "refill",
+    "title": "Tumble refill / settle",
+    "status": "Missing dedicated layer",
+    "purpose": "Brief falling-air movement and a soft settled tick as the replacement symbols finish dropping. Avoid a sound for every cell.",
+    "profile": "whoosh",
+    "current": null,
+    "evidence": "tumble_drop has no audio route; symbol animation details may still play.",
+    "group": "Gameplay",
+    "designs": [
+      "move-silk",
+      "move-zip"
+    ]
+  },
+  {
+    "id": "heat1",
+    "title": "First Wanted star",
+    "status": "Missing explicit cue",
+    "purpose": "A compact star-lock ping when the first earned star fills. Higher levels already use heat_rise / siren.",
+    "profile": "metal",
+    "current": null,
+    "evidence": "heat_advance only fires at to >= 2.",
+    "group": "Gameplay",
+    "designs": [
+      "star-lock",
+      "star-chord"
+    ]
+  },
+  {
+    "id": "dynamite",
+    "title": "Dynamite landing",
+    "status": "Emitted but unhandled",
+    "purpose": "A dry mechanical landing before the fuse starts.",
+    "profile": "impact",
+    "current": null,
+    "evidence": "BonusView emits this moment; main.ts onGetawayCue handles only boom.",
+    "group": "Getaway",
+    "designs": [
+      "impact-sub",
+      "impact-metal"
+    ]
+  },
+  {
+    "id": "fuse",
+    "title": "Burning fuse",
+    "status": "Emitted but unhandled",
+    "purpose": "A continuous fizz for the actual arming duration, cancelled at explosion or dismissal.",
+    "profile": "noise",
+    "current": null,
+    "evidence": "BonusView emits this moment; main.ts onGetawayCue handles only boom.",
+    "group": "Getaway",
+    "designs": [
+      "fuse-sparks",
+      "fuse-grit"
+    ]
+  },
+  {
+    "id": "double",
+    "title": "Each gold-bar ×2",
+    "status": "Emitted but unhandled",
+    "purpose": "One short bright accent exactly as each affected value doubles; pitch by reveal order.",
+    "profile": "ladder",
+    "current": null,
+    "evidence": "BonusView emits this moment; main.ts onGetawayCue handles only boom.",
+    "group": "Getaway",
+    "designs": [
+      "star-lock",
+      "ui-soft"
+    ]
+  },
+  {
+    "id": "held",
+    "title": "Respins replenished / held",
+    "status": "Emitted but unhandled",
+    "purpose": "A compact confirmation when the respin meter is held or replenished.",
+    "profile": "metal",
+    "current": null,
+    "evidence": "BonusView emits this moment; main.ts onGetawayCue handles only boom.",
+    "group": "Getaway",
+    "designs": [
+      "star-chord",
+      "ui-click"
+    ]
+  },
+  {
+    "id": "spent",
+    "title": "Respin consumed",
+    "status": "Emitted but unhandled",
+    "purpose": "A quiet mechanical decrement; distinct from a reward.",
+    "profile": "tick",
+    "current": null,
+    "evidence": "BonusView emits this moment; main.ts onGetawayCue handles only boom.",
+    "group": "Getaway",
+    "designs": [
+      "ui-click",
+      "end-dry"
+    ]
+  },
+  {
+    "id": "dud",
+    "title": "Dynamite without a target",
+    "status": "Emitted but unhandled",
+    "purpose": "A dry, neutral dud click. No winning flourish.",
+    "profile": "tick",
+    "current": null,
+    "evidence": "BonusView emits this moment; main.ts onGetawayCue handles only boom.",
+    "group": "Getaway",
+    "designs": [
+      "end-dry",
+      "end-fall"
+    ]
+  },
+  {
+    "id": "bonusspin",
+    "title": "Getaway spin start",
+    "status": "Emitted but unhandled",
+    "purpose": "A short mechanical start cue for the bonus reels.",
+    "profile": "whoosh",
+    "current": null,
+    "evidence": "BonusView emits this moment; main.ts onGetawayCue handles only boom.",
+    "group": "Getaway",
+    "designs": [
+      "reel-motor",
+      "reel-air"
+    ]
+  },
+  {
+    "id": "bonusstop",
+    "title": "Getaway column stop",
+    "status": "Emitted but unhandled",
+    "purpose": "A restrained click at each bonus column stop; below the gold-bar landing.",
+    "profile": "impact",
+    "current": null,
+    "evidence": "BonusView emits this moment; main.ts onGetawayCue handles only boom.",
+    "group": "Getaway",
+    "designs": [
+      "ui-click",
+      "ammo-chamber"
+    ]
+  },
+  {
+    "id": "uierror",
+    "title": "Unavailable action / error",
+    "status": "Optional proposal",
+    "purpose": "A quiet neutral error tick, only when an action is rejected. Confirm the exact UI trigger before implementation.",
+    "profile": "tick",
+    "current": null,
+    "evidence": "New design proposal, not a confirmed missing runtime callback.",
+    "group": "Interface",
+    "designs": [
+      "ui-soft",
+      "ui-click"
+    ]
+  },
+  {
+    "id": "anticipation",
+    "title": "Scatter anticipation",
+    "status": "Existing procedural / mixed",
+    "purpose": "Rising cue while the anticipation reel is visibly slowing.",
+    "profile": "riser",
+    "current": {
+      "kind": "method",
+      "method": "anticipation",
+      "args": [
+        false
+      ]
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects",
+    "designs": [
+      "rise-tremolo",
+      "rise-air"
+    ]
+  },
+  {
+    "id": "miss",
+    "title": "Anticipation ends without bonus",
+    "status": "Existing procedural / mixed",
+    "purpose": "Existing descending sting; consider shortening or removing it.",
+    "profile": "down",
+    "current": {
+      "kind": "method",
+      "method": "anticipationMiss",
+      "args": []
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects",
+    "designs": [
+      "end-dry",
+      "end-fall"
+    ]
+  },
+  {
+    "id": "dead",
+    "title": "Getaway empty spin",
+    "status": "Existing procedural / mixed",
+    "purpose": "Existing losing-spin cue; assess whether its weight fits the moment.",
+    "profile": "down",
+    "current": {
+      "kind": "method",
+      "method": "deadSpin",
+      "args": [
+        1
+      ]
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects",
+    "designs": [
+      "end-dry",
+      "end-fall"
+    ]
+  },
+  {
+    "id": "truck",
+    "title": "Truck drive-off",
+    "status": "Existing procedural / mixed",
+    "purpose": "Engine movement as trucks drive away into the bonus.",
+    "profile": "engine",
+    "current": {
+      "kind": "method",
+      "method": "truckDriveOff",
+      "args": []
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects",
+    "designs": [
+      "bike-launch",
+      "reel-motor"
+    ]
+  },
+  {
+    "id": "doors",
+    "title": "Truck doors",
+    "status": "Existing procedural / mixed",
+    "purpose": "Latch / door impact as the truck opens.",
+    "profile": "impact",
+    "current": {
+      "kind": "method",
+      "method": "truckDoors",
+      "args": []
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects",
+    "designs": [
+      "truck-latch",
+      "impact-metal"
+    ]
+  },
+  {
+    "id": "piece",
+    "title": "Collection piece movement",
+    "status": "Existing procedural / mixed",
+    "purpose": "Whoosh during the collection reveal.",
+    "profile": "whoosh",
+    "current": {
+      "kind": "method",
+      "method": "pieceWhoosh",
+      "args": []
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects",
+    "designs": [
+      "move-silk",
+      "move-zip"
+    ]
+  },
+  {
+    "id": "impact_low",
+    "title": "Banner impact: low",
+    "status": "Existing procedural / mixed",
+    "purpose": "Layer under the corresponding win-banner reveal.",
+    "profile": "impact",
+    "current": {
+      "kind": "method",
+      "method": "bannerImpact",
+      "args": [
+        "low"
+      ]
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects",
+    "designs": [
+      "impact-sub",
+      "reward-brass"
+    ]
+  },
+  {
+    "id": "impact_mid",
+    "title": "Banner impact: mid",
+    "status": "Existing procedural / mixed",
+    "purpose": "Layer under the corresponding win-banner reveal.",
+    "profile": "impact",
+    "current": {
+      "kind": "method",
+      "method": "bannerImpact",
+      "args": [
+        "mid"
+      ]
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects",
+    "designs": [
+      "reward-brass",
+      "impact-metal"
+    ]
+  },
+  {
+    "id": "impact_high",
+    "title": "Banner impact: high",
+    "status": "Existing procedural / mixed",
+    "purpose": "Layer under the corresponding win-banner reveal.",
+    "profile": "impact",
+    "current": {
+      "kind": "method",
+      "method": "bannerImpact",
+      "args": [
+        "high"
+      ]
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects",
+    "designs": [
+      "reward-brass",
+      "impact-metal"
+    ]
+  },
+  {
+    "id": "impact_grand",
+    "title": "Banner impact: grand",
+    "status": "Existing procedural / mixed",
+    "purpose": "Layer under the corresponding win-banner reveal.",
+    "profile": "impact",
+    "current": {
+      "kind": "method",
+      "method": "bannerImpact",
+      "args": [
+        "grand"
+      ]
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects",
+    "designs": [
+      "reward-brass",
+      "impact-metal"
+    ]
+  },
+  {
+    "id": "counter",
+    "title": "Money counter (2-second demo)",
+    "status": "Existing procedural / mixed",
+    "purpose": "Existing count loop and stop accent, demonstrated for two seconds.",
+    "profile": "counter",
+    "current": {
+      "kind": "method",
+      "method": "startWinCounter",
+      "args": []
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects",
+    "designs": [
+      "counter-paper",
+      "counter-metal"
+    ]
+  },
+  {
+    "id": "result",
+    "title": "Getaway result (4-second demo)",
+    "status": "Existing procedural / mixed",
+    "purpose": "Current result opening, counter, tier accent, end and exit. Demonstration timing, not gameplay timing.",
+    "profile": "reward",
+    "current": {
+      "kind": "method",
+      "method": "resultDemo",
+      "args": []
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects",
+    "designs": [
+      "reward-coins",
+      "reward-brass"
+    ]
+  },
+  {
+    "id": "helicopter",
+    "title": "Maximum chase heat",
+    "status": "Existing procedural / mixed",
+    "purpose": "Existing siren plus procedural rotor at maximum bonus heat.",
+    "profile": "engine",
+    "current": {
+      "kind": "method",
+      "method": "setBonusHeat",
+      "args": [
+        3
+      ]
+    },
+    "evidence": "src/audio.ts / src/audio/GetawayResultSound.ts",
+    "group": "Current effects",
+    "designs": [
+      "rotor",
+      "siren"
+    ]
+  },
+  {
+    "id": "track_new_reel_stop",
+    "title": "new reel stop",
+    "status": "Existing file (routing varies)",
+    "purpose": "Current base-reel impact callback. Active through PixiGameScene.onReelImpact.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/new reel stop sound.mp3"
+    },
+    "evidence": "Track new_reel_stop → assets/new sound/new reel stop sound.mp3",
+    "group": "Other effects",
+    "designs": [
+      "ui-click",
+      "star-lock"
+    ]
+  },
+  {
+    "id": "track_reel_loop",
+    "title": "reel loop",
+    "status": "Existing file (routing varies)",
+    "purpose": "Current base reel loop, stopped on the final column impact.",
+    "profile": "counter",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new new sound/slot reel sound is a loop too so feel free to adapt it for turbo spins etc.mp3"
+    },
+    "evidence": "Track reel_loop → assets/new new sound/slot reel sound is a loop too so feel free to adapt it for turbo spins etc.mp3",
+    "group": "Other effects",
+    "designs": []
+  },
+  {
+    "id": "track_tumble_pop",
+    "title": "tumble pop",
+    "status": "Existing file (routing varies)",
+    "purpose": "Current removal accent for winning symbols.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/tumble_pop.mp3"
+    },
+    "evidence": "Track tumble_pop → assets/audio/tumble_pop.mp3",
+    "group": "Other effects",
+    "designs": [
+      "ui-click",
+      "star-lock"
+    ]
+  },
+  {
+    "id": "track_wild_sound",
+    "title": "wild sound",
+    "status": "Existing file (routing varies)",
+    "purpose": "Current WILD landing accent.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/wild sound.mp3"
+    },
+    "evidence": "Track wild_sound → assets/new sound/wild sound.mp3",
+    "group": "Other effects",
+    "designs": [
+      "ui-click",
+      "star-lock"
+    ]
+  },
+  {
+    "id": "track_poker_machine_win",
+    "title": "poker machine win",
+    "status": "Existing file (routing varies)",
+    "purpose": "Transformation accent; invoked from multiple paths. Check overlapping playback in the integration pass.",
+    "profile": "reward",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/poker_machine_win.mp3"
+    },
+    "evidence": "Track poker_machine_win → assets/new sound/poker_machine_win.mp3",
+    "group": "Other effects",
+    "designs": [
+      "reward-coins",
+      "reward-brass"
+    ]
+  },
+  {
+    "id": "track_sticky_gold_bar",
+    "title": "sticky gold bar",
+    "status": "Existing file (routing varies)",
+    "purpose": "Current gold-bar / safe landing and Wanted-star sequence accent.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new new sound/sound for sticky gold bar in getaway mode.mp3"
+    },
+    "evidence": "Track sticky_gold_bar → assets/new new sound/sound for sticky gold bar in getaway mode.mp3",
+    "group": "Other effects",
+    "designs": [
+      "ui-click",
+      "star-lock"
+    ]
+  },
+  {
+    "id": "track_getaway_explosive",
+    "title": "getaway explosive",
+    "status": "Existing file (routing varies)",
+    "purpose": "Current dynamite explosion at the blast frame.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new new sound/sound for explosive multiples in the getaway play once per explosive.mp3"
+    },
+    "evidence": "Track getaway_explosive → assets/new new sound/sound for explosive multiples in the getaway play once per explosive.mp3",
+    "group": "Other effects",
+    "designs": [
+      "impact-sub",
+      "impact-metal"
+    ]
+  },
+  {
+    "id": "track_getaway_intro",
+    "title": "getaway intro",
+    "status": "Existing file (routing varies)",
+    "purpose": "Bonus entry sting; played at 1.25× speed in game.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new new sound/sound for getaway intro play in same time as the banner appear that give the cinematic look.mp3"
+    },
+    "evidence": "Track getaway_intro → assets/new new sound/sound for getaway intro play in same time as the banner appear that give the cinematic look.mp3",
+    "group": "Other effects",
+    "designs": [
+      "reward-brass",
+      "rise-tremolo"
+    ]
+  },
+  {
+    "id": "track_typewriter",
+    "title": "typewriter",
+    "status": "Existing file (routing varies)",
+    "purpose": "Current typing accompaniment for bonus intro.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new new sound/type writer sound.mp3"
+    },
+    "evidence": "Track typewriter → assets/new new sound/type writer sound.mp3",
+    "group": "Other effects",
+    "designs": [
+      "counter-paper",
+      "counter-metal"
+    ]
+  },
+  {
+    "id": "track_win_big_lowest",
+    "title": "win big lowest",
+    "status": "Existing file (routing varies)",
+    "purpose": "Lowest large-win banner sound.",
+    "profile": "reward",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new new sound/sound for lowest paying winning banner animation.mp3"
+    },
+    "evidence": "Track win_big_lowest → assets/new new sound/sound for lowest paying winning banner animation.mp3",
+    "group": "Other effects",
+    "designs": [
+      "reward-coins",
+      "reward-brass"
+    ]
+  },
+  {
+    "id": "track_win_mega_grand",
+    "title": "win mega grand",
+    "status": "Existing file (routing varies)",
+    "purpose": "Shared middle large-win banner recording.",
+    "profile": "reward",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new new sound/sound for 2 and 3 biggest winning banner.mp3"
+    },
+    "evidence": "Track win_mega_grand → assets/new new sound/sound for 2 and 3 biggest winning banner.mp3",
+    "group": "Other effects",
+    "designs": [
+      "reward-coins",
+      "reward-brass"
+    ]
+  },
+  {
+    "id": "track_win_max",
+    "title": "win max",
+    "status": "Existing file (routing varies)",
+    "purpose": "Largest win-banner recording.",
+    "profile": "reward",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new new sound/sound for biggest winning banner.mp3"
+    },
+    "evidence": "Track win_max → assets/new new sound/sound for biggest winning banner.mp3",
+    "group": "Other effects",
+    "designs": [
+      "reward-coins",
+      "reward-brass"
+    ]
+  },
+  {
+    "id": "track_ui_click",
+    "title": "ui click",
+    "status": "Existing file (routing varies)",
+    "purpose": "Loaded track name; availability alone does not establish active gameplay use. See source routing during integration.",
+    "profile": "impact",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/ui_click.mp3"
+    },
+    "evidence": "Track ui_click → assets/audio/ui_click.mp3",
+    "group": "Other effects",
+    "designs": [
+      "ui-click",
+      "star-lock"
+    ]
+  },
+  {
+    "id": "track_bg_base",
+    "title": "bg base",
+    "status": "Existing file (routing varies)",
+    "purpose": "Music / radio track. Review separately from gameplay effects.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/turbo_night.mp3"
+    },
+    "evidence": "Track bg_base → assets/audio/turbo_night.mp3",
+    "group": "Music",
+    "designs": []
+  },
+  {
+    "id": "track_bg_bonus",
+    "title": "bg bonus",
+    "status": "Existing file (routing varies)",
+    "purpose": "Current background loop for the bonus.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new new sound/continuous looping getaway background sound play after the intro sound.mp3"
+    },
+    "evidence": "Track bg_bonus → assets/new new sound/continuous looping getaway background sound play after the intro sound.mp3",
+    "group": "Music",
+    "designs": []
+  },
+  {
+    "id": "track_sunset_synths",
+    "title": "sunset synths",
+    "status": "Existing file (routing varies)",
+    "purpose": "Music / radio track. Review separately from gameplay effects.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/sunset_synths.mp3"
+    },
+    "evidence": "Track sunset_synths → assets/audio/sunset_synths.mp3",
+    "group": "Music",
+    "designs": []
+  },
+  {
+    "id": "track_vice_nights",
+    "title": "vice nights",
+    "status": "Existing file (routing varies)",
+    "purpose": "Music / radio track. Review separately from gameplay effects.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/audio/vice_nights.mp3"
+    },
+    "evidence": "Track vice_nights → assets/audio/vice_nights.mp3",
+    "group": "Music",
+    "designs": []
+  },
+  {
+    "id": "track_open_lines",
+    "title": "open lines",
+    "status": "Existing file (routing varies)",
+    "purpose": "Music / radio track. Review separately from gameplay effects.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/Open Lines 97.mp3"
+    },
+    "evidence": "Track open_lines → assets/Open Lines 97.mp3",
+    "group": "Music",
+    "designs": []
+  },
+  {
+    "id": "track_milestone2_girl1",
+    "title": "milestone2 girl1",
+    "status": "Existing file (routing varies)",
+    "purpose": "Character milestone voice. Review each voice separately; keep performance, pacing and loudness consistent.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/milestone2 girl1.mp3"
+    },
+    "evidence": "Track milestone2_girl1 → assets/new sound/milestone2 girl1.mp3",
+    "group": "Voices",
+    "designs": []
+  },
+  {
+    "id": "track_mileston3_girl1",
+    "title": "mileston3 girl1",
+    "status": "Existing file (routing varies)",
+    "purpose": "Character milestone voice. Review each voice separately; keep performance, pacing and loudness consistent.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/mileston3 girl1.mp3"
+    },
+    "evidence": "Track mileston3_girl1 → assets/new sound/mileston3 girl1.mp3",
+    "group": "Voices",
+    "designs": []
+  },
+  {
+    "id": "track_mileston4_girl1",
+    "title": "mileston4 girl1",
+    "status": "Existing file (routing varies)",
+    "purpose": "Character milestone voice. Review each voice separately; keep performance, pacing and loudness consistent.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/mileston4 girl1.mp3"
+    },
+    "evidence": "Track mileston4_girl1 → assets/new sound/mileston4 girl1.mp3",
+    "group": "Voices",
+    "designs": []
+  },
+  {
+    "id": "track_milstone1_girl2",
+    "title": "milstone1 girl2",
+    "status": "Existing file (routing varies)",
+    "purpose": "Character milestone voice. Review each voice separately; keep performance, pacing and loudness consistent.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/milstone1 girl2.mp3"
+    },
+    "evidence": "Track milstone1_girl2 → assets/new sound/milstone1 girl2.mp3",
+    "group": "Voices",
+    "designs": []
+  },
+  {
+    "id": "track_milestone2_girl2",
+    "title": "milestone2 girl2",
+    "status": "Existing file (routing varies)",
+    "purpose": "Character milestone voice. Review each voice separately; keep performance, pacing and loudness consistent.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/milestone2 girl2.mp3"
+    },
+    "evidence": "Track milestone2_girl2 → assets/new sound/milestone2 girl2.mp3",
+    "group": "Voices",
+    "designs": []
+  },
+  {
+    "id": "track_mileston3_girl2",
+    "title": "mileston3 girl2",
+    "status": "Existing file (routing varies)",
+    "purpose": "Character milestone voice. Review each voice separately; keep performance, pacing and loudness consistent.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/mileston3 girl2.mp3"
+    },
+    "evidence": "Track mileston3_girl2 → assets/new sound/mileston3 girl2.mp3",
+    "group": "Voices",
+    "designs": []
+  },
+  {
+    "id": "track_mileston4_girl2",
+    "title": "mileston4 girl2",
+    "status": "Existing file (routing varies)",
+    "purpose": "Character milestone voice. Review each voice separately; keep performance, pacing and loudness consistent.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/mileston4 girl2 (2).mp3"
+    },
+    "evidence": "Track mileston4_girl2 → assets/new sound/mileston4 girl2 (2).mp3",
+    "group": "Voices",
+    "designs": []
+  },
+  {
+    "id": "track_mileston1_girl3",
+    "title": "mileston1 girl3",
+    "status": "Existing file (routing varies)",
+    "purpose": "Character milestone voice. Review each voice separately; keep performance, pacing and loudness consistent.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/mileston1 girl3.mp3"
+    },
+    "evidence": "Track mileston1_girl3 → assets/new sound/mileston1 girl3.mp3",
+    "group": "Voices",
+    "designs": []
+  },
+  {
+    "id": "track_mileston2_girl3",
+    "title": "mileston2 girl3",
+    "status": "Existing file (routing varies)",
+    "purpose": "Character milestone voice. Review each voice separately; keep performance, pacing and loudness consistent.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/mileston2 girl3.mp3"
+    },
+    "evidence": "Track mileston2_girl3 → assets/new sound/mileston2 girl3.mp3",
+    "group": "Voices",
+    "designs": []
+  },
+  {
+    "id": "track_mileston3_girl3",
+    "title": "mileston3 girl3",
+    "status": "Existing file (routing varies)",
+    "purpose": "Character milestone voice. Review each voice separately; keep performance, pacing and loudness consistent.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/mileston3 girl3.mp3"
+    },
+    "evidence": "Track mileston3_girl3 → assets/new sound/mileston3 girl3.mp3",
+    "group": "Voices",
+    "designs": []
+  },
+  {
+    "id": "track_mileston4_girl3",
+    "title": "mileston4 girl3",
+    "status": "Existing file (routing varies)",
+    "purpose": "Character milestone voice. Review each voice separately; keep performance, pacing and loudness consistent.",
+    "profile": "source",
+    "current": {
+      "kind": "file",
+      "url": "/assets/new sound/mileston4 girl3.mp3"
+    },
+    "evidence": "Track mileston4_girl3 → assets/new sound/mileston4 girl3.mp3",
+    "group": "Voices",
+    "designs": []
+  }
+]
