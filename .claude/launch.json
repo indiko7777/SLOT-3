@@ -29,6 +29,26 @@
         "--strictPort"
       ],
       "port": 5181
+    },
+    {
+      "name": "upload-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "stake-frontend/tools/preview-release.mjs",
+        "UPLOAD_TO_STAKE/frontend"
+      ],
+      "port": 5177
+    },
+    {
+      "name": "mock-rgs",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "stake-frontend",
+        "run",
+        "mock-rgs"
+      ],
+      "port": 8787
     }
   ]
 }

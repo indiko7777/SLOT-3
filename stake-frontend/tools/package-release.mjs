@@ -8,13 +8,10 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const build = path.join(root,'stake-frontend/dist');
 if (!fs.existsSync(path.join(build,'index.html'))) throw new Error('Run npm run check before packaging.');
 const output = path.join(root,'release',new Date().toISOString().replaceAll(':','-').replace(/\.\d+Z$/,'Z'));
-const unused = new Set([
-  'assets/miami_loadscreen.webp', 'assets/slot3_bg.webp', 'assets/miami_marina_gameplay_v1.webp',
-  'assets/symbols/packed.png', 'assets/symbols/cyan_car_wild.png', 'assets/highway_loop.jpg', 'assets/wanted_star.webp',
-  'assets/getaway_building.webp', 'assets/getaway_palm.webp', 'assets/chase_city.webp'
-]);
-// This sample bank has no runtime instance; reviewed choices live in audio/approved.
-const isUnused = file => unused.has(file) || file.startsWith('assets/audio/getaway/');
+// Dead images were deleted from public/ outright. This sample bank stays in the
+// repo (tests cover it) but has no runtime instance; reviewed choices live in
+// audio/approved.
+const isUnused = file => file.startsWith('assets/audio/getaway/');
 function files(dir, prefix='') {
   return fs.readdirSync(dir,{withFileTypes:true}).flatMap(item=>{
     const relative=prefix+item.name;
@@ -54,5 +51,12 @@ for(const name of ['frontend','math']) {
   execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',`Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::CreateFromDirectory(${dir}, ${zip}, [System.IO.Compression.CompressionLevel]::Optimal, $false)`],{windowsHide:true,stdio:'pipe'});
 }
 fs.writeFileSync(path.join(root,'release','LATEST.txt'),output+'\n');
+// Stable, obvious upload folder: exactly what goes into Stake ACP, nothing else.
+// Uploading stake-frontend/ itself ships ~9,400 files (node_modules, src, tools)
+// and takes hours; this is the built game only.
+const upload = path.join(root,'UPLOAD_TO_STAKE');
+fs.rmSync(upload,{recursive:true,force:true});
+for(const name of ['frontend','math']) fs.cpSync(path.join(output,name),path.join(upload,name),{recursive:true});
 console.log(output);
+console.log(`Upload folder refreshed: ${upload}`);
 for(const name of ['frontend','math']) console.log(`${name}: ${manifest.files.filter(f=>f.bundle===name).reduce((n,f)=>n+f.bytes,0)} bytes, archive ready`);
