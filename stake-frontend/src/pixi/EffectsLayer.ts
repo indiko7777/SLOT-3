@@ -5,9 +5,9 @@ import { UI_FONT, DISPLAY_FONT } from "../typography";
 import type { Position } from "../domain";
 import type { Rect } from "./types";
 import { makeText } from "./text";
-import { tween, wait, easeOutBack, easeOutCubic, easeInOutCubic, easeOutElastic, linear, ambientTicker, getTimeScale } from "./tween";
-import { pulseBloom, pulseChromaticAberration } from "../vfx/Shaders";
+import { tween, wait, easeOutBack, easeOutCubic, easeInOutCubic, easeOutElastic, linear, ambientTicker, getTimeScale, simulate } from "./tween";
 import { getExtraTexture } from "./assets";
+import { raysTexture, softGlowTexture } from "./fxTextures";
 import { winCountFormatter } from "./winCount";
 
 export class EffectsLayer extends Container {
@@ -188,7 +188,7 @@ export class EffectsLayer extends Container {
           // Stacking logic for Grand and Max wins
           const colIndex = Math.max(0, Math.min(this.numCols - 1, Math.floor(p.view.x / colWidth)));
           const currentPile = this.pileHeights[colIndex] ?? 0;
-          
+
           const bottomLimit = screenHeight;
           const pileOffset = p.pileOffset ?? 0;
           const landingY = bottomLimit - pileOffset - currentPile;
@@ -463,7 +463,7 @@ export class EffectsLayer extends Container {
         const dist = d.speed * p;
         coin.x = cx + Math.cos(d.angle) * dist;
         coin.y = cy + Math.sin(d.angle) * dist + 100 * p * p; // gravity
-        coin.rotation += d.spin * 0.012;
+        coin.rotation = d.spin * 0.6 * p;
         coin.scale.set((d.size / 8) * (1 - p * 0.4));
       });
     }, easeOutCubic);
@@ -539,19 +539,19 @@ export class EffectsLayer extends Container {
       });
     }
 
-    await tween(800, (progress) => {
+    await simulate(800, (k, progress) => {
       bills.forEach((bill, index) => {
         const v = velocities[index];
         const fadeIn = Math.min(1, progress * 5);
         const fadeOut = progress > 0.55 ? 1 - (progress - 0.55) / 0.45 : 1;
         bill.alpha = fadeIn * fadeOut;
-        bill.x += v.vx * 0.014;
-        bill.y += v.vy * 0.014;
-        v.vy += 280 * 0.014; // gravity
-        bill.rotation += v.spin * 0.014;
+        bill.x += v.vx * 0.014 * k;
+        bill.y += v.vy * 0.014 * k;
+        v.vy += 280 * 0.014 * k; // gravity
+        bill.rotation += v.spin * 0.014 * k;
         bill.scale.set(1 - progress * 0.3);
       });
-    }, linear);
+    });
     bills.forEach((bill) => {
       if (bill instanceof Graphics) {
         this.returnCoin(bill);
@@ -609,17 +609,17 @@ export class EffectsLayer extends Container {
       vy: -(60 + Math.random() * 100),
     }));
 
-    await tween(600, (progress) => {
+    await simulate(600, (k, progress) => {
       dots.forEach((dot, i) => {
         const v = velocities[i];
         const fadeIn = Math.min(1, progress * 6);
         const fadeOut = progress > 0.5 ? 1 - (progress - 0.5) / 0.5 : 1;
         dot.alpha = fadeIn * fadeOut * 0.9;
-        dot.x += v.vx * 0.014;
-        dot.y += v.vy * 0.014;
-        v.vy += 200 * 0.014;
+        dot.x += v.vx * 0.014 * k;
+        dot.y += v.vy * 0.014 * k;
+        v.vy += 200 * 0.014 * k;
       });
-    }, linear);
+    });
     dots.forEach((d) => d.destroy());
   }
 
@@ -659,19 +659,22 @@ export class EffectsLayer extends Container {
    *  CLUSTER LINK — glowing trails connecting
    *  matching symbols so you SEE the cluster
    * ───────────────────────────────────────────────── */
-  async clusterLink(centers: Array<{ x: number; y: number }>, color: number, turbo: boolean): Promise<void> {
+  async clusterLink(centers: Array<{ x: number; y: number }>, color: number, turbo: boolean, given?: Array<[number, number]>): Promise<void> {
     if (centers.length < 2) return;
 
     const group = new Container();
     const glow = new Graphics();
     const line = new Graphics();
+    glow.blendMode = "add";
+    line.blendMode = "add";
     const sparks: Graphics[] = [];
     group.addChild(glow, line);
     this.addChild(group);
 
-    // Build adjacency pairs (connect neighbors in the cluster)
-    const pairs: Array<[number, number]> = [];
-    for (let i = 0; i < centers.length; i++) {
+    // Adjacency pairs: the caller's grid-true neighbours when given, else a
+    // pixel-distance guess.
+    const pairs: Array<[number, number]> = given ? [...given] : [];
+    if (!given) for (let i = 0; i < centers.length; i++) {
       for (let j = i + 1; j < centers.length; j++) {
         const dx = Math.abs(centers[i].x - centers[j].x);
         const dy = Math.abs(centers[i].y - centers[j].y);
@@ -709,8 +712,8 @@ export class EffectsLayer extends Container {
         glow.moveTo(ax, ay).lineTo(bx, by);
         line.moveTo(ax, ay).lineTo(bx, by);
       }
-      glow.stroke({ color, width: 10, alpha: 0.2 * p });
-      line.stroke({ color: 0xffffff, width: 2, alpha: 0.7 * p });
+      glow.stroke({ color, width: 12, alpha: 0.35 * p });
+      line.stroke({ color: 0xffffff, width: 2.5, alpha: 0.8 * p });
     }, easeOutCubic);
 
     // Phase 2: Lines pulse + sparks travel along them
@@ -737,6 +740,49 @@ export class EffectsLayer extends Container {
       group.alpha = 1 - p;
     });
 
+    group.destroy({ children: true });
+  }
+
+  /**
+   * A cluster's payout popping up on the cluster: punches in with an
+   * overshoot over a soft accent bloom, hangs to be read, drifts up and fades.
+   */
+  async floatValue(x: number, y: number, text: string, color: number, rect: Rect, turbo: boolean): Promise<void> {
+    const size = Math.max(22, Math.min(44, rect.height * 0.085));
+    const label = new Text({
+      text,
+      style: new TextStyle({
+        fontFamily: DISPLAY_FONT, fontSize: size, fill: 0xfff1c2, letterSpacing: 1,
+        stroke: { color: 0x2a1a08, width: 5, join: "round" },
+        dropShadow: { color: 0x000000, alpha: 0.75, blur: 0, distance: 3, angle: Math.PI / 2 },
+        padding: 6,
+      }),
+    });
+    label.anchor.set(0.5);
+    const bloom = new Sprite(softGlowTexture());
+    bloom.anchor.set(0.5);
+    bloom.blendMode = "add";
+    bloom.tint = color;
+    bloom.width = label.width * 1.6;
+    bloom.height = label.height * 1.9;
+    const group = new Container();
+    group.addChild(bloom, label);
+    const cx = Math.max(rect.x + label.width / 2 + 6, Math.min(rect.x + rect.width - label.width / 2 - 6, x));
+    group.position.set(cx, y);
+    group.scale.set(0.35);
+    group.alpha = 0;
+    this.addChild(group);
+    const bw = bloom.scale.x;
+    const bh = bloom.scale.y;
+    const rise = Math.min(46, rect.height * 0.09);
+    await tween(turbo ? 520 : 1250, (p) => {
+      const pop = Math.min(1, p / 0.2);
+      group.scale.set(0.35 + 0.65 * easeOutBack(pop));
+      group.alpha = p < 0.08 ? p / 0.08 : p > 0.72 ? (1 - p) / 0.28 : 1;
+      group.y = y - rise * easeOutCubic(Math.max(0, (p - 0.15) / 0.85));
+      bloom.alpha = 0.65 * (1 - p);
+      bloom.scale.set(bw * (1 + 0.25 * p), bh * (1 + 0.25 * p));
+    }, linear);
     group.destroy({ children: true });
   }
 
@@ -801,33 +847,61 @@ export class EffectsLayer extends Container {
 
     const stripW = Math.min(rect.width * .98, 900);
     const stripH = Math.min(190, Math.max(128, rect.height * .36));
-    const announcement = new AnnouncementArt(stripW, stripH, 0);
+
+    // Sunburst behind everything: slowly turning light rays that brighten and
+    // warm with every tier — the escalation reads from across the room.
+    const rays = new Sprite(raysTexture());
+    rays.anchor.set(0.5);
+    rays.blendMode = "add";
+    rays.position.set(cx, cy);
+    const raysBase = (Math.max(stripW * 1.25, rect.height * 1.6)) / 512;
+    rays.scale.set(raysBase * 0.6);
+    rays.alpha = 0;
+    content.addChild(rays);
+
+    const announcement = new AnnouncementArt(stripW, stripH, 1);
     announcement.position.set(cx, cy);
     content.addChild(announcement);
 
-    // --- Title text ---
-    const msgText = new Text({ text: "NICE WIN", style: announcementTitleStyle(76) });
+    // Title glow: an additive bloom that flares on every tier slam (replaces the
+    // full-screen bloom/RGB-split pulses, which washed the title out to white).
+    const titleBurst = new Sprite(softGlowTexture());
+    titleBurst.anchor.set(0.5);
+    titleBurst.blendMode = "add";
+    titleBurst.position.set(cx, cy - stripH * .27);
+    titleBurst.alpha = 0;
+    content.addChild(titleBurst);
+
+    // --- Title text --- (a 20x+ win opens as a BIG WIN — never "NICE WIN 0.00")
+    const msgText = new Text({ text: "BIG WIN", style: announcementTitleStyle(82, 1) });
     msgText.skew.x = -.08;
     msgText.anchor.set(0.5, 0.5);
-    msgText.scale.set(Math.min(1, stripW * .76 / Math.max(1, msgText.width)));
+    const fitTitle = (): number => {
+      msgText.scale.set(1);
+      return Math.min(1, stripW * .76 / Math.max(1, msgText.width));
+    };
+    let titleFit = fitTitle();
+    msgText.scale.set(titleFit);
     msgText.position.set(cx, cy - stripH * .27);
     content.addChild(msgText);
 
     // Keep precision stable throughout the roll, including fractional wagers.
     const finalAmount = targetMultiplier * betAmount;
     const formatCount = winCountFormatter(finalAmount);
-    // --- Win amount text ---
+    // --- Win amount text --- (hard shadow, no blur: it re-rasterises as it
+    // counts, and a 12px canvas blur on every digit change was a frame-time hog)
     const amtText = new Text({
       text: formatCount(0) + " " + currency,
       style: new TextStyle({
         fill: 0xffdf65,
         fontFamily: DISPLAY_FONT,
         fontSize: 68,
-        stroke: { color: 0x292239, width: 5 },
+        stroke: { color: 0x292239, width: 6, join: "round" },
         fontWeight: "400",
         letterSpacing: 1,
         align: "center",
-        dropShadow: { color: 0x000000, alpha: 0.8, blur: 12, distance: 0 }
+        dropShadow: { color: 0x000000, alpha: 0.8, blur: 0, distance: 4, angle: Math.PI / 2 },
+        padding: 8,
       })
     });
     amtText.anchor.set(0.5, 0.5);
@@ -836,10 +910,12 @@ export class EffectsLayer extends Container {
 
     this.addChild(group);
 
-    await tween(turbo ? 70 : 180, p => {
+    await tween(turbo ? 70 : 200, p => {
       interactionBlock.alpha = p;
       msgText.alpha = p;
       amtText.alpha = p;
+      rays.alpha = p * 0.3;
+      rays.scale.set(raysBase * (0.6 + 0.4 * p));
       announcement.alpha = .35 + p * .65;
       announcement.scale.set(.94 + p * .06);
       announcement.pose(p);
@@ -847,12 +923,11 @@ export class EffectsLayer extends Container {
     this.emit("banner_impact", targetMultiplier >= 500 ? "grand" : "mid");
     void tween(turbo ? 120 : 320, p => announcement.impact(p), easeOutCubic);
 
-    // Pacing calculations (max 6 seconds in normal mode)
+    // Pacing (max 6 seconds in normal mode).
     const duration = turbo ? 800 : Math.min(6000, 1500 + targetMultiplier * 10);
     let lastTier: "none" | "big" | "mega" | "grand" | "max" = "none";
     let billSpawnTimer = 0;
     let coinSpawnTimer = 0;
-    let elapsedMs = 0;
     let isDone = false;
 
     this.pileHeights = new Array(this.numCols).fill(0);
@@ -860,143 +935,143 @@ export class EffectsLayer extends Container {
     this.shouldStack = targetMultiplier >= 500; // Grand/Max wins stack, Big/Mega do not
     this.particles.alpha = 1;
 
-    // Use target multiplier from the start to determine the continuous flow tier
     const targetTier = targetMultiplier >= 5000 ? "max" : targetMultiplier >= 500 ? "grand" : targetMultiplier >= 100 ? "mega" : targetMultiplier >= 20 ? "big" : "none";
+    const tierTint = { none: 0xffd48a, big: 0xffd48a, mega: 0xffb35c, grand: 0xff8fc8, max: 0x8ff6ff };
+    const tierRays = { none: .3, big: .32, mega: .42, grand: .52, max: .62 };
 
-    // Continuous spawner running in background based on target tier until fadeout starts
+    // Continuous money rain + the turning rays, both until the hold ends.
+    let raysSpin = 0.22;
     const spawner = (dt: number) => {
+      rays.rotation += dt * raysSpin;
       if (isDone || turbo) return;
-      elapsedMs += dt * 1000;
-
       if (targetTier !== "none") {
         const isGrandRain = targetTier === "grand" || targetTier === "max";
-        
-        // Target spawn intervals in ms (significantly faster for dense continuous flow)
         const billInterval = targetTier === "max" ? 45 : targetTier === "grand" ? 65 : targetTier === "mega" ? 90 : 130;
         const coinInterval = targetTier === "max" ? 650 : targetTier === "grand" ? 850 : targetTier === "mega" ? 1100 : 1500;
-
         billSpawnTimer += dt * 1000;
         coinSpawnTimer += dt * 1000;
-
         if (billSpawnTimer >= billInterval) {
           billSpawnTimer = 0;
           this.spawnSingleBill(rect, isGrandRain);
         }
-
         if (coinSpawnTimer >= coinInterval) {
           coinSpawnTimer = 0;
           void this.goldCoinBurst(cx, cy, rect, false);
         }
       }
     };
-
     ambientTicker.add(spawner);
 
-    // Spin up the continuous money-counter roller — its pitch/roll-rate is driven
-    // live by the count-up below so it stays locked to the rising total.
-    if (!turbo) this.emit("win_counter_start");
+    // Tier promotion: the title SLAMS in (big → settle), the light flares, the
+    // rays brighten and spin up, coins burst and the screen thumps.
+    const promote = (tier: "big" | "mega" | "grand" | "max"): void => {
+      const artTier = { big: 1, mega: 2, grand: 3, max: 4 }[tier];
+      msgText.text = { big: "BIG WIN", mega: "MEGA WIN", grand: "GRAND WIN", max: "MAX WIN" }[tier];
+      msgText.style = announcementTitleStyle(82 + artTier * 8, artTier);
+      titleFit = fitTitle();
+      announcement.setTier(artTier);
+      rays.tint = tierTint[tier];
+      raysSpin = 0.22 + artTier * 0.07;
+      void tween(turbo ? 120 : 300, p => announcement.impact(p), easeOutCubic);
+      const r0 = rays.alpha;
+      void tween(turbo ? 160 : 420, (p) => {
+        rays.alpha = r0 + (tierRays[tier] - r0) * p + Math.sin(p * Math.PI) * 0.25;
+      }, easeOutCubic);
+      titleBurst.tint = tierTint[tier];
+      titleBurst.width = stripW * 0.9;
+      titleBurst.height = stripH * 1.1;
+      const bw = titleBurst.scale.x;
+      const bh = titleBurst.scale.y;
+      void tween(turbo ? 200 : 520, (p) => {
+        if (titleBurst.destroyed) return;
+        titleBurst.alpha = 0.85 * (1 - p) * (1 - p);
+        titleBurst.scale.set(bw * (0.7 + 0.6 * p), bh * (0.7 + 0.5 * p));
+      }, easeOutCubic);
+      void tween(turbo ? 160 : 380, (pt) => {
+        if (!msgText.destroyed) msgText.scale.set(titleFit * (1 + 0.5 * (1 - easeOutBack(pt))));
+      }, linear).then(() => { if (!msgText.destroyed) msgText.scale.set(titleFit); });
+      if (!turbo) {
+        void this.screenShake(this.parent as Container, turbo);
+        void this.goldCoinBurst(cx, cy, rect, turbo);
+      }
+    };
 
+    // Count curve, split by tier: each tier gets its own stretch of the roll,
+    // fast out of the gate and easing into the next threshold, so promotions
+    // are evenly spaced instead of all firing in the last second (the old
+    // t^2.5 curve also sat near 0.00 for the first half).
+    const bounds = [0, ...[100, 500, 5000].filter((b) => b < targetMultiplier), targetMultiplier];
+    const segW: number[] = [];
+    for (let i = 0; i < bounds.length - 1; i++) {
+      const lo = Math.max(1, bounds[i]!), hi = bounds[i + 1]!;
+      const nextTier = [100, 500, 5000, Infinity].find((b) => b > lo) ?? Infinity;
+      const isLast = i === bounds.length - 2;
+      segW.push(isLast && Number.isFinite(nextTier) && hi < nextTier
+        ? Math.max(0.45, Math.log(hi / lo) / Math.log(nextTier / lo))
+        : 1);
+    }
+    const totalW = segW.reduce((a, b) => a + b, 0);
+    const valueAt = (t: number): number => {
+      let acc = 0;
+      for (let i = 0; i < segW.length; i++) {
+        const w = segW[i]! / totalW;
+        if (t <= acc + w || i === segW.length - 1) {
+          const u = Math.min(1, Math.max(0, (t - acc) / w));
+          const lo = bounds[i]!, hi = bounds[i + 1]!;
+          const isLast = i === segW.length - 1;
+          return lo + (hi - lo) * (isLast ? easeOutCubic(u) : 1 - (1 - u) * (1 - u));
+        }
+        acc += w;
+      }
+      return targetMultiplier;
+    };
+
+    if (!turbo) this.emit("win_counter_start");
     const startTime = performance.now();
+    let lastHud = 0;
+    let lastShown = "";
 
     await new Promise<void>((resolve) => {
-      let animFrame = 0;
-
       const tick = (now: number) => {
         const elapsed = now - startTime;
         let t = Math.min(1, elapsed / duration);
+        if (slammed) t = 1;
+        const currentMult = t >= 1 ? targetMultiplier : valueAt(t);
+        const currentAmount = currentMult * betAmount;
+        const p = currentMult / targetMultiplier;
 
-        // Apply ease-in curve (accelerating velocity) so the count up starts slow
-        // (allowing the big and mega win banners to be clearly seen) and speeds up.
-        let p = Math.pow(t, 2.5);
-
-        if (slammed) {
-          p = 1;
-          t = 1;
+        const shown = formatCount(currentAmount) + " " + currency;
+        if (shown !== lastShown) {
+          lastShown = shown;
+          amtText.text = shown;
+          amtText.scale.set(1);
+          amtText.scale.set(Math.min(1, stripW * .65 / Math.max(1, amtText.width)));
+        }
+        // The bar's WIN readout follows at ~15 fps — it is small, and every
+        // update re-rasterises its text too.
+        if (now - lastHud > 66 || t >= 1) {
+          lastHud = now;
+          onUpdate(Number(formatCount(currentAmount)));
         }
 
-        const currentMult = targetMultiplier * p;
-        const currentAmount = currentMult * betAmount;
-
-        amtText.text = formatCount(currentAmount) + " " + currency;
-        onUpdate(Number(formatCount(currentAmount)));
-
-        // Determine current tier
-        let activeTier: "none" | "big" | "mega" | "grand" | "max" = "none";
+        let activeTier: "none" | "big" | "mega" | "grand" | "max" = "big";
         if (currentMult >= 5000) activeTier = "max";
         else if (currentMult >= 500) activeTier = "grand";
         else if (currentMult >= 100) activeTier = "mega";
-        else if (currentMult >= 20) activeTier = "big";
 
         if (activeTier !== lastTier) {
+          // A skip can jump straight to the final tier: promote once, to it.
           lastTier = activeTier;
           this.emit("win_tier_changed", activeTier);
-
-
-          // Transition pop and effects
-          if (activeTier === "big") {
-            msgText.text = "BIG WIN";
-            
-            if (!turbo) {
-              void this.screenShake(this.parent as Container, turbo);
-              void this.goldCoinBurst(cx, cy, rect, turbo);
-            }
-          } else if (activeTier === "mega") {
-            msgText.text = "MEGA WIN";
-
-            if (!turbo) {
-              void this.screenShake(this.parent as Container, turbo);
-              void this.goldCoinBurst(cx, cy, rect, turbo);
-              void pulseBloom(this, { scale: 1.2, duration: 900 });
-            }
-          } else if (activeTier === "grand") {
-            msgText.text = "GRAND WIN";
-
-            if (!turbo) {
-              void this.screenShake(this.parent as Container, turbo);
-              void this.goldCoinBurst(cx, cy, rect, turbo);
-              void pulseBloom(this, { scale: 1.7, duration: 900 });
-              void pulseChromaticAberration(this, { intensity: 3, duration: 350 });
-            }
-          } else if (activeTier === "max") {
-            msgText.text = "MAX WIN";
-
-            if (!turbo) {
-              void this.screenShake(this.parent as Container, turbo);
-              void this.goldCoinBurst(cx, cy, rect, turbo);
-              void pulseBloom(this, { scale: 2.0, duration: 1200 });
-              void pulseChromaticAberration(this, { intensity: 4, duration: 400 });
-            }
-          }
-
-          const artTier = { none: 0, big: 1, mega: 2, grand: 3, max: 4 }[activeTier];
-          announcement.setTier(artTier);
-          void tween(turbo ? 120 : 300, p => announcement.impact(p), easeOutCubic);
-          msgText.style = announcementTitleStyle(72 + artTier * 10, artTier);
-
-          // Pop title text
-          msgText.scale.set(1);
-          const titleFit = Math.min(1, stripW * .76 / Math.max(1, msgText.width));
-          void tween(220, (pt) => {
-            if (!msgText.destroyed) msgText.scale.set(titleFit * (1.09 - .09 * pt));
-          }, easeOutCubic);
+          promote(activeTier as "big" | "mega" | "grand" | "max");
         }
 
-        // Drive the continuous roller every frame so its pitch tracks the rising
-        // total exactly — no more dead per-tick blips.
         this.emit("win_counter_progress", p, activeTier);
 
-        // Stable digits, including long currency amounts.
-        amtText.scale.set(1);
-        amtText.scale.set(Math.min(1, stripW * .65 / Math.max(1, amtText.width)));
-
-        if (t < 1 && !slammed) {
-          animFrame = requestAnimationFrame(tick);
-        } else {
-          resolve();
-        }
+        if (t < 1 && !slammed) requestAnimationFrame(tick);
+        else resolve();
       };
-
-      animFrame = requestAnimationFrame(tick);
+      requestAnimationFrame(tick);
     });
 
     // Final confirmations
@@ -1004,77 +1079,83 @@ export class EffectsLayer extends Container {
     amtText.scale.set(1);
     amtText.scale.set(Math.min(1, stripW * .65 / Math.max(1, amtText.width)));
     onUpdate(finalAmount);
+    // Land the total with a punch.
+    if (!turbo) {
+      const s0 = amtText.scale.x;
+      void tween(320, (p) => { if (!amtText.destroyed) amtText.scale.set(s0 * (1 + 0.14 * Math.sin(p * Math.PI) * (1 - p * 0.4))); }, linear)
+        .then(() => { if (!amtText.destroyed) amtText.scale.set(s0); });
+    }
 
-    // Resolve the roller (quick upward flourish + fade) and punctuate the landing
-    // with a final impact so the count-up settles with weight. (lastTier is
-    // reassigned inside the rAF closure; widen to string so TS doesn't narrow it
-    // back to its "none" initializer here.)
-    const finalTier = lastTier as string;
-    // Idempotent — if the player already slammed, the counter was stopped immediately
-    // on that tap. This ensures it also fires for normal (uninterrupted) completions.
     stopCounter();
-
-    // Climax jingle triggers
     this.emit("win_climax", lastTier);
 
     // Stop spawning new money immediately when the money counter stops!
     isDone = true;
-    ambientTicker.remove(spawner);
+
+    // While the result is on screen it keeps breathing — rays keep turning
+    // (spawner stays on the ticker for that), the title pulses, the light
+    // swells. A dead-still frame read as frozen.
+    let idleT = 0;
+    const idle = (dt: number) => {
+      idleT += dt;
+      if (msgText.destroyed) return;
+      const b = Math.sin(idleT * 3.2);
+      msgText.scale.set(titleFit * (1 + 0.03 * b));
+      titleBurst.alpha = 0.12 + 0.08 * (0.5 + 0.5 * b);
+    };
+    ambientTicker.add(idle);
 
     const isMaxWin = this.maxWinActive;
-
-    if (isMaxWin) {
-      // For max win, we wait for a second tap/click or keyboard press to dismiss
-      let dismissed = doubleClicked;
-
-      // Update interaction block event handler for dismissal
-      interactionBlock.off("pointerdown", onTap);
-      const onDismissTap = () => {
-        dismissed = true;
-      };
-      interactionBlock.on("pointerdown", onDismissTap);
-
-      // Update keyboard listener
-      window.removeEventListener("keydown", onKeyDown);
-      const onDismissKeyDown = (e: KeyboardEvent) => {
-        if (e.code === "Space" || e.code === "Enter") {
-          e.preventDefault();
-          dismissed = true;
+    try {
+      if (isMaxWin) {
+        // For max win, we wait for a second tap/click or keyboard press to dismiss
+        let dismissed = doubleClicked;
+        interactionBlock.off("pointerdown", onTap);
+        const onDismissTap = () => { dismissed = true; };
+        interactionBlock.on("pointerdown", onDismissTap);
+        window.removeEventListener("keydown", onKeyDown);
+        const onDismissKeyDown = (e: KeyboardEvent) => {
+          if (e.code === "Space" || e.code === "Enter") {
+            e.preventDefault();
+            dismissed = true;
+          }
+        };
+        window.addEventListener("keydown", onDismissKeyDown);
+        // Unattended runs (autoplay/replay) get a generous read-time then
+        // continue on their own — the sequence must never freeze.
+        const holdStart = performance.now();
+        const autoDismissMs = turbo ? 2000 : 4000;
+        let nextBurst = performance.now() + 900;
+        while (!dismissed) {
+          await wait(50);
+          if (!turbo && performance.now() > nextBurst) {
+            nextBurst = performance.now() + 1100;
+            void this.goldCoinBurst(cx, cy, rect, false);
+          }
+          if (autoDismiss && performance.now() - holdStart > autoDismissMs) break;
         }
-      };
-      window.addEventListener("keydown", onDismissKeyDown);
-
-      // Keep running until dismissed. Unattended runs (autoplay/replay) get a
-      // generous read-time then continue on their own — the sequence must
-      // never freeze waiting for a tap that will not come.
-      const holdStart = performance.now();
-      const autoDismissMs = turbo ? 2000 : 4000;
-      while (!dismissed) {
-        await wait(50);
-        if (autoDismiss && performance.now() - holdStart > autoDismissMs) break;
+        interactionBlock.off("pointerdown", onDismissTap);
+        window.removeEventListener("keydown", onDismissKeyDown);
+      } else {
+        // Normal win hold - wait for hold duration or 2nd click to dismiss immediately
+        const holdStart = performance.now();
+        const holdMax = slammed ? 750 : turbo ? 550 : 1200;
+        while (!doubleClicked && performance.now() - holdStart < holdMax) {
+          await wait(30);
+        }
+        window.removeEventListener("keydown", onKeyDown);
+        interactionBlock.off("pointerdown", onTap);
       }
 
-      // Cleanup the dismiss listeners
-      interactionBlock.off("pointerdown", onDismissTap);
-      window.removeEventListener("keydown", onDismissKeyDown);
-    } else {
-      // Normal win hold - wait for hold duration or 2nd click to dismiss immediately
-      const holdStart = performance.now();
-      const holdMax = slammed ? 750 : turbo ? 550 : 1200;
-      while (!doubleClicked && performance.now() - holdStart < holdMax) {
-        await wait(30);
-      }
-
-      // Cleanup listeners
-      window.removeEventListener("keydown", onKeyDown);
-      interactionBlock.off("pointerdown", onTap);
+      // Fade out banner and piled particles together
+      await tween(turbo ? 300 : 520, (p) => {
+        group.alpha = 1 - p;
+        this.particles.alpha = 1 - p;
+      });
+    } finally {
+      ambientTicker.remove(idle);
+      ambientTicker.remove(spawner);
     }
-
-    // Fade out banner and piled particles together
-    await tween(600, (p) => {
-      group.alpha = 1 - p;
-      this.particles.alpha = 1 - p;
-    });
 
     // Reset particles alpha and return all active/stacked particles to pools
     this.particles.alpha = 1;

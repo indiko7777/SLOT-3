@@ -65,7 +65,40 @@ export class MiamiStreet extends Container {
 
     // Facade bottoms and palm roots sit on the SAME raised pavement.
     const ground = this.ground.clear();
-    ground.rect(0, camera.horizon, w, h - camera.horizon).fill(0x111626);
+    ground.rect(0, camera.horizon, w, h - camera.horizon).fill(0x0d1220);
+    // Asphalt lifts toward the camera (our own headlights), so the road has
+    // depth instead of being one flat navy fill.
+    for (let i = 0; i < 6; i++) {
+      const y0 = camera.horizon + (h - camera.horizon) * (0.22 + i * 0.13);
+      ground.rect(0, y0, w, h - y0).fill({ color: 0x2c3a58, alpha: 0.07 });
+    }
+    // Lane markings streaming toward the camera — the clearest cue of speed.
+    const dashSpacing = 7, dashLen = 3.1;
+    const dashPhase = this.distance % dashSpacing;
+    for (let k = 0; k < 13; k++) {
+      const z0 = k * dashSpacing - dashPhase + 1.1;
+      if (z0 < 0.9) continue;
+      const z1 = z0 + dashLen;
+      const fade = Math.min(1, (90 - z0) / 40) * Math.min(1, (z0 - 0.9) / 1.5);
+      for (const lx of [-3.75, 0, 3.75]) {
+        const hw = lx === 0 ? 0.13 : 0.1;
+        const a = project(lx - hw, 0, z0), b = project(lx + hw, 0, z0);
+        const c = project(lx + hw, 0, z1), d = project(lx - hw, 0, z1);
+        ground.poly([a.x, a.y, b.x, b.y, c.x, c.y, d.x, d.y])
+          .fill({ color: lx === 0 ? 0xe9cf7c : 0xd6dce8, alpha: 0.5 * fade });
+      }
+    }
+    // Pools of sodium light under each street lamp, sliding past.
+    for (const side of [-1, 1]) {
+      for (let k = 0; k < 6; k++) {
+        const z = (k * 16 + (side > 0 ? 8 : 0)) + 16 - (this.distance % 16);
+        if (z < 1 || z > 90) continue;
+        const pc = project(side * 5.4, 0, z);
+        const rx = 3.2 * pc.scale, ry = Math.max(2, 0.9 * pc.scale);
+        ground.ellipse(pc.x, pc.y, rx, ry).fill({ color: 0xffb46a, alpha: 0.13 * Math.min(1, (90 - z) / 30) });
+        ground.ellipse(pc.x, pc.y, rx * 0.5, ry * 0.5).fill({ color: 0xffd39a, alpha: 0.08 * Math.min(1, (90 - z) / 30) });
+      }
+    }
     for (const side of [-1, 1]) {
       const a = project(side * CHASE_ROAD_EDGE, CHASE_CURB_HEIGHT, .75);
       const b = project(side * CHASE_ROAD_EDGE, CHASE_CURB_HEIGHT, 240);
@@ -117,6 +150,24 @@ export class MiamiStreet extends Container {
     this.city.sortChildren();
 
     this.reflections.clear();
+    // Street lamps on the curb (drawn over the walls: from the road no line of
+    // sight to a pole at |x|=8 can cross the facades at |x|=10.5).
+    for (const side of [-1, 1]) {
+      for (let k = 0; k < 6; k++) {
+        const z = (k * 16 + (side > 0 ? 8 : 0)) + 16 - (this.distance % 16);
+        if (z < 1.4 || z > 90) continue;
+        const foot = project(side * 8, CHASE_CURB_HEIGHT, z);
+        const top = project(side * 8, 6.2, z);
+        const arm = project(side * 6.6, 6.2, z);
+        // Fade out as it sweeps past the camera — up close it would be huge.
+        const fade = Math.min(1, (90 - z) / 25) * Math.min(1, (z - 1.4) / 5);
+        const width = Math.min(14, Math.max(1, 0.16 * foot.scale));
+        this.reflections.moveTo(foot.x, foot.y).lineTo(top.x, top.y).lineTo(arm.x, arm.y)
+          .stroke({ color: 0x1b2131, width, alpha: 0.95 * fade });
+        this.reflections.circle(arm.x, arm.y + 0.18 * arm.scale, 1.5 * arm.scale).fill({ color: 0xffb46a, alpha: 0.12 * fade });
+        this.reflections.circle(arm.x, arm.y + 0.18 * arm.scale, 0.32 * arm.scale).fill({ color: 0xffe2b0, alpha: 0.95 * fade });
+      }
+    }
     for (const side of [-1, 1]) {
       const pulse = Math.max(0, Math.sin(elapsed * 7 + side * 1.8));
       for (let i = 0; i < 4; i++) {

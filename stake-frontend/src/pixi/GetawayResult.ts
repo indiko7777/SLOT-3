@@ -62,20 +62,29 @@ export class GetawayResult {
     this.root.dataset.phase = "intro";
     this.root.innerHTML = `
       <div class="getaway-result__sky" aria-hidden="true">
-        <div class="getaway-result__aura"></div>
-        <div class="getaway-result__rays"></div>
+        <img class="getaway-result__art" src="assets/popup/payout_keyart.webp" alt="" draggable="false" />
+        <div class="getaway-result__grade"></div>
+        <div class="getaway-result__streaks"><i></i><i></i><i></i></div>
         <div class="getaway-result__ring"></div>
       </div>
       <div class="getaway-result__loot" aria-hidden="true"></div>
       <div class="getaway-result__stage">
         <div class="getaway-result__kicker"><i></i>THE GETAWAY<i></i></div>
-        <h1 class="getaway-result__tier"></h1>
+        <div class="getaway-result__band">
+          <h1 class="getaway-result__tier"></h1>
+          <div class="getaway-result__flash" aria-hidden="true"></div>
+        </div>
         <div class="getaway-result__label">TOTAL WIN</div>
         <div class="getaway-result__amount">
           <span class="getaway-result__value">0.00</span><span class="getaway-result__currency"></span>
         </div>
         <div class="getaway-result__rule"><span></span></div>
-        <div class="getaway-result__chip"><b></b>BASE BET</div>
+        <dl class="getaway-result__stats">
+          <div class="getaway-result__stat" style="--i:0"><dt>GOLD BARS SECURED</dt><dd data-stat="bars">0</dd></div>
+          <div class="getaway-result__stat" style="--i:1"><dt>DYNAMITE DETONATED</dt><dd data-stat="blasts">0</dd></div>
+          <div class="getaway-result__stat" style="--i:2"><dt>SPINS SURVIVED</dt><dd data-stat="spins">0</dd></div>
+          <div class="getaway-result__stat chip" style="--i:3"><dt>TOTAL MULTIPLIER</dt><dd><b></b></dd></div>
+        </dl>
         <button class="getaway-result__cta" type="button"><span>COLLECT</span></button>
         <div class="getaway-result__hint">SPACE / ENTER</div>
       </div>
@@ -84,22 +93,43 @@ export class GetawayResult {
     document.body.append(this.root);
   }
 
+  /**
+   * Draw the payout screen once, invisibly, at boot. Its first appearance
+   * costs the browser a one-off GPU setup (gradient/filter shaders, glyphs)
+   * that measured 0.3–1 s of frozen screen right as the Getaway paid out; a
+   * second appearance costs nothing. This pays it behind the loader instead.
+   */
+  static prewarm(): void {
+    const r = new GetawayResult();
+    Object.assign(r.root.style, { opacity: "0.004", pointerEvents: "none", zIndex: "100000" });
+    r.root.setAttribute("aria-hidden", "true");
+    r.root.dataset.phase = "counting";
+    r.root.dataset.tier = "3";
+    r.find("tier").textContent = TIERS[3].title;
+    r.find("tier").dataset.text = TIERS[3].title;
+    r.find("value").textContent = money(1234.56);
+    r.find("currency").textContent = "USD";
+    window.setTimeout(() => r.destroy(), 1500);
+  }
+
   private find(name: string): HTMLElement {
     return this.root.querySelector<HTMLElement>(`.getaway-result__${name}`)!;
   }
 
-  /** Tumbling gold bars and embers. Transform/opacity only, so they keep running
-   *  on the compositor even while the main thread rebuilds the base scene. */
+  /** Bills raining down, tumbling in 3D, with a few neon sparks. Transform /
+   *  opacity only, so they keep running on the compositor even while the main
+   *  thread rebuilds the base scene. */
   private buildLoot(): void {
     const loot = this.find("loot");
-    for (let i = 0; i < 22; i++) {
+    for (let i = 0; i < 26; i++) {
+      const bill = i % 4 !== 3;
       const piece = document.createElement("i");
-      const bar = i % 3 === 0;
-      piece.className = bar ? "getaway-result__bar" : "getaway-result__ember";
+      piece.className = bill ? "getaway-result__bill" : "getaway-result__spark";
       piece.style.cssText =
-        `--x:${(i * 41 + 7) % 100}%;--delay:${-(i % 11) * 0.62}s;` +
-        `--speed:${(bar ? 5.4 : 4) + (i % 5) * 0.55}s;--size:${bar ? 11 + (i % 3) * 3 : 2 + (i % 3)}px;` +
-        `--spin:${i % 2 ? 1 : -1};--drift:${((i * 29) % 70) - 35}px`;
+        `--x:${(i * 37 + 11) % 100}%;--delay:${-(i % 13) * 0.55}s;` +
+        `--speed:${(bill ? 4.6 : 3.4) + (i % 5) * 0.6}s;--size:${bill ? 38 + (i % 4) * 9 : 6 + (i % 3) * 2}px;` +
+        `--spin:${i % 2 ? 1 : -1};--drift:${((i * 29) % 90) - 45}px;--hue:${i % 2 ? "#ff4fa8" : "#3fe3ff"}`;
+      if (bill) piece.style.backgroundImage = "url(assets/real_bill.webp)";
       loot.append(piece);
     }
   }
@@ -112,6 +142,7 @@ export class GetawayResult {
     const tier = this.find("tier");
     this.root.dataset.tier = String(level);
     tier.textContent = TIERS[level]!.title;
+    tier.dataset.text = TIERS[level]!.title;
     if (opening) return; // the first title is the screen arriving, not a promotion
     audio?.tier(level);
     tier.animate([
@@ -120,6 +151,11 @@ export class GetawayResult {
       { transform: "scale(1)", opacity: 1 },
     ], { duration: 460, easing: "cubic-bezier(.16,1,.3,1)" });
     this.burst();
+    this.find("flash").animate([
+      { transform: "translateX(-120%) skewX(-18deg)", opacity: 0 },
+      { opacity: 1, offset: 0.2 },
+      { transform: "translateX(120%) skewX(-18deg)", opacity: 0 },
+    ], { duration: 520, easing: "cubic-bezier(.3,0,.2,1)" });
     this.find("amount").animate([
       { transform: "scale(1)" }, { transform: "scale(1.085)", offset: 0.3 }, { transform: "scale(1)" },
     ], { duration: 420, easing: "ease-out" });
@@ -128,21 +164,32 @@ export class GetawayResult {
   /** A shockwave ring out of the centre — fired on promotions and on the total. */
   private burst(): void {
     this.find("ring").animate([
-      { transform: "scale(.2)", opacity: 0.85, borderWidth: "6px" },
-      { transform: "scale(1.9)", opacity: 0, borderWidth: "1px" },
-    ], { duration: 720, easing: "cubic-bezier(.12,.75,.3,1)" });
+      { transform: "scale(.2)", opacity: 0.9 },
+      { transform: "scale(2.1)", opacity: 0 },
+    ], { duration: 760, easing: "cubic-bezier(.12,.75,.3,1)" });
   }
 
   async present(options: {
     filled: boolean; totalX: number; bet: number; currency: string;
     turbo: boolean; autoDismiss: boolean; audio?: GetawayResultAudio;
+    /** The heist readout: bars locked, blasts, spins played. */
+    stats?: { bars: number; blasts: number; spins: number };
   }): Promise<void> {
-    const { totalX, filled, bet, currency, turbo, autoDismiss, audio } = options;
+    const { totalX, filled, bet, currency, turbo, autoDismiss, audio, stats } = options;
+    if (stats) {
+      for (const [key, v] of Object.entries(stats)) {
+        const el = this.root.querySelector<HTMLElement>(`[data-stat="${key}"]`);
+        if (el) el.textContent = String(v);
+      }
+    } else {
+      this.root.querySelectorAll<HTMLElement>(".getaway-result__stat:not(.chip)").forEach((el) => el.remove());
+    }
     this.audio = audio;
     const value = this.find("value");
-    const chip = this.find("chip").querySelector("b")!;
+    const chip = this.root.querySelector<HTMLElement>(".getaway-result__stat.chip b")!;
     const cta = this.find("cta") as HTMLButtonElement;
     const stage = this.find("stage");
+    const ruleBar = this.find("rule").querySelector("span") as HTMLElement;
     // A zero bet means the screen is showing bare multipliers (replay/preview).
     const asMoney = bet > 0;
     const amount = totalX * (asMoney ? bet : 1);
@@ -214,7 +261,9 @@ export class GetawayResult {
           const shownX = totalX * p;
           value.textContent = money(amount * p);
           chip.textContent = `${formatWin(Math.round(shownX * 100) / 100)}×`;
-          this.root.style.setProperty("--progress", String(p));
+          // Set on the bar itself: a custom property changed on the ROOT every
+          // frame re-styled (and re-rasterised) the whole full-screen backdrop.
+          ruleBar.style.transform = `scaleX(${p})`;
           // Promotions land silently when the count was skipped or never ran —
           // end() is already about to play, and four stingers at once is noise.
           this.promote(tierFor(shownX), instant ? undefined : audio);
@@ -232,6 +281,7 @@ export class GetawayResult {
       // gets its own beat instead of arriving partway through the count.
       if (filled) {
         this.find("tier").textContent = PERFECT;
+        this.find("tier").dataset.text = PERFECT;
         this.root.dataset.perfect = "true";
       }
       this.root.dataset.phase = "settled";

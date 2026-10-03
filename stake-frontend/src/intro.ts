@@ -1,6 +1,8 @@
 import { BONUS_START_RESPINS, MAX_WIN_MULTIPLIER } from './domain';
 import './splash.css';
-export function showIntro(): Promise<void> {
+/** `onEnter` runs synchronously inside the dismissing click/key — a real user
+ *  gesture, so the audio context can be created there (off the first spin). */
+export function showIntro(onEnter?: () => void): Promise<void> {
   return new Promise((resolve) => {
     const root = document.createElement('div');
     root.id = 'intro-overlay';
@@ -20,6 +22,7 @@ export function showIntro(): Promise<void> {
     const close = (): void => {
       if (done) return;
       done = true;
+      try { onEnter?.(); } catch { /* never block entering the game */ }
       window.removeEventListener('keydown', onKey);
       root.classList.add('splash-leaving');
       window.setTimeout(() => { root.remove(); resolve(); }, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 400);

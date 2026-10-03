@@ -18,7 +18,15 @@ export type GetawayCue =
   /** one neighbour bar doubled: index = its order in this blast */
   | { kind: "double"; index: number }
   /** a dynamite with no gold bar beside it fizzled out */
+  /** a dud's fuse is burning down — the fizzle follows after `seconds` */
+  | { kind: "dud_arm"; seconds: number }
   | { kind: "dud" }
+  /** a strip of police tape starts its whip across the reels; slaps after `seconds` */
+  | { kind: "tape"; index: number; seconds: number }
+  /** the final spin missed — the BUSTED sequence starts (its sting owns the moment) */
+  | { kind: "busted" }
+  /** the NO HIT stamp lands (last = the chase is over: BUSTED) */
+  | { kind: "nohit"; heat: number; last: boolean }
   | { kind: "held" }
   | { kind: "spent"; spinsLeft: number }
   | { kind: "dead"; heat: number };

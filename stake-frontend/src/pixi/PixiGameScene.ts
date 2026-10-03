@@ -12,7 +12,7 @@ import { PaytableView } from "./PaytableView";
 import { SymbolView, WIN_ACCENT, DEFAULT_ACCENT } from "./SymbolView";
 import { computeLayout, logicalViewport, wantedStarsGeometry } from "./layout";
 import { getExtraTexture, silhouetteOffset } from "./assets";
-import { tween, wait, linear, easeInCubic, easeInOutCubic, easeOutBack, easeOutCubic } from "./tween";
+import { tween, wait, linear, easeInCubic, easeInOutCubic, easeOutBack, easeOutCubic, simulate } from "./tween";
 import type { LayoutMetrics, SceneRuntime } from "./types";
 import { OutlineFilter } from "pixi-filters";
 import { CardPeekView } from "./CardPeekView";
@@ -89,7 +89,7 @@ export class PixiGameScene {
       this.gallery.toggle(this.layout.width, this.layout.height);
     });
     this.gallery = new GalleryView(runtime);
-    
+
     // Bonus covers the complete base scene, including controls, during its exit dissolve.
     this.root.addChild(
       this.bgLayer,
@@ -203,7 +203,7 @@ export class PixiGameScene {
     this.layoutBoard();
     this.bonus.layout({ x: 0, y: 0, width: this.layout.width, height: this.layout.height });
     this.board.updateCollectionCounter(snapshot.collectionCount);
-    
+
     // Position/update the card peek view and gallery view
     const isBonusActive = snapshot.bonusGrid && snapshot.state.startsWith("bonus");
     this.cardPeek.visible = !isBonusActive && !this.bonusActive;
@@ -239,7 +239,7 @@ export class PixiGameScene {
     } else {
       this.bonus.hide();
     }
-    
+
     if (this.runtime.isReplayActive?.()) {
       const compact = this.layout.width < this.layout.height;
       const badgeWidth = compact ? 62 : 140;
@@ -298,10 +298,12 @@ export class PixiGameScene {
     g.rect(0, 0, this.layout.width, this.layout.height).fill(0xfff4d6);
     g.alpha = 0;
     this.root.addChild(g);
-    const dur = turbo ? 420 : 780;
+    // Fully lit on its very first frame (a fade-up let the hand-off frame show
+    // through as an empty screen), then a long ease-out bleed.
+    g.alpha = 0.95;
+    const dur = turbo ? 420 : 820;
     void tween(dur, (p) => {
-      // Fast rise over the first 12%, long ease-out fall for the rest.
-      g.alpha = p < 0.12 ? (p / 0.12) * 0.95 : 0.95 * (1 - (p - 0.12) / 0.88);
+      g.alpha = 0.95 * (1 - easeOutCubic(p) * 0.15) * (1 - p);
     }, linear).then(() => g.destroy());
   }
 
@@ -315,18 +317,28 @@ export class PixiGameScene {
     const accent = WIN_ACCENT[symbolId] ?? DEFAULT_ACCENT;
     const centers = positions.map((p) => this.board.centerOf(p));
     const isGreen = symbolId === "WILD" || symbolId === "CAR_WILD" || accent === 0x9ae64e;
-
-    if (isGreen) {
-      return this.effects.clusterLink(centers, 0xffd95c, turbo);
-    } else if (accent === 0xe056fd) {
-      if (centers.length > 1) {
-        return this.effects.keyBeam(centers[0], centers.slice(1), turbo, accent);
-      } else {
-        return this.effects.clusterLink(centers, accent, turbo);
+    // Link only cells that actually touch (up/down/left/right) — that IS how a
+    // cluster pays. The old premium "beam" fanned lasers from one corner across
+    // unrelated symbols, and pixel-distance pairing drew diagonal X lattices.
+    const pairs: Array<[number, number]> = [];
+    for (let i = 0; i < positions.length; i++)
+      for (let j = i + 1; j < positions.length; j++) {
+        const [c1, r1] = positions[i]!;
+        const [c2, r2] = positions[j]!;
+        if (Math.abs(c1 - c2) + Math.abs(r1 - r2) === 1) pairs.push([i, j]);
       }
-    } else {
-      return this.effects.clusterLink(centers, accent, turbo);
-    }
+    return this.effects.clusterLink(centers, isGreen ? 0xffd95c : accent, turbo, pairs);
+  }
+
+  /** Where a cluster's win value should pop: the cell nearest its centroid, so
+   *  it always sits ON the cluster even when the shape is an L or a ring. */
+  private clusterAnchor(positions: Position[]): { x: number; y: number } {
+    const centers = positions.map((p) => this.board.centerOf(p));
+    const mx = centers.reduce((a, c) => a + c.x, 0) / centers.length;
+    const my = centers.reduce((a, c) => a + c.y, 0) / centers.length;
+    let best = centers[0]!;
+    for (const c of centers) if (Math.hypot(c.x - mx, c.y - my) < Math.hypot(best.x - mx, best.y - my)) best = c;
+    return { x: (best.x + mx) / 2, y: (best.y + my) / 2 };
   }
 
   async playEvent(event: GameEvent, snapshot: PlaybackSnapshot): Promise<void> {
@@ -375,8 +387,16 @@ export class PixiGameScene {
         return;
       case "cluster_win": {
         void this.playCombinationAnimation(event.symbol, event.positions, turbo);
+        // The cluster's own payout pops up ON the cluster (round total still
+        // counts in the bar) — the player sees what each combination was worth.
+        const amount = event.payout * (snapshot.betAmount || 0);
+        if (amount > 0 && event.positions.length) {
+          const at = this.clusterAnchor(event.positions);
+          const accent = WIN_ACCENT[event.symbol] ?? DEFAULT_ACCENT;
+          void wait(turbo ? 40 : 160).then(() =>
+            this.effects.floatValue(at.x, at.y, formatCash(amount), accent, this.layout.board, turbo));
+        }
         await this.board.highlight(event.positions, turbo);
-        // No per-cascade pop-up — total win is shown at round_end like normal slots.
         return;
       }
       case "tumble_remove":
@@ -400,6 +420,8 @@ export class PixiGameScene {
         return;
       }
       case "heat_transform":
+        // The previous cluster's dimming must not carry into the stash reveal.
+        this.board.undimAll(turbo);
         // Banner first — player reads "Bust the Stash" before the board changes.
         await this.effects.banner("Bust the Stash", "", this.layout.board, turbo);
         if (this.runtime.playAudio) {
@@ -424,6 +446,11 @@ export class PixiGameScene {
         // triggered the Getaway. The book tells us which: a scatter trigger
         // carries the 3+ truck positions; the Wanted-meter trigger carries none.
         const viaScatter = event.scatterPositions.length >= 3;
+        // Hide the base game only once the chase fully covers it.
+        const hideBase = (): void => {
+          this.hud.visible = false;
+          this.board.visible = false;
+        };
         if (viaScatter) {
           // 3+ armored trucks: they rev and tear off the board — engine audio,
           // exhaust, speed lines, and a screen shake as they launch.
@@ -432,14 +459,13 @@ export class PixiGameScene {
             this.board.truckDriveOff(event.scatterPositions, turbo),
             this.effects.screenShake(this.root, turbo),
           ]);
-          // Hide the entire HUD so the bonus board has the full screen.
-          this.hud.visible = false;
-          this.board.visible = false;
+          this.bonus.prepare();
           await this.bonus.intro(
             turbo,
             this.runtime.onTypewriterStart,
             this.runtime.onTypewriterStop,
-            () => this.runtime.onTruckDoors?.()
+            () => this.runtime.onTruckDoors?.(),
+            hideBase
           );
         } else {
           // Wanted path: the five filled stars themselves ignite and detonate
@@ -448,19 +474,21 @@ export class PixiGameScene {
           // covers the seam while the intro cross-fades in beneath it, so the
           // stars cleanly *become* the Getaway. No trigger text, by request.
           this.runtime.onWantedIgnite?.();
+          // Build the chase while the stars charge, so the detonation frame
+          // never stalls into an empty screen.
+          this.bonus.prepare();
           await this.hud.igniteWantedStars(
             (i) => this.runtime.onWantedStarBeat?.(i),
             turbo
           );
           this.triggerWhiteout(turbo);
           void this.effects.screenShake(this.root, turbo);
-          this.hud.visible = false;
-          this.board.visible = false;
           await this.bonus.intro(
             turbo,
             this.runtime.onTypewriterStart,
             this.runtime.onTypewriterStop,
-            () => this.runtime.onTruckDoors?.()
+            () => this.runtime.onTruckDoors?.(),
+            hideBase
           );
         }
         return;
@@ -478,8 +506,7 @@ export class PixiGameScene {
           event.respinsAfter,
           this.bonusDeadSpins,
           turbo,
-          this.runtime.onSafeLand,
-          () => this.runtime.onDeadSpin?.(Math.min(3, this.bonusDeadSpins))
+          this.runtime.onSafeLand
         );
         return;
       }
@@ -523,6 +550,8 @@ export class PixiGameScene {
           return;
         }
         this.hud.draw(this.layout, snapshot);
+        this.board.undimAll(turbo);
+        this.board.clearMarks();
         if (event.payoutMultiplier === 0) {
           await wait(turbo ? 20 : 80);
           return;
@@ -1067,13 +1096,14 @@ export class PixiGameScene {
       sparkLayer.addChild(s);
       sparks.push({ g: s, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 2, spin: (Math.random() - 0.5) * 0.2 });
     }
-    void tween(520, (p) => {
+    void simulate(520, (k, p) => {
+      const e = easeOutCubic(p);
       for (const s of sparks) {
-        s.g.x += s.vx;
-        s.g.y += s.vy;
-        s.vy += 0.18;
-        s.g.rotation += s.spin;
-        s.g.alpha = 1 - p;
+        s.g.x += s.vx * k;
+        s.g.y += s.vy * k;
+        s.vy += 0.18 * k;
+        s.g.rotation += s.spin * k;
+        s.g.alpha = 1 - e;
       }
     }).then(() => sparkLayer.destroy({ children: true }));
 
@@ -1127,14 +1157,17 @@ export class PixiGameScene {
       textGlow.scale.set(0.2 + 0.8 * p);
     }, easeOutBack);
 
-    void tween(1200, (p) => {
+    let lastFlash = false;
+    void simulate(1200, (k, p) => {
       for (const pt of particles) {
-        pt.sprite.x += pt.vx;
-        pt.sprite.y += pt.vy * 0.8 + 2.0;
-        pt.sprite.rotation += pt.rotSpeed;
+        pt.sprite.x += pt.vx * k;
+        pt.sprite.y += (pt.vy * 0.8 + 2.0) * k;
+        pt.sprite.rotation += pt.rotSpeed * k;
         pt.sprite.alpha = Math.max(0, 1.2 - p);
       }
-      textGlow.style.fill = p % 0.2 < 0.1 ? 0xffffff : 0xffd95c;
+      // Restyle only on the flip: assigning style.fill re-rasterises the text.
+      const flash = p % 0.2 < 0.1;
+      if (flash !== lastFlash) { lastFlash = flash; textGlow.style.fill = flash ? 0xffffff : 0xffd95c; }
     }).then(() =>
       tween(300, (p) => { textGlow.alpha = 1 - p; }).then(() => {
         textGlow.destroy();
@@ -1142,6 +1175,11 @@ export class PixiGameScene {
       })
     );
   }
+}
+
+/** Money with two decimals and grouping: "2.40", "1,250.00". */
+function formatCash(amount: number): string {
+  return amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function previewBoard(runtime: SceneRuntime): Board {

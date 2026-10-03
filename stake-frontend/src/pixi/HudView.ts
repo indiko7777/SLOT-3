@@ -1,9 +1,11 @@
 import { Container, Graphics, Sprite, Text, TextStyle } from "pixi.js";
 import { TEXT, type Position } from "../domain";
 import type { PlaybackSnapshot } from "../playback";
+import { winCountFormatter } from "./winCount";
 import { getExtraTexture, silhouetteOffset } from "./assets";
 import { makeText } from "./text";
-import { ambientTicker, tween, wait, easeOutBack, easeOutCubic, linear } from "./tween";
+import { ambientTicker, tween, wait, easeOutBack, easeOutCubic, easeInCubic, linear } from "./tween";
+import { softGlowTexture } from "./fxTextures";
 import type { LayoutMetrics, Rect, SceneRuntime } from "./types";
 import { formatBalance, formatWin } from "../rgs/client";
 import { OutlineFilter, DropShadowFilter } from "pixi-filters";
@@ -195,7 +197,9 @@ export class HudView extends Container {
       const current = startVal + (this.targetWin - startVal) * t;
       this.displayedWin = current;
         if (this.winText) {
-          this.winText.text = `WIN ${this.fmtWinMoney(current)} ${currency}`;
+          // Count at the payout's own precision — interpolated floats used to
+          // flicker through four-decimal values ("WIN 2.4087 USD").
+          this.winText.text = `WIN ${winCountFormatter(this.targetWin)(current)} ${currency}`;
           this.winText.style.fill = 0xffdf65;
           const pulse = 1 + Math.sin(raw * Math.PI) * 0.15;
           this.winText.scale.set(pulse);
@@ -919,7 +923,20 @@ export class HudView extends Container {
     }
     const reach = starR * (turbo ? 5 : 8);
 
+    // The blast light swells out of the meter until it fills the screen and
+    // hands straight into the white-out — the stars visibly BECOME the chase.
+    const swell = new Sprite(softGlowTexture());
+    swell.anchor.set(0.5);
+    swell.blendMode = "add";
+    swell.tint = 0xfff1c9;
+    swell.position.set(centerX, cy);
+    swell.alpha = 0;
+    fx.addChildAt(swell, 0);
+    const screenSpan = Math.max(window.innerWidth, window.innerHeight) * 2.4 / 128;
+
     await tween(turbo ? 300 : 520, (p) => {
+      swell.scale.set(0.4 + screenSpan * easeInCubic(p));
+      swell.alpha = Math.min(1, p * 1.6);
       const e = easeOutCubic(p);
       const pulse = 1 + Math.sin(Math.min(1, p * 1.5) * Math.PI) * 0.7;
       for (const g of stars) g.scale.set(pulse);

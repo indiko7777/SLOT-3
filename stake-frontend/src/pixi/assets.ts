@@ -266,6 +266,17 @@ export function getExtraTexture(key: string): Texture | null {
   return textureCache.get(key) ?? null;
 }
 
+/** Every texture the loader has cached, plus each skeletal atlas — used once at
+ *  boot to upload them all to the GPU while the loader is still on screen. */
+export function allLoadedTextures(): Texture[] {
+  return [...textureCache.values(), ...[...skelCache.values()].map((b) => b.texture)];
+}
+
+/** Symbol ids that have a skeletal bundle loaded. */
+export function skelSymbolIds(): SymbolId[] {
+  return [...skelCache.keys()];
+}
+
 export interface SkelSymbol { player: SkelPlayer; fitW: number; fitH: number }
 
 /** Fresh skeletal player instance for a symbol, or null if it has no bundle.

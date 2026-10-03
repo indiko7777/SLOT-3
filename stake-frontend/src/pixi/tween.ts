@@ -67,6 +67,31 @@ export function tween(duration: number, update: (progress: number) => void, ease
   });
 }
 
+/**
+ * Frame-rate independent particle loop. `step(k, p)` gets k = time since the
+ * previous call measured in 60 fps frames (1 at 60 Hz, 0.5 at 120 Hz, 2 at
+ * 30 Hz) and p = 0..1 progress. Particle code tuned as "per frame" constants
+ * multiplies its increments by k (and raises per-frame decays to the power k),
+ * so sparks fly the same on a 144 Hz monitor as on a 60 Hz one — previously
+ * every such effect ran 2.4x too fast on high-refresh screens.
+ */
+export function simulate(duration: number, step: (k: number, p: number) => void): Promise<void> {
+  const ms = duration / timeScale;
+  return new Promise((resolve) => {
+    const start = performance.now();
+    let last = start;
+    const frame = (now: number): void => {
+      const k = Math.min(4, Math.max(0, (now - last) / (1000 / 60))) * timeScale;
+      last = now;
+      const p = ms <= 0 ? 1 : Math.min(1, (now - start) / ms);
+      step(k, p);
+      if (p < 1) requestAnimationFrame(frame);
+      else resolve();
+    };
+    requestAnimationFrame(frame);
+  });
+}
+
 export class AmbientTicker {
   private running = false;
   private frameId = 0;

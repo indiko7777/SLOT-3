@@ -96,5 +96,8 @@
   },
   "helicopter": {
     "path": "assets/audio/approved/31899a1a9ae33773.mp3"
+  },
+  "busted": {
+    "path": "assets/audio/approved/busted_wasted.mp3"
   }
 }

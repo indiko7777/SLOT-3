@@ -1,202 +1,234 @@
-/* The Getaway payout screen. Full-bleed and cinematic rather than a dialog box:
-   the total is the subject, and the tier promotions drive the escalation. */
+/* The Getaway payout screen — GTA "mission passed" staging in the game's
+   Vice City palette: a black band across the frame, a sunset-neon title,
+   big white numbers, a heist readout, and cash raining over a sunset
+   escape. The total is the subject; tier promotions drive the escalation. */
 .getaway-result {
-  --progress: 0;
-  --gold: #ffd274;
-  --gold-hi: #fff4cf;
-  --gold-deep: #c8812a;
+  --pink: #ff4fa8;
+  --cyan: #3fe3ff;
+  --sun: #ffb35c;
+  --violet: #9b4dff;
   --heat: 0;                       /* 0..1, raised by each tier promotion */
   position: fixed; inset: 0; z-index: 35; isolation: isolate;
   display: grid; place-items: center; overflow: hidden;
-  color: #fff2cf; font-family: 'Barlow Semi Condensed', Arial, sans-serif;
-  background:
-    radial-gradient(ellipse 70% 55% at 50% 44%, rgba(120, 72, 26, calc(.30 + .22 * var(--heat))), transparent 70%),
-    radial-gradient(ellipse at 50% 120%, #2a1330cc, transparent 62%),
-    linear-gradient(160deg, #0c0a14fa, #05090ffa 70%);
-  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  color: #fff; font-family: 'Barlow Semi Condensed', Arial, sans-serif;
+  background: #07040d;
 }
 .getaway-result *, .getaway-result *::before, .getaway-result *::after { box-sizing: border-box; }
 .getaway-result[data-tier="1"] { --heat: .34; }
 .getaway-result[data-tier="2"] { --heat: .67; }
 .getaway-result[data-tier="3"] { --heat: 1; }
 
-/* ── backdrop ─────────────────────────────────────────────────────────── */
-.getaway-result__sky { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
-.getaway-result__aura {
-  width: 92vmax; height: 92vmax; border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 186, 79, calc(.12 + .12 * var(--heat))), rgba(197, 76, 140, .06) 34%, transparent 66%);
-  animation: getaway-aura 6s ease-in-out infinite alternate;
+/* ── backdrop: the escape at sunset ──────────────────────────────────── */
+.getaway-result__sky { position: absolute; inset: 0; pointer-events: none; }
+.getaway-result__art {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 60% 50%;
+  transform: scale(1.14); will-change: transform;
+  animation: getaway-art-in 1.6s cubic-bezier(.16, 1, .3, 1) forwards, getaway-art-drift 18s 1.6s ease-in-out infinite alternate;
 }
-.getaway-result__rays {
-  position: absolute; width: 124vmax; height: 124vmax;
-  opacity: calc(.20 + .30 * var(--heat));
-  background: repeating-conic-gradient(from 0deg, transparent 0deg 9deg, rgba(255, 210, 132, .10) 10deg 11deg, transparent 12deg 21deg);
-  mask-image: radial-gradient(circle, transparent 10%, #000 34%, transparent 70%);
-  -webkit-mask-image: radial-gradient(circle, transparent 10%, #000 34%, transparent 70%);
-  animation: getaway-rays 64s linear infinite;
+@keyframes getaway-art-in { from { transform: scale(1.14); } to { transform: scale(1.03); } }
+@keyframes getaway-art-drift { from { transform: scale(1.03) translateX(0); } to { transform: scale(1.08) translateX(-1.4%); } }
+.getaway-result__grade {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse 60% 52% at 50% 50%, rgba(6, 4, 14, .72), rgba(6, 4, 14, .38) 62%, rgba(6, 4, 14, .12) 100%),
+    linear-gradient(0deg, rgba(6, 4, 12, .9) 0%, rgba(6, 4, 12, .2) 30%, transparent 60%, rgba(10, 6, 20, .4) 100%);
 }
+/* neon light streaks crossing the frame now and again */
+.getaway-result__streaks i {
+  position: absolute; left: 0; height: 2px; width: 46%; opacity: 0;
+  background: linear-gradient(90deg, transparent, var(--pink), #fff, var(--cyan), transparent);
+  box-shadow: 0 0 14px 2px rgba(255, 79, 168, .5);
+  animation: getaway-streak 5.2s ease-in-out infinite;
+}
+.getaway-result__streaks i:nth-child(1) { top: 24%; animation-delay: .6s; }
+.getaway-result__streaks i:nth-child(2) { top: 71%; animation-delay: 2.4s; }
+.getaway-result__streaks i:nth-child(3) { top: 16%; animation-delay: 4.1s; width: 30%; }
+@keyframes getaway-streak { 0% { transform: translateX(-110%); opacity: 0; } 4% { opacity: .9; } 18% { transform: translateX(240%); opacity: 0; } 100% { transform: translateX(240%); opacity: 0; } }
 .getaway-result__ring {
-  position: absolute; width: 46vmin; height: 46vmin; border-radius: 50%;
-  border: 2px solid var(--gold-hi); opacity: 0;
-  box-shadow: 0 0 60px rgba(255, 196, 96, .5), inset 0 0 40px rgba(255, 196, 96, .3);
+  position: absolute; left: 50%; top: 42%; width: 46vmin; height: 46vmin; margin: -23vmin 0 0 -23vmin; border-radius: 50%;
+  border: 3px solid var(--pink); opacity: 0;
+  box-shadow: 0 0 40px rgba(255, 79, 168, .6), inset 0 0 30px rgba(63, 227, 255, .45), 0 0 0 10px rgba(63, 227, 255, .12);
 }
 
-/* ── falling loot ─────────────────────────────────────────────────────── */
-.getaway-result__loot { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+/* ── cash rain ───────────────────────────────────────────────────────── */
+.getaway-result__loot { position: absolute; inset: 0; overflow: hidden; pointer-events: none; perspective: 700px; }
 .getaway-result__loot i {
-  position: absolute; left: var(--x); top: -8vh;
-  width: var(--size); height: var(--size);
-  opacity: 0; will-change: transform, opacity;
+  position: absolute; left: var(--x); top: -10vh; opacity: 0; will-change: transform, opacity;
   animation: getaway-fall var(--speed) var(--delay) linear infinite;
 }
-.getaway-result__bar {
-  height: calc(var(--size) * .58); border-radius: 2px;
-  /* Weighted towards the deep gold: an even split reads as a white paper chip
-     at this size, not as a bar of bullion. */
-  background: linear-gradient(105deg, #7a4a12, var(--gold) 38%, var(--gold-hi) 52%, var(--gold-deep) 72%, #6d400f);
-  box-shadow: 0 0 10px rgba(255, 158, 46, .5), inset 0 0 0 1px rgba(255, 233, 176, .35);
+.getaway-result__bill {
+  width: var(--size); height: calc(var(--size) * .45);
+  background: center / cover no-repeat; /* image set inline (relative path, works on Stake's sub-path) */
+  filter: drop-shadow(0 4px 4px rgba(0, 0, 0, .45));
 }
-.getaway-result__ember { border-radius: 50%; background: var(--gold); box-shadow: 0 0 10px rgba(255, 178, 74, .8); }
+.getaway-result__spark { width: var(--size); height: var(--size); border-radius: 50%; background: var(--hue); box-shadow: 0 0 12px 3px var(--hue); }
+@keyframes getaway-fall {
+  0% { opacity: 0; transform: translate3d(0, 0, 0) rotateX(0deg) rotateZ(0deg); }
+  8% { opacity: 1; }
+  85% { opacity: .85; }
+  100% { opacity: 0; transform: translate3d(var(--drift), 122vh, 0) rotateX(calc(var(--spin) * 900deg)) rotateZ(calc(var(--spin) * 160deg)); }
+}
 
-/* ── the payout itself ────────────────────────────────────────────────── */
+/* ── the payout ──────────────────────────────────────────────────────── */
 .getaway-result__stage {
   position: relative; z-index: 2; text-align: center;
-  width: min(760px, calc(100% - 32px)); padding: 4px 20px;
+  width: min(860px, calc(100% - 32px)); padding: 4px 20px;
 }
 .getaway-result__kicker {
   display: flex; align-items: center; justify-content: center; gap: 16px;
-  color: #d3ab74; font-weight: 600; font-size: 12px; letter-spacing: 6px;
+  color: #fff; font-weight: 700; font-size: 13px; letter-spacing: 8px; text-shadow: 0 2px 6px #000;
 }
-.getaway-result__kicker i { width: clamp(28px, 9vw, 86px); height: 1px; background: linear-gradient(90deg, transparent, #d3ab74); }
+.getaway-result__kicker i { width: clamp(30px, 9vw, 96px); height: 2px; background: linear-gradient(90deg, transparent, var(--pink), var(--cyan)); }
 .getaway-result__kicker i:last-child { transform: rotate(180deg); }
+
+/* GTA band: a black bar the full width of the screen behind the title. */
+.getaway-result__band { position: relative; margin: 12px 0 0; padding: 10px 0 14px; }
+.getaway-result__band::before {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 50%; width: 100vw; transform: translateX(-50%) scaleX(0); z-index: -1;
+  background: linear-gradient(90deg, transparent 0%, rgba(4, 2, 10, .82) 18%, rgba(4, 2, 10, .86) 50%, rgba(4, 2, 10, .82) 82%, transparent 100%);
+  border-top: 1px solid rgba(255, 79, 168, .5); border-bottom: 1px solid rgba(63, 227, 255, .45);
+  animation: getaway-band .55s .1s cubic-bezier(.7, 0, .2, 1) forwards;
+}
+@keyframes getaway-band { to { transform: translateX(-50%) scaleX(1); } }
+.getaway-result__flash {
+  position: absolute; inset: 0 -30%; pointer-events: none; opacity: 0;
+  background: linear-gradient(90deg, transparent 35%, rgba(255, 255, 255, .55) 50%, transparent 65%);
+  mix-blend-mode: screen;
+}
 .getaway-result__tier {
-  margin: 10px 0 0; line-height: 1.08; font-family: 'Heat Display', Impact, sans-serif; font-weight: 400; font-style: normal;
-  font-size: clamp(38px, 7.4vw, 86px); letter-spacing: 1px;
-  background: linear-gradient(#fff9e2 8%, #ffe0b0 46%, #f69a9b 98%);
-  background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 4px 0 #702746) drop-shadow(0 0 10px rgba(255, 173, 120, .18));
+  position: relative; margin: 0; line-height: 1.02; font-family: 'Heat Display', Impact, sans-serif; font-weight: 400; font-style: normal;
+  font-size: clamp(42px, 8.4vw, 108px); letter-spacing: 1.5px; transform: skewX(-6deg);
+  color: #2a0820;
+  text-shadow:
+    -2px -2px 0 #14020f, 2px -2px 0 #14020f, -2px 2px 0 #14020f, 2px 2px 0 #14020f,
+    0 3px 0 #5a1240, 0 5px 0 #43092f, 0 7px 0 #2c041f, 0 12px 22px rgba(0, 0, 0, .7);
 }
-.getaway-result__label {
-  margin-top: 20px; color: #cdae7c; font-size: 11px; font-weight: 700; letter-spacing: 5px;
+/* sunset-neon face laid exactly over the extruded copy */
+.getaway-result__tier::after {
+  content: attr(data-text); position: absolute; inset: 0; text-shadow: none;
+  background: linear-gradient(180deg, #fff6e6 6%, #ffd9a0 30%, var(--sun) 46%, var(--pink) 66%, var(--violet) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 0 calc(10px + 18px * var(--heat)) rgba(255, 79, 168, .55));
 }
+.getaway-result__label { margin-top: 16px; color: #d9cbe6; font-size: 12px; font-weight: 700; letter-spacing: 7px; text-shadow: 0 2px 6px #000; }
 .getaway-result__amount {
   display: flex; align-items: baseline; justify-content: center; gap: 12px;
-  margin-top: 6px; min-height: 96px; white-space: nowrap; cursor: pointer;
+  margin-top: 4px; min-height: 100px; white-space: nowrap; cursor: pointer;
 }
 .getaway-result__value {
-  display: inline-block; line-height: 1; font-weight: 700; letter-spacing: -2px;
-  font-size: clamp(56px, 11vw, 116px); font-variant-numeric: tabular-nums;
-  background: linear-gradient(#ffffff 12%, #ffeec0 52%, #f2bd5e 100%);
-  background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 2px 1px rgba(0, 0, 0, .55)) drop-shadow(0 0 calc(18px + 30px * var(--heat)) rgba(255, 186, 74, .5));
+  display: inline-block; line-height: 1; letter-spacing: 1px;
+  font-family: 'Heat Display', Impact, sans-serif; font-weight: 400;
+  font-size: clamp(60px, 11.5vw, 128px); font-variant-numeric: tabular-nums;
+  color: #ffffff;
+  text-shadow: 0 4px 0 #1b0d2a, 0 0 22px rgba(63, 227, 255, .55), 0 0 60px rgba(255, 79, 168, .35);
 }
-.getaway-result__currency { font-size: clamp(14px, 2vw, 20px); letter-spacing: 2px; color: #d0b184; font-weight: 600; }
+.getaway-result__currency { font: 400 clamp(18px, 2.4vw, 26px) 'Heat Display', Impact, sans-serif; letter-spacing: 2px; color: var(--pink); text-shadow: 0 2px 0 #1b0d2a; }
 .getaway-result__rule {
-  width: min(430px, 76%); height: 2px; margin: 4px auto 0;
-  background: rgba(237, 193, 111, .12); overflow: hidden;
+  width: min(460px, 78%); height: 3px; margin: 6px auto 0; border-radius: 2px;
+  background: rgba(255, 255, 255, .1); overflow: hidden;
 }
 .getaway-result__rule span {
-  display: block; height: 100%; transform: scaleX(var(--progress)); transform-origin: left;
-  background: linear-gradient(90deg, #ff9d4d, var(--gold-hi));
-  box-shadow: 0 0 12px rgba(255, 221, 137, .9);
+  display: block; height: 100%; transform: scaleX(0); transform-origin: left;
+  background: linear-gradient(90deg, var(--pink), var(--cyan));
+  box-shadow: 0 0 12px rgba(63, 227, 255, .9);
 }
-.getaway-result__chip {
-  display: inline-flex; align-items: center; gap: 7px;
-  margin-top: 16px; padding: 5px 15px; border-radius: 999px;
-  border: 1px solid rgba(233, 189, 116, .3); background: rgba(255, 210, 132, .07);
-  color: #9fb0b0; font-size: 10px; letter-spacing: 2.4px; font-weight: 600;
-  opacity: 0; transform: translateY(6px); transition: opacity .3s, transform .3s;
+
+/* GTA mission readout: label · leader dots · value */
+.getaway-result__stats { width: min(420px, 86%); margin: 18px auto 0; padding: 0; }
+.getaway-result__stat {
+  display: flex; align-items: baseline; gap: 10px; padding: 4px 0;
+  font-size: 14px; font-weight: 700; letter-spacing: 2.5px; color: #cbbfdc;
+  opacity: 0; transform: translateX(-14px);
 }
-.getaway-result__chip b { color: var(--gold); font-size: 17px; letter-spacing: .4px; }
-.getaway-result[data-phase="counting"] .getaway-result__chip,
-.getaway-result[data-phase="settled"] .getaway-result__chip { opacity: 1; transform: translateY(0); }
+.getaway-result__stat::after { content: ''; order: 1; flex: 1; border-bottom: 1px dotted rgba(255, 255, 255, .28); transform: translateY(-4px); }
+.getaway-result__stat dt { order: 0; }
+.getaway-result__stat dd { order: 2; margin: 0; font: 400 20px/1 'Heat Display', Impact, sans-serif; letter-spacing: 1px; color: #fff; }
+.getaway-result__stat.chip dd b { color: var(--cyan); font-weight: 400; text-shadow: 0 0 10px rgba(63, 227, 255, .6); }
+.getaway-result[data-phase="counting"] .getaway-result__stat,
+.getaway-result[data-phase="settled"] .getaway-result__stat,
+.getaway-result[data-phase="leaving"] .getaway-result__stat {
+  animation: getaway-stat .45s calc(.15s + var(--i) * .12s) cubic-bezier(.16, 1, .3, 1) forwards;
+}
+@keyframes getaway-stat { to { opacity: 1; transform: none; } }
+
+/* COLLECT: a neon-rimmed glass prompt, not a slab of gold */
 .getaway-result__cta {
-  display: block; width: min(300px, 100%); min-height: 54px; margin: 24px auto 0;
-  padding: 13px 26px; border: 1px solid #ffeab3; border-radius: 10px;
-  color: #33220e; background: linear-gradient(100deg, #e2ae67, #fff1bd 48%, #e2ae67);
-  box-shadow: 0 8px 30px rgba(249, 197, 102, .22), inset 0 1px #fff8d8;
-  font: 700 16px 'Barlow Semi Condensed', Arial, sans-serif; letter-spacing: 3px;
-  cursor: pointer; overflow: hidden; position: relative;
-  transition: filter .18s, transform .18s;
+  position: relative; display: block; width: min(300px, 100%); min-height: 56px; margin: 22px auto 0;
+  padding: 14px 26px; border: 0; border-radius: 999px; cursor: pointer; overflow: hidden;
+  color: #fff; font: 400 21px 'Heat Display', Impact, sans-serif; letter-spacing: 4px;
+  background: linear-gradient(180deg, rgba(30, 14, 46, .92), rgba(10, 6, 20, .92));
+  box-shadow: 0 0 0 2px transparent, 0 10px 30px rgba(0, 0, 0, .5), 0 0 28px rgba(255, 79, 168, .35);
+  transition: transform .18s, box-shadow .18s;
 }
+.getaway-result__cta::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 2px;
+  background: linear-gradient(90deg, var(--pink), var(--sun), var(--cyan), var(--pink));
+  background-size: 300% 100%;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: getaway-rim 3s linear infinite;
+}
+@keyframes getaway-rim { to { background-position: 300% 0; } }
 .getaway-result__cta::after {
-  content: ''; position: absolute; inset: 0 auto 0 -40%; width: 35%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .75), transparent);
+  content: ''; position: absolute; inset: 0 auto 0 -40%; width: 30%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .45), transparent);
   transform: skewX(-20deg); animation: getaway-sheen 2.8s ease-in-out infinite;
 }
-.getaway-result__cta span { position: relative; z-index: 1; }
-.getaway-result__cta:hover { filter: brightness(1.08); transform: translateY(-1px); }
-.getaway-result__cta:focus-visible { outline: 2px solid #fff4d3; outline-offset: 5px; }
-.getaway-result__hint { margin-top: 12px; font-size: 9px; letter-spacing: 2px; color: #9b9992; }
+.getaway-result__cta span { position: relative; z-index: 1; text-shadow: 0 0 12px rgba(255, 79, 168, .8); }
+.getaway-result__cta:hover { transform: translateY(-1px) scale(1.02); box-shadow: 0 10px 30px rgba(0, 0, 0, .5), 0 0 40px rgba(255, 79, 168, .55); }
+.getaway-result__cta:focus { outline: none; }
+.getaway-result__cta:focus-visible { box-shadow: 0 10px 30px rgba(0, 0, 0, .5), 0 0 0 4px rgba(63, 227, 255, .35), 0 0 44px rgba(255, 79, 168, .6); }
+.getaway-result__hint { margin-top: 12px; font-size: 10px; font-weight: 700; letter-spacing: 3px; color: #9c90ad; text-shadow: 0 1px 3px #000; }
 
 .getaway-result[data-phase="settled"] .getaway-result__value { animation: getaway-total .5s cubic-bezier(.16, 1, .3, 1); }
-.getaway-result[data-perfect="true"] .getaway-result__tier { animation: getaway-perfect 2.2s ease-in-out infinite; }
+.getaway-result[data-perfect="true"] .getaway-result__tier::after { animation: getaway-perfect 1.6s linear infinite; background-size: 100% 300%; }
 
-/* ── the exit wipe ────────────────────────────────────────────────────── */
+/* ── the exit wipe (motion unchanged; edge recoloured to the neon palette) ── */
 .getaway-result__wipe {
   position: absolute; top: -10%; left: 0; width: 100%; height: 120%;
   transform: translateX(-118%) skewX(-9deg); will-change: transform; z-index: 6;
-  /* A narrow, bright leading edge reads as a light sweep; a wide gradient just
-     washes the screen cream on the way past. */
-  background: linear-gradient(90deg, #04060b 0 93.5%, rgba(178, 110, 32, .95) 96.4%,
-    var(--gold) 98.4%, #fff8e6 99.5%, #fff 100%);
-  box-shadow: 16px 0 54px rgba(255, 186, 82, .38);
+  background: linear-gradient(90deg, #06030c 0 93.5%, rgba(155, 77, 255, .9) 96%, var(--pink) 98.3%, #ffe6f3 99.5%, #fff 100%);
+  box-shadow: 16px 0 54px rgba(255, 79, 168, .4);
 }
-/* Once the wipe covers the screen the payout's own backdrop must stop tinting
-   and blurring the restored game underneath it. */
-.getaway-result[data-phase="covered"] { background: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+/* Once the wipe covers the screen the payout's own backdrop must stop
+   tinting the restored game underneath it. */
+.getaway-result[data-phase="covered"] { background: none; }
 .getaway-result[data-phase="covered"] .getaway-result__sky,
 .getaway-result[data-phase="covered"] .getaway-result__loot,
 .getaway-result[data-phase="covered"] .getaway-result__stage { display: none; }
 
-@keyframes getaway-total { 0% { transform: scale(1); } 34% { transform: scale(1.07); } 100% { transform: scale(1); } }
-@keyframes getaway-aura { to { transform: scale(1.12); opacity: .62; } }
-@keyframes getaway-rays { to { transform: rotate(360deg); } }
+@keyframes getaway-total { 0% { transform: scale(1); } 34% { transform: scale(1.08); } 100% { transform: scale(1); } }
 @keyframes getaway-sheen { 0%, 62% { left: -40%; } 100% { left: 115%; } }
-@keyframes getaway-perfect { 50% { filter: drop-shadow(0 3px 0 #4a2c14) drop-shadow(0 0 54px rgba(255, 214, 120, .95)); } }
-@keyframes getaway-fall {
-  0% { opacity: 0; transform: translate3d(0, 0, 0) rotate(0deg); }
-  8% { opacity: .9; }
-  85% { opacity: .55; }
-  100% { opacity: 0; transform: translate3d(var(--drift), 118vh, 0) rotate(calc(var(--spin) * 420deg)); }
-}
+@keyframes getaway-perfect { 0% { background-position: 0 0; } 100% { background-position: 0 300%; } }
 
 @media (max-width: 560px) {
-  .getaway-result__kicker { font-size: 10px; letter-spacing: 4px; }
-  .getaway-result__tier { font-size: clamp(32px, 10.5vw, 52px); }
-  .getaway-result__label { margin-top: 14px; letter-spacing: 3.5px; }
-  .getaway-result__amount { min-height: 72px; gap: 8px; }
-  .getaway-result__value { font-size: 64px; }
-  .getaway-result__chip { margin-top: 12px; }
-  .getaway-result__cta { margin-top: 18px; min-height: 48px; letter-spacing: 2px; }
+  .getaway-result__kicker { font-size: 10px; letter-spacing: 5px; }
+  .getaway-result__tier { font-size: clamp(34px, 11vw, 56px); }
+  .getaway-result__label { margin-top: 12px; letter-spacing: 4px; }
+  .getaway-result__amount { min-height: 74px; gap: 8px; }
+  .getaway-result__value { font-size: 68px; }
+  .getaway-result__stat { font-size: 12px; letter-spacing: 1.5px; }
+  .getaway-result__stat dd { font-size: 17px; }
+  .getaway-result__cta { margin-top: 16px; min-height: 50px; letter-spacing: 3px; }
 }
 @media (max-height: 640px) {
-  .getaway-result__tier { font-size: clamp(30px, 6.4vw, 54px); }
-  .getaway-result__label { margin-top: 12px; }
-  .getaway-result__amount { min-height: 74px; }
-  .getaway-result__value { font-size: clamp(46px, 8.4vw, 78px); }
-  .getaway-result__chip { margin-top: 10px; padding: 4px 13px; }
-  .getaway-result__cta { margin-top: 16px; min-height: 46px; }
-  .getaway-result__hint { margin-top: 8px; }
+  .getaway-result__tier { font-size: clamp(32px, 6.6vw, 60px); }
+  .getaway-result__label { margin-top: 10px; }
+  .getaway-result__amount { min-height: 70px; }
+  .getaway-result__value { font-size: clamp(48px, 8.6vw, 84px); }
+  .getaway-result__stats { margin-top: 10px; }
+  .getaway-result__stat { padding: 2px 0; }
+  .getaway-result__cta { margin-top: 14px; min-height: 46px; }
+  .getaway-result__hint { margin-top: 6px; }
 }
-@media (max-height: 430px) {
-  .getaway-result__kicker, .getaway-result__hint { display: none; }
+@media (max-height: 470px) {
+  .getaway-result__kicker, .getaway-result__hint, .getaway-result__stats { display: none; }
   .getaway-result__tier { font-size: 30px; }
-  .getaway-result__label { margin-top: 8px; font-size: 10px; }
-  .getaway-result__amount { min-height: 52px; }
   .getaway-result__value { font-size: 46px; }
-  .getaway-result__chip { margin-top: 7px; }
-  .getaway-result__chip b { font-size: 14px; }
-  .getaway-result__cta { margin-top: 11px; min-height: 40px; font-size: 13px; }
-}
-@media (max-height: 320px) {
-  .getaway-result__tier { font-size: 24px; }
-  .getaway-result__amount { min-height: 42px; }
-  .getaway-result__value { font-size: 36px; }
-  .getaway-result__cta { margin-top: 8px; min-height: 34px; }
+  .getaway-result__cta { margin-top: 10px; min-height: 38px; font-size: 15px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .getaway-result__loot, .getaway-result__rays { display: none; }
-  .getaway-result__aura, .getaway-result__value, .getaway-result__tier { animation: none !important; }
+  .getaway-result__loot, .getaway-result__streaks { display: none; }
+  .getaway-result__art, .getaway-result__value, .getaway-result__tier::after, .getaway-result__cta::before { animation: none !important; }
   .getaway-result__cta::after { display: none; }
 }

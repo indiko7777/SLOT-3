@@ -17,13 +17,15 @@ import {
 import { createPlayerStateStore } from "./meta/PlayerStateStore";
 import type { GalleryProgress } from "./pixi/types";
 import { loadSymbolTextures } from "./pixi/assets";
+import { warmUpGpu } from "./pixi/warmup";
+import { GetawayResult } from "./pixi/GetawayResult";
 import { PixiGameScene } from "./pixi/PixiGameScene";
 import { setTimeScale } from "./pixi/tween";
 import { RadioWheel } from "./radio";
 import { RgsClient, RgsError, toDisplay } from "./rgs/client";
 import { readSession } from "./rgs/session";
 import type { BetModeObject, Jurisdiction } from "./rgs/types";
-import { showConfirmPopup } from "./confirmPopup";
+import { showConfirmPopup, prewarmConfirmPopups } from "./confirmPopup";
 import { SettingsMenu, type TurboMode } from "./settingsMenu";
 import { selectSpinMode, starsForMode } from "./meta/starModes";
 import { cosmeticThemeFor } from "./meta/rewards";
@@ -271,6 +273,11 @@ async function boot(): Promise<void> {
   // to be awaited here, freezing the loader on slow connections; it now streams
   // in the background and unlock() waits on it before the first sound plays.
   await Promise.all([loadSymbolTextures(), loadUiFonts()]);
+  // Shader compiles + texture uploads happen here, behind the loader, instead
+  // of as freezes on the first spin / big win / Getaway intro.
+  warmUpGpu(pixi.renderer);
+  GetawayResult.prewarm();
+  prewarmConfirmPopups();
   void audioBus.prefetch();
   updateLoader(0.55);
 
@@ -546,6 +553,23 @@ async function boot(): Promise<void> {
         isPlaying = false;
       }
     };
+    (window as unknown as { __scene: PixiGameScene }).__scene = scene;
+    // __play([...events]) → replay any scripted event list through the real
+    // audio + scene path (mega wilds, transforms, cascades…) for inspection.
+    (window as unknown as { __play: (events: GameEvent[]) => Promise<void> }).__play = async (events) => {
+      if (isPlaying) return;
+      isPlaying = true;
+      try {
+        const rec: RoundRecord = { id: 0, payoutMultiplier: 0, events: [] };
+        for (const ev of events) {
+          snapshot = applyEvent(snapshot, ev, rec);
+          audioBus.playEvent(ev, muted, isTurbo());
+          await scene.playEvent(ev, snapshot);
+        }
+      } finally {
+        isPlaying = false;
+      }
+    };
     // Slow-motion for inspecting fast beats (1 = normal). __slow(0.2) = 5x slower.
     (window as unknown as { __slow: (s?: number) => void }).__slow = (s = 0.2) => setTimeScale(s);
     // Explicit local presentation harness; compiled out of publication builds.
@@ -614,7 +638,9 @@ async function boot(): Promise<void> {
   // replays (the player is reviewing a specific round, not starting a session).
   // Never allowed to block boot if it throws.
   if (!isReplayActive) {
-    try { await showIntro(); } catch { /* non-fatal — go straight to the game */ }
+    // Unlock audio on ENTER (a user gesture): creating the AudioContext and
+    // decoding the sound bank used to happen on the first spin and froze it.
+    try { await showIntro(() => { void audioBus.unlock(); }); } catch { /* non-fatal — go straight to the game */ }
   }
 
 

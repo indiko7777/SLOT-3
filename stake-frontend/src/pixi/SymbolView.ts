@@ -4,7 +4,8 @@ import { SYMBOLS } from "../domain";
 import { SYMBOL_ASSETS, getSymbolTexture, createSkelSymbol } from "./assets";
 import type { SkelPlayer } from "./SkelPlayer";
 import { makeText } from "./text";
-import { easeInOutCubic, easeOutBack, easeOutQuad, linear, tween, ambientTicker, getTimeScale } from "./tween";
+import { easeInOutCubic, easeOutBack, easeOutCubic, easeOutQuad, linear, tween, ambientTicker, getTimeScale } from "./tween";
+import { softGlowTexture } from "./fxTextures";
 import { SymbolFlow, isSemantic, type ClipPlan, type LandSource } from "./symbolFlow";
 
 /** How long a winner may sit in its held pose before it is released back to
@@ -38,6 +39,14 @@ export const WIN_ACCENT: Record<SymbolId, number> = {
   EMPTY: 0x000000
 };
 const HERO_SYMBOLS = new Set<SymbolId>(["CAR_WILD", "SAFE", "MASTER_KEY"]);
+
+/** Lift curve: rise past the target to `peak`× of it, then settle onto it.
+ *  Returned value is the 0→1 shape setLift() maps onto from→target. */
+function popShape(peak: number): (p: number) => number {
+  return (p) => (p < 0.55
+    ? peak * easeOutCubic(p / 0.55)
+    : peak - (peak - 1) * easeInOutCubic((p - 0.55) / 0.45));
+}
 export const DEFAULT_ACCENT = 0xffdf65;
 
 export class SymbolView extends Container {
@@ -69,6 +78,14 @@ export class SymbolView extends Container {
   private holdTimer: number | null = null;
   private highlighted = false;
   private settleToken = 0;
+  /** Soft additive accent bloom behind a winning symbol (breathes while lit). */
+  private winPlate: Sprite | null = null;
+  private plateCb: ((dt: number, elapsed: number) => void) | null = null;
+  /** Presentation scale on top of the cell fit — winners lift toward the
+   *  player. Multiplies the rig's own transform, never replaces its motion. */
+  private lift = 1;
+  private liftToken = 0;
+  private dimToken = 0;
 
   /** Sink for authored clip events (gunshot, casing tink, bill flutter…).
    *  Wired by the scene to the audio bus; null = silent. */
@@ -138,11 +155,14 @@ export class SymbolView extends Container {
     // A border is only drawn to signal win / alert / transform states.
     if (highlighted) {
       const accent = WIN_ACCENT[this.id] ?? DEFAULT_ACCENT;
-      // Glowing border for wins based on symbol accent color
-      this.background.roundRect(-2, -2, w + 4, h + 4, 12)
-        .stroke({ color: accent, width: 3, alpha: 0.9 });
-      this.background.roundRect(0, 0, w, h, 10)
-        .stroke({ color: accent, width: 1.5, alpha: 0.5 });
+      // A lit cell, not a wireframe box: soft accent halo + one crisp inner edge.
+      this.background.roundRect(1, 1, w - 2, h - 2, 12)
+        .fill({ color: accent, alpha: 0.10 })
+        .stroke({ color: accent, width: 6, alpha: 0.16 });
+      this.background.roundRect(3, 3, w - 6, h - 6, 10)
+        .stroke({ color: accent, width: 2, alpha: 0.85 });
+      this.background.roundRect(4.5, 4.5, w - 9, h - 9, 9)
+        .stroke({ color: 0xffffff, width: 1, alpha: 0.22 });
     } else if (alert) {
       // Glossy transparent green background fill inside the cell
       this.background.roundRect(0, 0, w, h, 10)
@@ -164,6 +184,9 @@ export class SymbolView extends Container {
     // Top glass sheen removed — it was part of the white per-cell frame.
     this.topSheen.clear();
 
+    if (highlighted) this.showPlate();
+    else this.hidePlate();
+
     // Keep the shimmer mask sized to the cell (clips the win light streak).
     this.shimmerMask.clear();
     this.shimmerMask.roundRect(0, 0, w, h, 10).fill(0xffffff);
@@ -175,7 +198,7 @@ export class SymbolView extends Container {
     // size (fitW/fitH), not the padded canvas, so it matches the static art.
     if (this.skel && w > 0 && h > 0) {
       const s = this.skelFitScale();
-      if (s > 0) this.skel.scale.set(s);
+      if (s > 0) this.skel.scale.set(s * this.lift);
       this.skel.position.set(w / 2, h / 2);
     }
 
@@ -186,6 +209,72 @@ export class SymbolView extends Container {
       this.corner.style.fontSize = Math.max(10, Math.min(18, w * 0.18));
       this.corner.position.set(w - 8, h - 22);
     }
+  }
+
+  /** Breathing accent bloom behind the art while this cell is a winner. */
+  private showPlate(): void {
+    const w = this.widthValue;
+    const h = this.heightValue;
+    if (w <= 0 || h <= 0) return;
+    if (!this.winPlate) {
+      const plate = new Sprite(softGlowTexture());
+      plate.anchor.set(0.5);
+      plate.blendMode = "add";
+      plate.alpha = 0;
+      this.addChildAt(plate, 1);
+      this.winPlate = plate;
+    }
+    const plate = this.winPlate;
+    plate.tint = WIN_ACCENT[this.id] ?? DEFAULT_ACCENT;
+    plate.position.set(w / 2, h / 2);
+    plate.width = w * 1.25;
+    plate.height = h * 1.25;
+    const baseX = plate.scale.x;
+    const baseY = plate.scale.y;
+    if (this.plateCb) return;
+    let t = 0;
+    this.plateCb = (dt) => {
+      if (plate.destroyed) return;
+      t += dt;
+      const fadeIn = Math.min(1, t / 0.16);
+      const breathe = 0.5 + 0.5 * Math.sin(t * 6.2);
+      plate.alpha = fadeIn * (0.38 + 0.22 * breathe);
+      const k = 1 + 0.05 * breathe;
+      plate.scale.set(baseX * k, baseY * k);
+    };
+    ambientTicker.add(this.plateCb);
+  }
+
+  private hidePlate(): void {
+    if (this.plateCb) { ambientTicker.remove(this.plateCb); this.plateCb = null; }
+    if (this.winPlate && !this.winPlate.destroyed) this.winPlate.alpha = 0;
+  }
+
+  /** Tween the presentation lift (1 = resting in the cell). */
+  private setLift(target: number, ms: number, shape: (p: number) => number = easeOutQuad): void {
+    const token = ++this.liftToken;
+    const from = this.lift;
+    void tween(ms, (p) => {
+      if (this.destroyed || token !== this.liftToken) return;
+      this.lift = from + (target - from) * shape(p);
+      const fit = this.skelFitScale();
+      if (this.skel && fit > 0) this.skel.scale.set(fit * this.lift);
+    }, linear);
+  }
+
+  /** Non-winning symbols step back while a cluster pays, so the win reads at a
+   *  glance. Fades the art only — never the cell's own alpha or its clips. */
+  setDimmed(on: boolean, turbo: boolean): void {
+    const art = this.skel ?? this.sprite;
+    if (!art || this.destroyed) return;
+    const token = ++this.dimToken;
+    const from = art.alpha;
+    const to = on ? 0.32 : 1;
+    if (Math.abs(from - to) < 0.01) return;
+    void tween(on ? (turbo ? 70 : 160) : (turbo ? 60 : 140), (p) => {
+      if (this.destroyed || art.destroyed || token !== this.dimToken) return;
+      art.alpha = from + (to - from) * p;
+    }, easeOutQuad);
   }
 
   private skelFitScale(): number {
@@ -408,6 +497,8 @@ export class SymbolView extends Container {
     border.alpha = 0;
     void tween(turbo ? 70 : 160, (p) => { if (!border.destroyed) border.alpha = p; }, easeOutQuad);
 
+    // Lift toward the player with a small overshoot, then hold slightly raised.
+    this.setLift(1.06, turbo ? 140 : 360, popShape(2.15));
     const plan = flow.win(turbo, getTimeScale());
     if (!plan) return;
     await new Promise<void>((resolve) => this.runPlan(plan, turbo, resolve));
@@ -432,6 +523,7 @@ export class SymbolView extends Container {
       this.runPlan(plan, false);
       if (this.highlighted) this.redraw(false, false, false);
     }
+    if (this.lift !== 1) this.setLift(1, 160);
   }
 
   /** Legacy skeletal win (WILD, CAR_WILD, truck): play the authored `win`
@@ -442,13 +534,14 @@ export class SymbolView extends Container {
     this.redraw(true, false, false);
 
     const accent = WIN_ACCENT[this.id] ?? DEFAULT_ACCENT;
+    // The breathing plate drawn by redraw() is the glow — no filled tier box
+    // (it read as a flat coloured square behind the symbol).
     this.winGlow.clear();
-    this.winGlow.roundRect(-8, -8, w + 16, h + 16, 16).fill({ color: accent, alpha: 0.3 });
-    this.winGlow.roundRect(-3, -3, w + 6, h + 6, 12).fill({ color: accent, alpha: 0.16 });
     this.winGlow.alpha = 0;
+    if (w > 0 && h > 0) this.setLift(1.07, turbo ? 140 : 340, popShape(1.7));
 
     const sweep = this.sweepShimmer(turbo, accent);
-    const glowIn = tween(turbo ? 90 : 200, (p) => { this.winGlow.alpha = p; });
+    const glowIn = Promise.resolve();
     // The ambient ticker keeps calling skel.update, so a one-shot play resolves
     // itself; speed tracks turbo and the global time scale like the tweens do.
     const plan = this.flow?.win(turbo, getTimeScale());
@@ -458,6 +551,7 @@ export class SymbolView extends Container {
 
     this.winGlow.alpha = 0;
     this.shimmer.alpha = 0;
+    this.setLift(1, turbo ? 90 : 220);
     const next = this.flow?.winEnded(getTimeScale());
     if (next) this.runPlan(next, turbo);
   }
@@ -499,6 +593,13 @@ export class SymbolView extends Container {
   }
 
   async vanish(turbo: boolean): Promise<void> {
+    // The cell's win frame leaves with the symbol, never after it (the old
+    // border outlived the art and left empty boxes on the board).
+    if (this.highlighted) {
+      const bg = this.background;
+      void tween(turbo ? 60 : 140, (p) => { if (!bg.destroyed) bg.alpha = 1 - p; }, linear);
+      this.hidePlate();
+    }
     if (this.skel && this.flow) {
       // Authored destroy, cross-faded straight out of the held win pose on
       // semantic rigs. Legacy rigs keep their 2x/4x playback exactly.
@@ -515,6 +616,9 @@ export class SymbolView extends Container {
   }
 
   override destroy(options?: { children?: boolean }): void {
+    this.hidePlate();
+    this.liftToken++;
+    this.dimToken++;
     this.setSpinBlur(0);
     this.stopIdleShimmer();
     this.clearHoldTimer();

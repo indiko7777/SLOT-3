@@ -1,8 +1,9 @@
-import { Container, Graphics, Sprite, Text, TextStyle, BlurFilter, Texture } from "pixi.js";
+import { Container, Graphics, Sprite, Text, TextStyle, BlurFilter } from "pixi.js";
 import { GRID_COLUMNS, GRID_ROWS, type Board, type Position, type SymbolId } from "../domain";
 import { getSymbolTexture } from "./assets";
-import { SymbolView } from "./SymbolView";
-import { tween, wait, easeOutBack, linear, ambientTicker } from "./tween";
+import { SymbolView, WIN_ACCENT, DEFAULT_ACCENT } from "./SymbolView";
+import { tween, wait, easeOutBack, easeOutCubic, easeInCubic, linear, ambientTicker, simulate } from "./tween";
+import { softGlowTexture, streakTexture } from "./fxTextures";
 import { planColumn, gravityEase, TUMBLE_TIMING, type FallSpec } from "./tumblePlan";
 import type { Rect } from "./types";
 
@@ -16,23 +17,6 @@ function slamBounce(r: number): number {
   const t = (r - 0.3) / 0.7;
   const decay = Math.pow(1 - t, 2);
   return 1 + 0.14 * Math.sin(t * Math.PI * 2.5) * decay;
-}
-
-let softGlowTexture: Texture | null = null;
-function getSoftGlowTexture(): Texture {
-  if (softGlowTexture) return softGlowTexture;
-  const canvas = document.createElement("canvas");
-  canvas.width = 128;
-  canvas.height = 128;
-  const ctx = canvas.getContext("2d")!;
-  const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-  grad.addColorStop(0, "rgba(255,255,255,1)");
-  grad.addColorStop(0.3, "rgba(255,255,255,0.7)");
-  grad.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, 128, 128);
-  softGlowTexture = Texture.from(canvas);
-  return softGlowTexture;
 }
 
 /** Symbols that may appear as spinning filler. All have loaded textures, so a
@@ -71,6 +55,8 @@ export class BoardView extends Container {
   private readonly glassOverlay = new Graphics();
   private readonly symbols = new Map<string, SymbolView>();
   private readonly anticipationOverlay = new Graphics();
+  /** Unmasked layer above the reels for bursts that may spill past the frame. */
+  private readonly fxLayer = new Container();
   private rect: Rect = { x: 0, y: 0, width: 100, height: 100 };
   private cellWidth = 0;
   private cellHeight = 0;
@@ -101,6 +87,8 @@ export class BoardView extends Container {
     this.reelContainer.mask = this.reelMask;
     this.addChild(this.reelMask);
     this.addChild(this.glassOverlay);
+    this.fxLayer.eventMode = "none";
+    this.addChild(this.fxLayer);
 
     this.counterText = new Text({
       text: "",
@@ -155,16 +143,34 @@ export class BoardView extends Container {
 
   async highlight(positions: Position[], turbo: boolean): Promise<void> {
     this.markPositions(positions, "highlight");
+    // Everything that did NOT win steps back, so the cluster reads instantly.
+    const active = new Set(positions.map(keyOf));
+    for (const [key, view] of this.symbols) if (!active.has(key)) view.setDimmed(true, turbo);
+    // Winners light up in a short ripple out from the cluster's centre rather
+    // than all on one frame — reads as energy spreading through the cluster.
+    const mc = positions.reduce((a, p) => a + p[0], 0) / Math.max(1, positions.length);
+    const mr = positions.reduce((a, p) => a + p[1], 0) / Math.max(1, positions.length);
+    const order = [...positions].sort((a, b) => Math.hypot(a[0] - mc, a[1] - mr) - Math.hypot(b[0] - mc, b[1] - mr));
+    const step = turbo ? 8 : 26;
+    const cap = turbo ? 40 : 170;
     await Promise.all(
-      positions.map(async (p, i) => {
+      order.map(async (p, i) => {
         const view = this.symbols.get(keyOf(p));
-        // A cluster feeds cash in a quick ripple, not six identical sprays
-        // advancing on exactly the same frame. Keep the delay bounded.
-        if (view?.id === "CASH") await wait((i % 4) * (turbo ? 10 : 24));
+        await wait(Math.min(cap, i * step));
         if (view && !view.destroyed) await view.winCelebrate(turbo);
       })
     );
     await wait(turbo ? 30 : 80);
+  }
+
+  /** Bring every dimmed symbol back to full strength. */
+  undimAll(turbo: boolean): void {
+    for (const view of this.symbols.values()) view.setDimmed(false, turbo);
+  }
+
+  /** Drop every win / alert / transform frame on the board. */
+  clearMarks(): void {
+    for (const view of this.symbols.values()) view.redraw(false, false, false);
   }
 
   async scatterTease(positions: Position[], turbo: boolean): Promise<void> {
@@ -231,12 +237,12 @@ export class BoardView extends Container {
         this.reelContainer.addChild(puff);
         const dx = 14 + Math.random() * 22;  // drifts right — away from the launch
         const dy = -(6 + Math.random() * 12);
-        void tween(380 + Math.random() * 220, (p) => {
-          puff.x += dx * 0.02;
-          puff.y += dy * 0.02;
+        void simulate(380 + Math.random() * 220, (k, p) => {
+          puff.x += dx * 0.02 * k;
+          puff.y += dy * 0.02 * k;
           puff.scale.set(1 + 1.8 * p);
           puff.alpha = 0.5 * (1 - p);
-        }, linear).then(() => puff.destroy());
+        }).then(() => puff.destroy());
       });
     }
   }
@@ -253,11 +259,11 @@ export class BoardView extends Container {
           (view.destroyed ? this.rect.height * Math.random() : view.y) + this.cellHeight * (0.15 + Math.random() * 0.7)
         );
         this.reelContainer.addChild(line);
-        void tween(200 + Math.random() * 140, (p) => {
-          line.x += 9;             // streaks fall behind the leftward launch
+        void simulate(200 + Math.random() * 140, (k, p) => {
+          line.x += 9 * k;         // streaks fall behind the leftward launch
           line.alpha = 0.55 * (1 - p);
           line.scale.x = 1 + p * 0.8;
-        }, linear).then(() => line.destroy());
+        }).then(() => line.destroy());
       });
     }
   }
@@ -266,17 +272,24 @@ export class BoardView extends Container {
   // Used by the real cascade (tumble_remove): the holes are filled afterwards by
   // tumbleTo() using the authoritative RGS board, so we must NOT refill here.
   async clearWins(positions: Position[], turbo: boolean): Promise<void> {
-    this.markPositions(positions, "highlight");
-    await Promise.all(
-      positions.map((p) => this.symbols.get(keyOf(p))?.vanish(turbo) ?? Promise.resolve())
-    );
+    const gone: Promise<void>[] = [];
     for (const p of positions) {
-      const v = this.symbols.get(keyOf(p));
-      if (v) { v.destroy({ children: true }); this.symbols.delete(keyOf(p)); }
+      const key = keyOf(p);
+      const view = this.symbols.get(key);
+      if (!view) continue;
+      // The symbol bursts as it goes: flash, ring and shards from its cell.
+      this.cellBurst(p[0], p[1], WIN_ACCENT[view.id] ?? DEFAULT_ACCENT, turbo);
+      // The cell is free for the refill at once; the view finishes its own
+      // destroy clip on screen and then cleans itself up.
+      this.symbols.delete(key);
+      gone.push(view.vanish(turbo).then(() => {
+        if (!view.destroyed) view.destroy({ children: true });
+      }));
     }
+    // Let the burst land and the destroy get going, then hand the holes to the
+    // refill while those clips finish underneath — no dead, empty board beat.
+    await Promise.race([Promise.all(gone), wait(turbo ? 90 : 320)]);
   }
-
-
 
   /* ─── CASCADE: gravity-drop survivors + drop new symbols from above ───
    * The board owns the fall: a clean constant-gravity drop (tumblePlan), no
@@ -287,6 +300,7 @@ export class BoardView extends Container {
    * the resolve, overlapping the next event like a real settle would. */
   async tumbleTo(board: Board, turbo: boolean): Promise<void> {
     this.currentBoard = board;
+    this.undimAll(turbo);
     const cellStep = this.cellHeight + this.gap;
     const animations: Promise<void>[] = [];
 
@@ -397,20 +411,10 @@ export class BoardView extends Container {
 
     // Golden flash burst that blankets the affected cells and fades out while the
     // new symbols pop in — this is the "reveal" moment, not a glitch.
-    if (!turbo) {
-      const burst = new Graphics();
-      for (const [col, row] of transformed) {
-        const cx = this.cellX(col) + this.cellWidth / 2;
-        const cy = this.cellY(row) + this.cellHeight / 2;
-        burst.circle(cx, cy, this.cellWidth * 0.65).fill({ color: 0xffd700, alpha: 0.45 });
-        burst.circle(cx, cy, this.cellWidth * 0.32).fill({ color: 0xffffff, alpha: 0.55 });
-      }
-      burst.alpha = 0;
-      this.addChild(burst);
-      tween(340, (p) => {
-        burst.alpha = p < 0.12 ? p / 0.12 : (1 - p) / 0.88;
-      }, linear).then(() => burst.destroy());
-    }
+    // Each stash cell erupts in gold light as its new symbol arrives.
+    transformed.forEach(([col, row], i) => {
+      void wait(i * (turbo ? 20 : 55)).then(() => this.cellBurst(col, row, 0xffd24a, turbo, 1.3));
+    });
 
     // Phase 2 — staggered pop-in of new symbols with an easeOutBack bounce.
     const sortedIn = [...transformed].sort(([c1, r1], [c2, r2]) => (c1 + r1) - (c2 + r2));
@@ -426,31 +430,143 @@ export class BoardView extends Container {
     });
     await Promise.all(inAnims);
 
-    // Brief green-border highlight so the player sees what changed.
+    // Brief border so the player sees what changed — then it is cleared, it
+    // must never linger into the next cascade or past the round.
     this.markPositions(transformed, "transform");
     await wait(turbo ? 60 : 280);
+    this.clearMarks();
   }
 
+  /**
+   * 2×2 mega wild. The four cells cave in, then ONE giant symbol slams down
+   * across the block (shake, flash, shock ring, shards), holds for a beat
+   * playing its win, and settles into the four live cells under a shared frame
+   * that fades away. The board keeps per-cell views (the block can be broken
+   * up by later cascades); the big symbol is presentation only.
+   */
   async megaWild(board: Board, positions: Position[], turbo: boolean): Promise<void> {
     this.currentBoard = board;
+    if (!positions.length) return;
+    const cols = positions.map((p) => p[0]);
+    const rows = positions.map((p) => p[1]);
+    const c0 = Math.min(...cols), c1 = Math.max(...cols);
+    const r0 = Math.min(...rows), r1 = Math.max(...rows);
+    const x0 = this.cellX(c0), y0 = this.cellY(r0);
+    const bw = this.cellX(c1) + this.cellWidth - x0;
+    const bh = this.cellY(r1) + this.cellHeight - y0;
+    const bcx = x0 + bw / 2, bcy = y0 + bh / 2;
+    const id = board[c0]![r0]!;
+
+    // 1. The old symbols cave in toward the block centre.
+    const olds = positions
+      .map((p) => ({ p, v: this.symbols.get(keyOf(p)) }))
+      .filter((o): o is { p: Position; v: SymbolView } => !!o.v);
+    await tween(turbo ? 80 : 200, (t) => {
+      const e = easeInCubic(t);
+      for (const { p, v } of olds) {
+        if (v.destroyed) continue;
+        const s = 1 - 0.45 * e;
+        const cx = this.cellX(p[0]) + this.cellWidth / 2;
+        const cy = this.cellY(p[1]) + this.cellHeight / 2;
+        const tx = cx + (bcx - cx) * 0.4 * e;
+        const ty = cy + (bcy - cy) * 0.4 * e;
+        v.scale.set(s);
+        v.position.set(tx - (this.cellWidth * s) / 2, ty - (this.cellHeight * s) / 2);
+        v.alpha = 1 - e;
+      }
+    }, linear);
+
+    // 2. Real per-cell views go in underneath, hidden until the hand-off.
+    const views: SymbolView[] = [];
     for (const [col, row] of positions) {
       const key = keyOf([col, row]);
-      const old = this.symbols.get(key);
-      if (old) { old.destroy({ children: true }); this.symbols.delete(key); }
-      const id = board[col][row];
-      const view = new SymbolView(id);
+      this.symbols.get(key)?.destroy({ children: true });
+      const view = new SymbolView(board[col]![row]!);
       view.layout(this.cellWidth, this.cellHeight);
       view.position.set(this.cellX(col), this.cellY(row));
+      view.alpha = 0;
       this.symbols.set(key, view);
       this.reelContainer.addChild(view);
+      views.push(view);
     }
-    this.markPositions(positions, "alert");
-    const views = positions.map((p) => this.symbols.get(keyOf(p))).filter((v): v is SymbolView => Boolean(v));
-    await tween(turbo ? 140 : 360, (p) => {
-      const s = 1 + Math.sin(p * Math.PI) * 0.2;
-      views.forEach((v) => v.scale.set(s));
-    });
-    views.forEach((v) => v.scale.set(1));
+
+    // 3. One giant symbol drops onto the block.
+    const holder = new Container();
+    holder.position.set(bcx, bcy);
+    const big = new SymbolView(id);
+    big.layout(bw, bh);
+    big.position.set(-bw / 2, -bh / 2);
+    holder.addChild(big);
+    this.reelContainer.addChild(holder);
+    holder.scale.set(1.55);
+    holder.alpha = 0;
+    await tween(turbo ? 110 : 240, (t) => {
+      holder.alpha = Math.min(1, t * 3);
+      holder.scale.set(1.55 - 0.55 * easeInCubic(t));
+    }, linear);
+    holder.scale.set(1);
+    void this.localShake(turbo ? 6 : 12, turbo ? 180 : 320);
+    this.blockSlamFx(bcx, bcy, bw, bh, WIN_ACCENT[id] ?? DEFAULT_ACCENT, turbo);
+    // Squash on contact, then recover.
+    void tween(turbo ? 90 : 200, (t) => {
+      const k = Math.sin(t * Math.PI) * (1 - t);
+      holder.scale.set(1 + 0.08 * k, 1 - 0.1 * k);
+    }, linear).then(() => holder.scale.set(1));
+
+    // 4. Hold the big symbol for a beat — it plays its own win.
+    const celebrate = big.winCelebrate(turbo);
+    await Promise.race([celebrate, wait(turbo ? 260 : 700)]);
+
+    // 5. Hand off to the four live cells under one shared frame.
+    const frame = new Graphics();
+    frame.roundRect(x0 + 1, y0 + 1, bw - 2, bh - 2, 14)
+      .fill({ color: 0x9ae64e, alpha: 0.08 })
+      .stroke({ color: 0x9ae64e, width: 3, alpha: 0.95 });
+    frame.roundRect(x0 + 4, y0 + 4, bw - 8, bh - 8, 11).stroke({ color: 0xffffff, width: 1, alpha: 0.35 });
+    frame.alpha = 0;
+    this.fxLayer.addChild(frame);
+    await tween(turbo ? 90 : 220, (t) => {
+      holder.alpha = 1 - t;
+      for (const v of views) if (!v.destroyed) v.alpha = t;
+      frame.alpha = t;
+    }, linear);
+    holder.destroy({ children: true });
+    for (const v of views) if (!v.destroyed) v.alpha = 1;
+    void wait(turbo ? 200 : 650)
+      .then(() => tween(turbo ? 120 : 320, (t) => { frame.alpha = 1 - t; }, linear))
+      .then(() => frame.destroy());
+  }
+
+  /** Impact for the mega-wild slam: block-sized flash, shock ring, shards. */
+  private blockSlamFx(cx: number, cy: number, w: number, h: number, color: number, turbo: boolean): void {
+    const flash = new Sprite(softGlowTexture());
+    flash.anchor.set(0.5);
+    flash.blendMode = "add";
+    flash.tint = 0xffffff;
+    flash.position.set(cx, cy);
+    flash.width = w * 1.1;
+    flash.height = h * 1.1;
+    this.fxLayer.addChild(flash);
+    const f0 = flash.scale.x;
+    void tween(turbo ? 160 : 340, (t) => {
+      flash.scale.set(f0 * (1 + 0.6 * t));
+      flash.alpha = (1 - t) * (1 - t);
+    }, easeOutCubic).then(() => flash.destroy());
+
+    const ring = new Graphics();
+    ring.roundRect(-w / 2, -h / 2, w, h, 18).stroke({ color, width: 5 });
+    ring.blendMode = "add";
+    ring.position.set(cx, cy);
+    this.fxLayer.addChild(ring);
+    void tween(turbo ? 200 : 420, (t) => {
+      ring.scale.set(1 + 0.35 * t);
+      ring.alpha = 1 - t;
+    }, easeOutCubic).then(() => ring.destroy());
+
+    // Shards burst from the four corners of the block.
+    for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
+      this.shards(cx + (dx * w) / 2.6, cy + (dy * h) / 2.6, color, turbo ? 3 : 6, Math.atan2(dy, dx), 1.1);
+    }
   }
 
   centerOf(position: Position): { x: number; y: number } {
@@ -471,7 +587,6 @@ export class BoardView extends Container {
    * grid-aligned. Pure position math — no filters, no precomputed mega-strip.
    */
   private async spinReels(finalBoard: Board, turbo: boolean, scatterCols?: Set<number>): Promise<void> {
-    console.log("[BoardView] spinReels starting. finalBoard:", JSON.stringify(finalBoard));
     const cellStep = this.cellHeight + this.gap;
 
     // Reel geometry. A couple of cells live above the viewport (feed-in buffer)
@@ -489,7 +604,12 @@ export class BoardView extends Container {
     const velCells = turbo ? 30 : 24;             // full speed, in cells/second
     const Vmax = cellStep * velCells;             // px/s
     const accelTime = turbo ? 70 : 150;           // ms ramp-up to full speed
-    const hold = turbo ? 120 : 320;               // ms at full speed before first stop
+    const hold = turbo ? 120 : 250;               // ms at full speed before first stop
+    // Wind-up: each reel nudges UP a fraction of a cell, then launches down —
+    // the start of a physical reel, instead of jumping from rest to full speed.
+    const kickMs = turbo ? 0 : 110;
+    const kickAmp = cellStep * 0.13;
+    const kickStagger = turbo ? 0 : 24;
     const baseStagger = turbo ? 70 : 130;         // ms between column stops
     const decelDur = (2000 * STOP_STEPS) / velCells; // ms (easeOutQuad, starts ≈Vmax)
 
@@ -526,7 +646,7 @@ export class BoardView extends Container {
         }
       }
       stagger.push(cum);
-      
+
       let hasScatter = false;
       for (let row = 0; row < GRID_ROWS; row++) {
         if (finalBoard[col][row] === "PHONE_SCATTER") {
@@ -551,7 +671,7 @@ export class BoardView extends Container {
       const reelContainer = new Container();
       const filter = new BlurFilter();
       filter.strengthX = 0;
-      filter.strengthY = 10;
+      filter.strengthY = 0; // ramps up with reel speed (sharp during the wind-up)
       filter.quality = 3;
       reelContainer.filters = [filter];
       this.reelContainer.addChild(reelContainer);
@@ -572,22 +692,23 @@ export class BoardView extends Container {
     // ── 4. Each reel decelerates onto its result when its stop time arrives. ──
     const decelPromises: Promise<void>[] = [];
     const stopDurMs = 567; // ~34 frames at 60fps
-    
+
     const startDecel = (reel: Reel) => {
       reel.state = "decel";
-      
+      reel.container.y = 0;
+
       // Snap target symbols and buffers to the grid
       for (let k = 0; k < N; k++) {
         const cell = reel.cells[k]!;
         const row = k - ABOVE;
-        const id = (row >= 0 && row < VISIBLE && finalBoard[reel.col]) 
-          ? finalBoard[reel.col]![row]! 
+        const id = (row >= 0 && row < VISIBLE && finalBoard[reel.col])
+          ? finalBoard[reel.col]![row]!
           : randomSymbol();
         this.paintCell(cell, id);
         cell.y = topY + k * cellStep;
         cell.container.y = cell.y;
       }
-      
+
       const startOffset = -1.18 * this.cellHeight;
       let impactFired = false;
       // Live symbols take over from the blurred strip partway through the slam.
@@ -639,7 +760,7 @@ export class BoardView extends Container {
           landed = landed ?? this.handOffColumn(reel, finalBoard, turbo);
           for (const { view, baseY } of landed) view.y = baseY;
           this.onReelStop?.(reel.col, GRID_COLUMNS);
-          
+
           // Trigger a red flash if this column was an anticipation column and missed the scatter
           if (isAnticipationCol[reel.col]) {
             let landedScatter = false;
@@ -675,28 +796,42 @@ export class BoardView extends Container {
           const dt = Math.min(0.05, (now - last) / 1000);
           last = now;
           const elapsed = now - start;
-          const ramp = Math.min(1, elapsed / accelTime);
-          const vel = Vmax * ramp * ramp; // easeIn ramp-up
           // Clear anticipation overlay drawing
           this.anticipationOverlay.clear();
-          
+
           for (const reel of reels) {
             if (reel.state !== "spin") continue;
-            this.advanceReel(reel, vel * dt, cellStep, wrapSpan);
-            
+            const kt = elapsed - reel.col * kickStagger;
+            if (kt < kickMs) {
+              // Wind-up: ease up off the rest position.
+              const u = Math.max(0, kt) / kickMs;
+              reel.container.y = -kickAmp * Math.sin(u * Math.PI / 2);
+            } else {
+              const ramp = Math.min(1, (kt - kickMs) / accelTime);
+              const vel = Vmax * ramp * ramp; // easeIn ramp-up
+              // The wind-up offset unwinds into the launch.
+              reel.container.y = -kickAmp * Math.max(0, 1 - ramp) * Math.max(0, 1 - ramp);
+              reel.filter.strengthY = 10 * ramp;
+              this.advanceReel(reel, vel * dt, cellStep, wrapSpan);
+            }
+
             // Draw pulsing red border if column is currently in anticipation spin
-            if (isAnticipationCol[reel.col] && elapsed >= accelTime + hold + stagger[reel.col - 1]!) {
+            if (isAnticipationCol[reel.col] && elapsed >= kickMs + accelTime + hold + stagger[reel.col - 1]!) {
               const rx = this.cellX(reel.col) - 2;
               const ry = 2;
               const rw = this.cellWidth + 4;
               const rh = this.rect.height - 4;
               const pulse = 0.5 + Math.sin(performance.now() * 0.015) * 0.4;
+              // Soft outer halo + crisp edge, so the frame glows rather than
+              // reading as a flat outline.
+              this.anticipationOverlay.roundRect(rx - 3, ry - 3, rw + 6, rh + 6, 9)
+                .stroke({ color: 0xff1f2e, width: 8, alpha: 0.2 * pulse });
               this.anticipationOverlay.roundRect(rx, ry, rw, rh, 6)
                 .stroke({ color: 0xff1f2e, width: 3, alpha: 0.8 * pulse })
                 .fill({ color: 0xff1f2e, alpha: 0.08 * pulse });
             }
-            
-            if (elapsed >= accelTime + hold + stagger[reel.col]!) startDecel(reel);
+
+            if (elapsed >= kickMs + accelTime + hold + stagger[reel.col]!) startDecel(reel);
           }
           if (reels.some((r) => r.state === "spin")) requestAnimationFrame(frame);
           else resolve();
@@ -946,11 +1081,92 @@ export class BoardView extends Container {
     this.y = origY;
   }
 
+  /**
+   * A winning symbol bursting out of its cell: an additive accent flash with a
+   * white core, an expanding ring and a spray of light shards. Sprites from
+   * shared textures, time-based motion, everything destroys itself.
+   */
+  private cellBurst(col: number, row: number, color: number, turbo: boolean, power = 1): void {
+    const cx = this.cellX(col) + this.cellWidth / 2;
+    const cy = this.cellY(row) + this.cellHeight / 2;
+    const size = Math.min(this.cellWidth, this.cellHeight);
+
+    const flash = new Sprite(softGlowTexture());
+    flash.anchor.set(0.5);
+    flash.blendMode = "add";
+    flash.tint = color;
+    flash.position.set(cx, cy);
+    flash.width = flash.height = size * 0.75 * power;
+    this.fxLayer.addChild(flash);
+    const fs = flash.scale.x;
+    void tween(turbo ? 150 : 300, (t) => {
+      flash.scale.set(fs * (1 + 1.1 * t));
+      flash.alpha = 0.95 * (1 - t) * (1 - t);
+    }, easeOutCubic).then(() => flash.destroy());
+
+    const core = new Sprite(softGlowTexture());
+    core.anchor.set(0.5);
+    core.blendMode = "add";
+    core.position.set(cx, cy);
+    core.width = core.height = size * 0.42 * power;
+    this.fxLayer.addChild(core);
+    const cs = core.scale.x;
+    void tween(turbo ? 110 : 200, (t) => {
+      core.scale.set(cs * (1 + 0.5 * t));
+      core.alpha = 1 - t;
+    }, easeOutCubic).then(() => core.destroy());
+
+    const ring = new Graphics();
+    ring.circle(0, 0, size * 0.4).stroke({ color, width: 3 });
+    ring.blendMode = "add";
+    ring.position.set(cx, cy);
+    ring.scale.set(0.45);
+    this.fxLayer.addChild(ring);
+    void tween(turbo ? 170 : 330, (t) => {
+      ring.scale.set(0.45 + 0.85 * power * t);
+      ring.alpha = 1 - t;
+    }, easeOutCubic).then(() => ring.destroy());
+
+    if (!turbo) this.shards(cx, cy, color, Math.round(9 * power), null, power);
+  }
+
+  /** Light shards flying out of a point (full circle, or a cone around `dir`). */
+  private shards(cx: number, cy: number, color: number, count: number, dir: number | null, power: number): void {
+    const tex = streakTexture();
+    const list: { s: Sprite; vx: number; vy: number; len: number }[] = [];
+    for (let i = 0; i < count; i++) {
+      const s = new Sprite(tex);
+      s.anchor.set(1, 0.5);
+      s.blendMode = "add";
+      s.tint = i % 3 === 0 ? 0xffffff : color;
+      s.position.set(cx, cy);
+      const a = dir === null ? (i / count) * Math.PI * 2 + Math.random() * 0.5 : dir + (Math.random() - 0.5) * 1.3;
+      const sp = (4 + Math.random() * 5) * power;
+      const len = 0.35 + Math.random() * 0.45;
+      s.scale.set(len, 0.55 + Math.random() * 0.35);
+      s.rotation = a;
+      this.fxLayer.addChild(s);
+      list.push({ s, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, len });
+    }
+    void simulate(480, (k, t) => {
+      const drag = Math.pow(0.9, k);
+      for (const d of list) {
+        d.s.x += d.vx * k;
+        d.s.y += d.vy * k;
+        d.vx *= drag;
+        d.vy = d.vy * drag + 0.22 * k;
+        d.s.rotation = Math.atan2(d.vy, d.vx);
+        d.s.scale.x = d.len * (1 - 0.6 * t);
+        d.s.alpha = 1 - t * t;
+      }
+    }).then(() => list.forEach((d) => d.s.destroy()));
+  }
+
   private triggerRedFlash(): void {
     this.anticipationOverlay.clear();
     this.anticipationOverlay.rect(0, 0, this.rect.width, this.rect.height)
       .fill({ color: 0xff1f2e, alpha: 0.35 });
-    
+
     void tween(280, (p) => {
       this.anticipationOverlay.alpha = 1 - p;
     }, linear).then(() => {
@@ -981,13 +1197,13 @@ export class BoardView extends Container {
     const sparkCount = 8 + col * 3;
     const sparks = new Container();
     this.addChild(sparks);
-    
+
     interface Spark { sprite: Graphics; vx: number; vy: number; }
     const sparkList: Spark[] = [];
     for (let i = 0; i < sparkCount; i++) {
       const sp = new Graphics();
       sp.blendMode = "add";
-      
+
       let isHot = Math.random() < 0.35;
       let r = 0;
       if (isHot) {
@@ -998,10 +1214,10 @@ export class BoardView extends Container {
         const color = Math.random() < 0.5 ? 0xffd84d : 0xffaa33;
         sp.circle(0, 0, r).fill({ color, alpha: 1 });
       }
-      
+
       sp.x = cx + 8 + Math.random() * (cw - 16);
       sp.y = bottomY;
-      
+
       sparks.addChild(sp);
       sparkList.push({
         sprite: sp,
@@ -1009,45 +1225,36 @@ export class BoardView extends Container {
         vy: -(3 + Math.random() * 7)
       });
     }
-    
-    let sparkTimer = 0;
-    const tick = () => {
-      sparkTimer++;
-      let active = false;
+
+    // ~32 frames at 60 fps, but time-based so 120/144 Hz screens match.
+    void simulate(530, (k) => {
       for (const sp of sparkList) {
-        if (sp.sprite.alpha < 0.04) continue;
-        active = true;
-        sp.sprite.x += sp.vx;
-        sp.sprite.y += sp.vy;
-        sp.vx *= 0.92;
-        sp.vy += 0.45;
-        sp.sprite.alpha *= 0.91;
-        sp.sprite.scale.set(sp.sprite.scale.x * 0.97);
+        if (sp.sprite.alpha < 0.04) { sp.sprite.visible = false; continue; }
+        sp.sprite.x += sp.vx * k;
+        sp.sprite.y += sp.vy * k;
+        sp.vx *= Math.pow(0.92, k);
+        sp.vy += 0.45 * k;
+        sp.sprite.alpha *= Math.pow(0.91, k);
+        sp.sprite.scale.set(sp.sprite.scale.x * Math.pow(0.97, k));
       }
-      if (active && sparkTimer < 32) {
-        requestAnimationFrame(tick);
-      } else {
-        sparks.destroy({ children: true });
-      }
-    };
-    requestAnimationFrame(tick);
+    }).then(() => sparks.destroy({ children: true }));
 
     // Layer C - soft glow bloom
-    const glow = new Sprite(getSoftGlowTexture());
+    const glow = new Sprite(softGlowTexture());
     glow.blendMode = "add";
     glow.tint = 0xffd84d;
     glow.anchor.set(0.5, 0.5);
     glow.alpha = 0.55;
     glow.x = cx + cw / 2;
     glow.y = bottomY;
-    
+
     const startW = cw * 1.6;
     const startH = ch * 0.7;
     const endW = cw * 2.2;
     const endH = ch * 1.0;
     glow.width = startW;
     glow.height = startH;
-    
+
     this.addChild(glow);
     void tween(250, (p) => {
       const ease = 1 - Math.pow(1 - p, 2); // easeOutQuad

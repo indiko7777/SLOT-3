@@ -1,14 +1,15 @@
 import { MiamiStreet } from "./MiamiStreet";
-import { BlurFilter, Container, Graphics, PerspectiveMesh, Sprite, Text, TextStyle, Texture } from "pixi.js";
+import { BlurFilter, ColorMatrixFilter, Container, FillGradient, Graphics, PerspectiveMesh, Sprite, Text, TextStyle, Texture } from "pixi.js";
 import { BONUS_START_RESPINS, GRID_COLUMNS, GRID_ROWS, type BonusCell, type Position } from "../domain";
 import { getExtraTexture } from "./assets";
-import { UI_FONT } from "../typography";
+import { softGlowTexture, sparkDotTexture, streakTexture } from "./fxTextures";
+import { DISPLAY_FONT, UI_FONT } from "../typography";
 import { GetawayResult, type GetawayResultAudio } from "./GetawayResult";
-import { tween, wait, easeOutBack, easeOutCubic, easeInQuad, linear, ambientTicker, getTimeScale } from "./tween";
+import { tween, wait, easeOutBack, easeOutCubic, easeInCubic, easeInQuad, easeInOutCubic, linear, ambientTicker, getTimeScale, simulate } from "./tween";
 
 import type { GetawayCue, Rect } from "./types";
 import { dudDynamites } from "./dynamitePlan";
-import { shockwave, pulseBloom, pulseChromaticAberration } from "../vfx/Shaders";
+import { shockwave, pulseBloom } from "../vfx/Shaders";
 
 /* ═══════════════════════════════════════════════════════════════════
    "THE GETAWAY" — POV police-chase Hold & Spin.
@@ -161,7 +162,16 @@ export class BonusView extends Container {
   private doorsOpen = false;
   private readonly fxLayer = new Container();
   private readonly hudLayer = new Container();
+  /** HUD widgets (title, stars, spins, COLLECTED) — separate from the intro's
+   *  cinematic overlays so the HUD can fade in after the title card. */
+  private hudPanel: Container | null = null;
   private readonly police = new Graphics();
+  /** Warm light from street lamps sweeping over the truck as it passes them. */
+  private readonly lightLayer = new Container();
+  private sweepTimer = 0.6;
+  private glintTimer = 1.2;
+  /** Police strobes during the intro title, before any heat exists. */
+  private introLights = false;
 
   private rect: Rect = { x: 0, y: 0, width: 100, height: 100 };
   private ambientCb: ((dt: number, elapsed: number) => void) | null = null;
@@ -187,7 +197,19 @@ export class BonusView extends Container {
   private respinsShown = START_RESPINS; // last value shown on the meter (for the change beat)
   private isSpinning = false;           // true while reels turn — drives the anticipation shake
   private shakeBoost = 0;               // 0..1 eased ramp of the high-speed chase shake
+  /** Short decaying camera kick (px) for impacts — NO HIT, the dud's thud. */
+  private jolt = 0;
+  /** World speed (1 = normal). BUSTED drops it to a crawl — GTA "wasted" slow-mo. */
+  private slowmo = 1;
+  private slowmoTarget = 1;
+  /** Desaturates the street during BUSTED (the street has no masks, so it is safe to filter). */
+  private bustedGrade: ColorMatrixFilter | null = null;
   private readonly cells = new Map<string, Container>();
+  /** Scene already built for the coming intro (see prepare()). */
+  private prepared = false;
+  /** The heist readout for the payout screen. */
+  private spinsPlayed = 0;
+  private blasts = 0;
 
   /** Bet context for showing REAL money on gold bars / meter / result — like an
    *  official slot. 0 bet = fall back to raw multipliers (shouldn't happen). */
@@ -219,7 +241,8 @@ export class BonusView extends Container {
     this.reelSurface.addChild(this.aperture, this.gridLayer, this.lockedLayer);
     this.reelSurface.mask = this.apertureMask;
     this.rig.addChild(this.truckLayer, this.reelSurface, this.apertureMask, this.dividerLayer, this.doorLayer, this.fxLayer);
-    this.addChild(this.bgLayer, this.rig, this.police, this.hudLayer);
+    this.lightLayer.eventMode = "none";
+    this.addChild(this.bgLayer, this.rig, this.lightLayer, this.police, this.hudLayer);
     // Heavy blur turns the police light sources into soft, natural bloom.
     this.police.filters = [new BlurFilter({ strength: 30, quality: 3 })];
   }
@@ -277,32 +300,58 @@ export class BonusView extends Container {
   }
 
   // ── lifecycle ────────────────────────────────────────────────────────
-  async intro(turbo: boolean, onTypewriterStart?: () => void, onTypewriterStop?: () => void, onDoorsOpen?: () => void): Promise<void> {
-    this.visible = true;
+  /**
+   * Build the chase scene ahead of its intro (still invisible). Construction
+   * is the heavy part of the trigger — doing it while the trigger beat is
+   * still playing means the hand-off frame never stalls into a blank screen.
+   * Idempotent until hide().
+   */
+  prepare(): void {
+    if (this.prepared && this.truck) return;
+    this.prepared = true;
+    this.spinsPlayed = 0;
+    this.blasts = 0;
     this.busted = false;
     this.heat = 0;
     this.collectedShown = 0;
     this.cells.clear();
-    this.gridLayer.removeChildren();
-    this.fxLayer.removeChildren();
-
+    for (const layer of [this.gridLayer, this.lockedLayer, this.fxLayer]) {
+      layer.removeChildren().forEach((child) => child.destroy({ children: true }));
+    }
     this.buildHighway();
     this.buildTruck();
     this.buildDividers();
     this.buildHud();
-    this.startAmbient();
+    // The doors open onto resting reel faces, never onto a black void.
+    const logoTex = getExtraTexture("heat_chase_logo_symbol") ?? getExtraTexture("heat_chase_logo");
+    for (let c = 0; c < GRID_COLUMNS; c++)
+      for (let r = 0; r < GRID_ROWS; r++) this.placeCell([c, r], this.buildEmptyFace(c, r, logoTex));
     this.scale.set(1);
+  }
+
+  /** `onCovered` fires once the chase fully covers the base game — the caller
+   *  hides the base scene THEN, so the hand-off is a true crossfade instead of
+   *  the base popping out and the chase fading up from an empty frame. */
+  async intro(turbo: boolean, onTypewriterStart?: () => void, onTypewriterStop?: () => void, onDoorsOpen?: () => void, onCovered?: () => void): Promise<void> {
+    this.prepare();
+    this.visible = true;
+    this.startAmbient();
 
     // Turbo skips the cold-open, so the doors settle straight to open — they
     // must never be left shut over the reels.
-    if (turbo) { this.alpha = 1; this.snapDoorsOpen(); return; }
+    if (turbo) { this.alpha = 1; if (this.hudPanel) this.hudPanel.alpha = 1; onCovered?.(); this.snapDoorsOpen(); return; }
 
     const W = this.rect.width;
     const H = this.rect.height;
+    // The HUD waits for the title card: it fades in as the letterbox retracts.
+    const hudPanel = this.hudPanel;
+    if (hudPanel) hudPanel.alpha = 0;
+    // Pursuit lights wash over the shut doors while dispatch calls it in.
+    this.introLights = true;
 
     // 1. Crossfade the chase scene in over the base game.
     this.alpha = 0;
-    void tween(620, (p) => { this.alpha = p; }, easeOutCubic);
+    void tween(620, (p) => { this.alpha = p; }, easeOutCubic).then(() => onCovered?.());
 
     // 2. Cinematic cold-open: full blackout → letterbox bars + vignette glide in.
     const blackout = new Graphics();
@@ -345,7 +394,7 @@ export class BonusView extends Container {
     titleGroup.position.set(W / 2, H * 0.44);
     this.hudLayer.addChild(titleGroup);
 
-    const dispatchSize = Math.min(13, W / 62);
+    const dispatchSize = Math.min(16, W / 52);
     const theSize = Math.min(22, W / 38);
     const bigSize = Math.min(86, W / 9.8);
 
@@ -361,7 +410,7 @@ export class BonusView extends Container {
     const dispatch = new Text({
       text: "",
       style: new TextStyle({
-        fill: 0x6a8ab0, fontFamily: FONT, fontSize: dispatchSize,
+        fill: 0x9fc0e6, fontFamily: FONT, fontSize: dispatchSize,
         fontWeight: "400", letterSpacing: 3
       })
     });
@@ -427,19 +476,36 @@ export class BonusView extends Container {
 
     await wait(280);
 
-    // --- Phase B: "THE" fades in, then "GETAWAY" materialises (600ms) ---
+    // --- Phase B: "THE" fades in, then "GETAWAY" lands ---
     await tween(400, (p) => {
       the.alpha = easeOutCubic(p);
     });
 
-    // GETAWAY title: slow fade + subtle upward drift = filmic gravitas
+    // GETAWAY title: punches in from slightly large and settles, with a warm
+    // light bursting behind it — the title has weight instead of a slow fade.
+    const titleFlash = new Sprite(softGlowTexture());
+    titleFlash.anchor.set(0.5);
+    titleFlash.blendMode = "add";
+    titleFlash.tint = 0xffe2a8;
+    titleFlash.position.set(0, bigSize * 0.5);
+    titleFlash.width = W * 0.7;
+    titleFlash.height = bigSize * 2.4;
+    titleFlash.alpha = 0;
+    titleGroup.addChildAt(titleFlash, 1);
+    const flashW = titleFlash.scale.x;
+    const flashH = titleFlash.scale.y;
     await tween(700, (p) => {
-      const e = easeOutCubic(p);
-      big.alpha = Math.min(1, p * 1.8);
-      big.y = -theSize * 0.1 + 8 * (1 - e);  // drifts up into place
-      blackout.alpha = 0.25 - e * 0.15;
+      const e = easeOutBack(Math.min(1, p * 1.25));
+      big.alpha = Math.min(1, p * 3);
+      big.scale.set(1.22 - 0.22 * e);
+      big.y = -theSize * 0.1 + 6 * (1 - easeOutCubic(p));
+      titleFlash.alpha = p < 0.25 ? p / 0.25 * 0.55 : 0.55 * (1 - (p - 0.25) / 0.75);
+      titleFlash.scale.set(flashW * (0.8 + 0.5 * p), flashH * (0.8 + 0.3 * p));
+      blackout.alpha = 0.25 - easeOutCubic(p) * 0.15;
     }, linear);
     big.alpha = 1;
+    big.scale.set(1);
+    titleFlash.destroy();
 
     await wait(1100); // hold the title — let it breathe
 
@@ -452,7 +518,9 @@ export class BonusView extends Container {
       lb.bot.y = H - lb.barH * (1 - e);
       vig.alpha = (1 - e) * 0.85;
       blackout.alpha = (1 - e) * 0.1;
+      if (hudPanel && !hudPanel.destroyed) hudPanel.alpha = e;
     }, linear);
+    if (hudPanel && !hudPanel.destroyed) hudPanel.alpha = 1;
     titleGroup.destroy();
     lb.top.destroy();
     lb.bot.destroy();
@@ -463,6 +531,7 @@ export class BonusView extends Container {
     // 6. THE REVEAL — the doors unlatch and swing out onto the reels.
     onDoorsOpen?.();
     await this.openDoors(false);
+    this.introLights = false;
   }
 
   /** The payout owns the cover, so restoration is hidden even during resize or
@@ -495,16 +564,21 @@ export class BonusView extends Container {
     for (let c = 0; c < GRID_COLUMNS; c++)
       for (let r = 0; r < GRID_ROWS; r++) {
         const cell = grid[c][r];
-        if (cell.symbol === "SAFE") this.placeCell([c, r], this.buildGoldBar(cell.value ?? 0, c, r));
+        if (cell.symbol === "SAFE") {
+          const bar = this.buildGoldBar(cell.value ?? 0, c, r);
+          this.dressLocked(bar, c, r);
+          this.placeCell([c, r], bar);
+        }
         else if (cell.symbol === "MASTER_KEY") this.placeCell([c, r], this.buildDynamite(c, r));
         else this.placeCell([c, r], this.buildEmptyFace(c, r, logoTex)); // resting watermark — logos never just vanish
       }
     this.setCollected(this.sumGrid(grid), false);
   }
 
-  async playSpin(grid: BonusCell[][], landed: Position[], respins: number, deadSpins: number, turbo: boolean, onLand?: (i: number, n: number) => void, onDeadBeat?: () => void): Promise<void> {
+  async playSpin(grid: BonusCell[][], landed: Position[], respins: number, deadSpins: number, turbo: boolean, onLand?: (i: number, n: number) => void): Promise<void> {
     if (!this.truck) await this.intro(turbo);
     this.visible = true;
+    this.spinsPlayed++;
 
     const landedSet = new Set(landed.map(keyOf));
 
@@ -521,6 +595,7 @@ export class BonusView extends Container {
           // Place in lockedLayer so the spinning strip behind it is never clipped.
           const key = keyOf([c, r]);
           const node = previous.get(key) ?? this.buildGoldBar(cell.value ?? 0, c, r);
+          this.dressLocked(node, c, r);
           previous.delete(key);
           this.updateGoldValue(node, cell.value ?? 0);
           const rc = this.cellRect(c, r);
@@ -537,7 +612,9 @@ export class BonusView extends Container {
     const duds = new Set(dudDynamites(grid, landed).map(keyOf));
     await this.spinColumns(grid, spinning, duds, turbo, onLand);
 
-    // Count up any gold just collected (bottom-centre, away from the meter).
+    // New gold flies into the COLLECTED meter, THEN the meter counts up.
+    const newBars = landed.filter(([c, r]) => grid[c]?.[r]?.symbol === "SAFE");
+    if (newBars.length && !turbo) await this.collectFlight(newBars);
     this.setCollected(this.sumGrid(grid), true);
 
     // Dynamite with no gold bar beside it has nothing to blow. The engine sends
@@ -562,15 +639,13 @@ export class BonusView extends Container {
       await wait(turbo ? 60 : 420);
     } else {
       this.heat = Math.min(3, deadSpins);
-      // The "miss" sound fires on the same frame as the visual dead-spin beat.
-      onDeadBeat?.();
       this.cue({ kind: "dead", heat: this.heat });
-      this.deadSpinBeat();
-      await wait(turbo ? 50 : 300);
-      // …and the meter's ka-chunk on the frame the number drops.
+      // Police tape + the NO HIT stamp; resolves when the "-1" reaches the
+      // spins meter, so the number drops on the frame it is hit.
+      await this.noHitBeat(this.heat, respins, turbo);
       this.cue({ kind: "spent", spinsLeft: respins });
       this.animateSpinsBeat(respins, turbo);
-      await wait(turbo ? 80 : 680);
+      await wait(turbo ? 80 : 470);
     }
   }
 
@@ -623,86 +698,204 @@ export class BonusView extends Container {
   }
 
   /**
-   * A dud: no gold bar next to it, so there is nothing to blow. The fuse
-   * sputters, a puff of smoke, the sticks go cold and dark, "DUD", and the cell
-   * returns to the blank logo — the player sees WHY nothing happened.
+   * A dud: no gold bar next to it, so there is nothing to blow — but the
+   * player doesn't know that yet. The fuse catches and races down, sparks
+   * spitting, the sticks shaking harder and the cell pulsing danger-red as the
+   * riser climbs... then nothing: the spark pops out with a "pfft", a ring of
+   * smoke, the sticks go limp and grey, and a DUD stamp slaps on with a wobble.
+   * Tension, then the joke — the near-miss is what makes a player feel it.
    */
   private async fizzle(pos: Position, turbo: boolean): Promise<void> {
     const node = this.cells.get(keyOf(pos));
     if (!node) return;
     const rc = this.cellRect(pos[0], pos[1]);
-    const { tip } = this.fuseGeometry(node);
-    const art = node.getChildByLabel("art");
-    this.cue({ kind: "dud" });
+    const cx = rc.x + rc.w / 2;
+    const cy = rc.y + rc.h / 2;
+    const unit = Math.max(6, rc.w * 0.05);
+    const { tip, base } = this.fuseGeometry(node);
+    const art = node.getChildByLabel("art") as Sprite | null;
+    const art0 = art ? { x: art.x, y: art.y, r: art.rotation, sx: art.scale.x, sy: art.scale.y } : null;
 
-    // Sputter: the spark stutters and dies.
-    const spark = new Graphics();
-    spark.blendMode = "add";
+    // ── 1. THE BUILD: fuse races down, everything says it's about to blow ──
+    const armMs = turbo ? 200 : 520;
+    this.cue({ kind: "dud_arm", seconds: armMs / 1000 / getTimeScale() });
+    const danger = this.glow(0xff4a14, cx, cy, rc.w * 1.6, rc.h * 1.6, this.fxLayer);
+    danger.alpha = 0;
+    const spark = new Container();
     spark.position.set(tip.x, tip.y);
     node.addChild(spark);
-    const unit = Math.max(6, rc.w * 0.05);
-    // Soft, blurred wisps — flat circles read as grey discs, not smoke.
-    const puff = new Container();
-    puff.filters = [new BlurFilter({ strength: unit * 0.9, quality: 2 })];
-    node.addChild(puff);
-    const smoke: Graphics[] = [];
-    for (let i = 0; i < 6; i++) {
-      const g = new Graphics();
-      const r = unit * (0.9 + i * 0.3);
-      g.circle(0, 0, r).fill({ color: 0x8f959e, alpha: 0.42 });
-      g.circle(r * 0.35, -r * 0.2, r * 0.7).fill({ color: 0xc3c8cf, alpha: 0.25 });
-      g.position.set(tip.x, tip.y);
-      g.alpha = 0;
-      puff.addChild(g);
-      smoke.push(g);
+    const sparkGlow = this.glow(0xff9a2a, 0, 0, unit * 6, unit * 6, spark);
+    const sparkCore = this.glow(0xffffff, 0, 0, unit * 2.2, unit * 2.2, spark);
+    const spits: { s: Sprite; vx: number; vy: number; life: number }[] = [];
+    let spitClock = 0;
+    let phase = 0;
+    let last = performance.now();
+    await tween(armMs, (p) => {
+      const now = performance.now();
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      const e = easeInQuad(p);
+      spark.position.set(tip.x + (base.x - tip.x) * e, tip.y + (base.y - tip.y) * e);
+      const f = 0.8 + 0.35 * Math.sin(now * 0.06) * Math.sin(now * 0.037);
+      sparkGlow.scale.set((unit * 6 / 128) * f * (1 + p));
+      sparkCore.scale.set((unit * 2.2 / 128) * f * (1 + 0.5 * p));
+      // sparks spitting off the fuse, faster as it burns down
+      spitClock += dt;
+      while (spitClock > 0.045 - 0.03 * p) {
+        spitClock -= 0.045 - 0.03 * p;
+        const sp = new Sprite(streakTexture());
+        sp.anchor.set(1, 0.5);
+        sp.blendMode = "add";
+        sp.tint = Math.random() < 0.4 ? 0xffffff : 0xffc04a;
+        sp.scale.set(0.18 + Math.random() * 0.14, 0.35);
+        const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4;
+        const v = unit * (0.5 + Math.random() * 0.7);
+        sp.position.set(spark.x, spark.y);
+        sp.rotation = a;
+        node.addChild(sp);
+        spits.push({ s: sp, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 1 });
+      }
+      for (let i = spits.length - 1; i >= 0; i--) {
+        const d = spits[i]!;
+        d.s.x += d.vx; d.s.y += d.vy; d.vy += unit * 0.08;
+        d.s.rotation = Math.atan2(d.vy, d.vx);
+        d.life -= dt * 3.2;
+        d.s.alpha = Math.max(0, d.life);
+        if (d.life <= 0) { d.s.destroy(); spits.splice(i, 1); }
+      }
+      // the sticks shake harder and harder
+      if (art && art0 && !art.destroyed) {
+        const amp = rc.w * 0.035 * p * p;
+        art.position.set(art0.x + (Math.random() * 2 - 1) * amp, art0.y + (Math.random() * 2 - 1) * amp * 0.7);
+        art.rotation = art0.r + (Math.random() * 2 - 1) * 0.06 * p;
+      }
+      // danger pulse, quickening
+      phase += dt * (5 + 22 * p);
+      danger.alpha = (0.12 + 0.5 * p) * (0.55 + 0.45 * Math.sin(phase * Math.PI));
+    }, linear);
+    for (const d of spits) d.s.destroy();
+    if (art && art0 && !art.destroyed) { art.position.set(art0.x, art0.y); art.rotation = art0.r; }
+
+    // ── 2. ...PFFT ──
+    this.cue({ kind: "dud" });
+    const sx = spark.x, sy = spark.y;
+    spark.destroy({ children: true });
+    void tween(turbo ? 120 : 260, (p) => { danger.alpha = 0.35 * (1 - p); }, easeOutCubic).then(() => danger.destroy());
+    // a last few sparks pop out and drop dead
+    const nodeX = node.x, nodeY = node.y;
+    const pops: { s: Sprite; vx: number; vy: number }[] = [];
+    for (let i = 0; i < (turbo ? 3 : 7); i++) {
+      const d = new Sprite(sparkDotTexture());
+      d.anchor.set(0.5);
+      d.blendMode = "add";
+      d.tint = 0xffb050;
+      d.scale.set(0.3 + Math.random() * 0.25);
+      d.position.set(nodeX + sx, nodeY + sy);
+      this.fxLayer.addChild(d);
+      const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.2;
+      const v = unit * (0.25 + Math.random() * 0.35);
+      pops.push({ s: d, vx: Math.cos(a) * v, vy: Math.sin(a) * v });
     }
+    void simulate(520, (k, t) => {
+      for (const d of pops) {
+        d.s.x += d.vx * k; d.s.y += d.vy * k; d.vy += unit * 0.05 * k;
+        d.s.alpha = 1 - t;
+        d.s.tint = t > 0.3 ? 0x6b5a48 : 0xffb050; // embers cool to ash
+      }
+    }).then(() => pops.forEach((d) => d.s.destroy()));
+    // ring of smoke + lazy wisps
+    const smoke: { s: Sprite; a: number; rise: number }[] = [];
+    if (!turbo) {
+      for (let i = 0; i < 10; i++) {
+        const sm = this.glow(0x8d9198, nodeX + sx, nodeY + sy, unit * 4, unit * 3, this.fxLayer, false);
+        sm.alpha = 0;
+        smoke.push({ s: sm, a: (i / 10) * Math.PI * 2, rise: 0 });
+      }
+      for (let i = 0; i < 4; i++) {
+        const sm = this.glow(0xa7abb2, nodeX + sx + (Math.random() - 0.5) * unit * 2, nodeY + sy, unit * 3, unit * 4, this.fxLayer, false);
+        sm.alpha = 0;
+        smoke.push({ s: sm, a: NaN, rise: 0.5 + Math.random() * 0.5 });
+      }
+    }
+    const smokeBase = smoke.map((m) => m.s.scale.x);
+    void tween(900, (p) => {
+      smoke.forEach((m, i) => {
+        if (Number.isNaN(m.a)) {
+          m.s.y = nodeY + sy - p * rc.h * 0.7 * m.rise;
+          m.s.x += Math.sin(p * 6 + i) * 0.3;
+          m.s.alpha = 0.45 * Math.sin(Math.min(1, p * 1.2) * Math.PI);
+          m.s.scale.set(smokeBase[i]! * (1 + 1.5 * p));
+        } else {
+          const r = unit * (1 + 6 * easeOutCubic(p));
+          m.s.position.set(nodeX + sx + Math.cos(m.a) * r, nodeY + sy + Math.sin(m.a) * r * 0.55 - p * unit * 2);
+          m.s.alpha = 0.5 * (1 - p) * Math.min(1, p * 8);
+          m.s.scale.set(smokeBase[i]! * (1 + 1.2 * p));
+        }
+      });
+    }, linear).then(() => smoke.forEach((m) => m.s.destroy()));
+
+    // the sticks go limp: wilt over, squash down, cool to charcoal
+    if (art && art0 && !art.destroyed) {
+      void tween(turbo ? 160 : 420, (p) => {
+        if (art.destroyed) return;
+        const e = easeOutBack(Math.min(1, p));
+        art.rotation = art0.r + 0.32 * e;
+        art.scale.set(art0.sx * (1 + 0.05 * e), art0.sy * (1 - 0.1 * e));
+        art.position.set(art0.x + rc.w * 0.04 * e, art0.y + rc.h * 0.06 * e);
+        const v = Math.round(255 - 150 * Math.min(1, p * 1.3));
+        art.tint = (v << 16) | (v << 8) | v;
+      }, linear);
+    }
+    this.jolt = Math.max(this.jolt, turbo ? 1 : 2.5);
+
+    // ── 3. DUD — a grey stamp slaps on and wobbles ──
+    await wait(turbo ? 40 : 110);
+    const size = Math.min(56, rc.h * 0.5);
     const label = new Text({
       text: "DUD",
       style: new TextStyle({
-        fill: 0xb8c0cc, fontFamily: FONT, fontSize: Math.min(26, rc.h * 0.26), fontWeight: "900", letterSpacing: 3,
-        stroke: { color: 0x000000, width: 4 },
+        fontFamily: DISPLAY_FONT, fontSize: size, letterSpacing: 2, padding: 12,
+        fill: new FillGradient({ start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, colorStops: [
+          { offset: 0, color: 0xffffff }, { offset: 0.48, color: 0xd5dbe3 }, { offset: 0.52, color: 0x9aa3ae }, { offset: 1, color: 0x5f6873 },
+        ] }),
+        stroke: { color: 0x101317, width: 7, join: "round" },
+        dropShadow: { color: 0x000000, alpha: 0.85, blur: 0, distance: 4, angle: Math.PI / 2 },
       }),
     });
     label.anchor.set(0.5);
+    label.position.set(cx, cy + rc.h * 0.08);
+    label.rotation = -0.16;
+    label.scale.set(1.9);
     label.alpha = 0;
     this.fxLayer.addChild(label);
-    const lx = rc.x + rc.w / 2, ly = rc.y + rc.h * 0.62;
-    label.position.set(lx, ly);
-
-    await tween(turbo ? 320 : 820, (p) => {
-      // spark: irregular stutter, gone by 55%
-      const live = p < 0.55 ? 1 - p / 0.55 : 0;
-      const stutter = Math.sin(p * 90) > -0.2 ? 1 : 0.2;
-      spark.clear();
-      if (live > 0) {
-        spark.circle(0, 0, unit * 1.1 * live * stutter).fill({ color: 0xffb040, alpha: 0.7 });
-        spark.circle(0, 0, unit * 0.4 * live).fill({ color: 0xfff0c0, alpha: 0.9 });
+    await tween(turbo ? 70 : 110, (p) => { label.alpha = p; label.scale.set(1.9 - 0.9 * easeInCubic(p)); }, linear);
+    // contact: a little dust puff and a wobble
+    if (!turbo) {
+      for (let i = 0; i < 5; i++) {
+        const dust = this.glow(0x9aa0a8, cx + (i - 2) * size * 0.35, cy + rc.h * 0.08 + size * 0.35, size * 0.7, size * 0.45, this.fxLayer, false);
+        const d0 = dust.scale.x;
+        void tween(360, (p) => { dust.alpha = 0.4 * (1 - p); dust.scale.set(d0 * (1 + p)); dust.y -= 0.3; }).then(() => dust.destroy());
       }
-      // smoke puff rising off the dead fuse (from 45%)
-      const sp = Math.max(0, (p - 0.45) / 0.55);
-      smoke.forEach((g, i) => {
-        const q = Math.max(0, sp - i * 0.06);
-        g.alpha = q > 0 ? 0.55 * Math.sin(Math.min(1, q) * Math.PI) : 0;
-        g.position.set(tip.x + Math.sin(i * 2.3 + q * 3) * unit * 0.8, tip.y - q * rc.h * 0.35 - i * unit * 0.3);
-        g.scale.set(0.6 + q * 1.1);
-      });
-      // the sticks go cold: darken + desaturate towards grey
-      if (art) {
-        const k = Math.min(1, sp * 1.4);
-        const v = Math.round(255 - 150 * k);
-        (art as Sprite).tint = (v << 16) | (v << 8) | v;
-      }
-      label.alpha = sp < 0.2 ? sp / 0.2 : sp > 0.8 ? (1 - sp) / 0.2 : 1;
-      label.y = ly - sp * 10;
+    }
+    await tween(turbo ? 160 : 460, (p) => {
+      const w = Math.sin(p * Math.PI * 4) * Math.exp(-p * 4);
+      label.rotation = -0.16 + w * 0.18;
+      label.scale.set(1 + w * 0.08, 1 - w * 0.06);
     }, linear);
-    label.destroy();
+    await wait(turbo ? 60 : 220);
 
-    // Back to a blank cell (the logo), fading in over the cold sticks.
+    // ── 4. Back to a blank cell ──
     const logoTex = getExtraTexture("heat_chase_logo_symbol") ?? getExtraTexture("heat_chase_logo");
     const blank = this.buildEmptyFace(pos[0], pos[1], logoTex);
     blank.alpha = 0;
     this.placeCell(pos, blank);
-    await tween(turbo ? 90 : 220, (p) => { blank.alpha = p; if (!node.destroyed) node.alpha = 1 - p; }, linear);
+    await tween(turbo ? 90 : 240, (p) => {
+      blank.alpha = p;
+      if (!node.destroyed) node.alpha = 1 - p;
+      label.alpha = 1 - p;
+      label.y = cy + rc.h * 0.08 - 8 * p;
+    }, linear);
+    label.destroy();
     node.destroy({ children: true });
   }
 
@@ -717,6 +910,7 @@ export class BonusView extends Container {
    *   4. The spent cell goes back to a blank, ready to be refilled.
    */
   async crack(keyPos: Position, affected: Array<{ position: Position; newValue: number }>, turbo: boolean): Promise<void> {
+    this.blasts++;
     const kc = this.cellRect(keyPos[0], keyPos[1]);
     const cx = kc.x + kc.w / 2;
     const cy = kc.y + kc.h / 2;
@@ -789,57 +983,45 @@ export class BonusView extends Container {
     // Radial GPU shockwave ripple
     void shockwave(this.fxLayer, { x: cx, y: cy }, { duration: turbo ? 400 : 800 });
 
-    // Procedural color interpolation helper
-    const lerpColor = (c1: number, c2: number, t: number): number => {
-      const r1 = (c1 >> 16) & 0xff, g1 = (c1 >> 8) & 0xff, b1 = c1 & 0xff;
-      const r2 = (c2 >> 16) & 0xff, g2 = (c2 >> 8) & 0xff, b2 = c2 & 0xff;
-      const r = Math.round(r1 + (r2 - r1) * t);
-      const g = Math.round(g1 + (g2 - g1) * t);
-      const b = Math.round(b1 + (b2 - b1) * t);
-      return (r << 16) | (g << 8) | b;
-    };
-
-    const getExplosionColor = (progress: number): number => {
-      if (progress < 0.15) {
-        return lerpColor(0xffffff, 0xffea00, progress / 0.15);
-      } else if (progress < 0.45) {
-        return lerpColor(0xffea00, 0xff5500, (progress - 0.15) / 0.3);
-      } else if (progress < 0.75) {
-        return lerpColor(0xff5500, 0x444444, (progress - 0.45) / 0.3);
-      } else {
-        return lerpColor(0x444444, 0x111111, (progress - 0.75) / 0.25);
-      }
-    };
-
-    const drawFireball = (g: Graphics, r: number, color: number, alphaScale: number) => {
-      g.clear();
-      g.circle(0, 0, r).fill({ color, alpha: 0.12 * alphaScale });
-      g.circle(0, 0, r * 0.65).fill({ color, alpha: 0.35 * alphaScale });
-      g.circle(0, 0, r * 0.35).fill({ color, alpha: 0.85 * alphaScale });
-    };
-
     // White-hot detonation core — a fast additive flash AT the dynamite cell.
-    // This is what sells the blast as physical; the old version only had the
-    // flat full-screen orange wash, which read as cheap.
-    const core = new Graphics();
-    core.circle(0, 0, reach * 0.36).fill({ color: 0xffd77a, alpha: 0.7 });
-    core.circle(0, 0, reach * 0.15).fill({ color: 0xfff6d7, alpha: 1 });
-    core.position.set(cx, cy);
-    core.blendMode = "add";
-    core.scale.set(0.2);
-    this.fxLayer.addChild(core);
+    const core = this.glow(0xfff3d0, cx, cy, reach * 0.9, reach * 0.9, this.fxLayer);
+    const coreS = core.scale.x;
     void tween(turbo ? 160 : 300, (p) => {
-      core.scale.set(0.4 + 1.1 * p);
+      core.scale.set(coreS * (0.5 + 1.4 * p));
       core.alpha = 1 - p;
     }, easeOutCubic).then(() => core.destroy());
 
     // GPU bloom pulse over the whole grid — the frame "blows out" for a beat.
     if (!turbo) void pulseBloom(this.lockedLayer, { scale: 0.35, duration: 320 });
 
-    // Full screen blast overlay — toned down from 0.75 to a filmic kiss.
-    const blastFlash = new Graphics();
-    blastFlash.rect(0, 0, this.rect.width, this.rect.height).fill({ color: 0xffaa00, alpha: 0.12 });
-    this.fxLayer.addChild(blastFlash);
+    // Blast light: a radial orange bloom from the dynamite outward (not a flat
+    // full-screen tint) — the grid is lit FROM the explosion.
+    const blastLight = this.glow(0xff9a3a, cx, cy, reach * 6, reach * 6, this.fxLayer);
+    blastLight.alpha = 0.7;
+
+    // Fireball: layered additive puffs that start white-hot and cool through
+    // yellow and orange as they billow out and rise.
+    const fireN = turbo ? 7 : 14;
+    const fire: { s: Sprite; vx: number; vy: number; grow: number; spin: number }[] = [];
+    for (let i = 0; i < fireN; i++) {
+      const a = (i / fireN) * Math.PI * 2 + Math.random() * 0.6;
+      const sp = (0.35 + Math.random() * 0.65) * explosionRadius;
+      const f = this.glow(0xffffff, cx, cy, reach * 0.42, reach * 0.42, this.fxLayer);
+      fire.push({ s: f, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.8 - reach * 0.25, grow: 1.4 + Math.random() * 1.6, spin: (Math.random() - 0.5) * 2 });
+    }
+    const fireTint = (t: number): number => (t < 0.12 ? 0xffffff : t < 0.3 ? 0xffe27a : t < 0.55 ? 0xffa03a : 0xff5a1a);
+    // Smoke: darker, slower, rising wisps behind the fire (normal blend).
+    const smoke: { s: Sprite; vx: number; vy: number }[] = [];
+    if (!turbo) {
+      for (let i = 0; i < 7; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const sm = this.glow(0x2b2725, cx, cy, reach * 0.5, reach * 0.5, this.fxLayer, false);
+        sm.alpha = 0;
+        this.fxLayer.setChildIndex(sm, 0);
+        smoke.push({ s: sm, vx: Math.cos(a) * reach * 0.5, vy: -reach * (0.5 + Math.random() * 0.5) });
+      }
+    }
+    this.shardsAt(cx, cy, 0xffc45a, turbo ? 8 : 16, null, 1.25);
 
     // ── 3. ×2, one bar at a time, while the fireball is still alive ──────
     const doubling = (async () => {
@@ -848,16 +1030,17 @@ export class BonusView extends Container {
         if (i > 0) await wait(turbo ? 70 : 210);
         const a = affected[i]!;
         const nc = this.cellRect(a.position[0], a.position[1]);
+        const tx = nc.x + nc.w / 2;
+        const ty = nc.y + nc.h / 2;
         const node = this.cells.get(keyOf(a.position));
         this.cue({ kind: "double", index: i });
+        // A jolt of energy from the blast into the bar it doubles.
+        this.energyArc(cx, cy, tx, ty, turbo);
         if (node) {
           this.updateGoldValue(node, a.newValue);
-          void this.cellStopFx(a.position, true, turbo);
-          const cf = new Graphics(); this.fxLayer.addChild(cf);
-          void tween(turbo ? 160 : 360, (p) => {
-            cf.clear().roundRect(nc.x + 6, nc.y + 6, nc.w - 12, nc.h - 12, 7)
-              .stroke({ color: 0xffdc84, width: 1.5, alpha: (1 - p) * 0.8 });
-          }).then(() => cf.destroy());
+          this.burstAt(tx, ty, Math.min(nc.w, nc.h), 0xffd25a, turbo, 0.9);
+          this.barPulse(node, turbo, 0.24);
+          this.punchNumber(node, turbo);
         }
         // Doubling: the money gained is the other half of the new value.
         this.floatWinBadge(nc.x + nc.w / 2, nc.y + nc.h * 0.30, a.newValue / 2, turbo);
@@ -866,93 +1049,104 @@ export class BonusView extends Container {
       }
     })();
 
-    // Layered particles setup
-    interface ExplosionParticle {
-      g: Graphics;
-      vx: number;
-      vy: number;
-      size: number;
-      rotSpeed: number;
-      type: "fire" | "debris";
-      driftY: number;
-      maxScale: number;
-    }
-
-    const particles: ExplosionParticle[] = [];
-    const numParticles = turbo ? 8 : 16;
-
-    for (let i = 0; i < numParticles; i++) {
-      const g = new Graphics();
-      this.fxLayer.addChild(g);
-      const angle = Math.random() * Math.PI * 2;
-      const speed = (0.25 + Math.random() * 0.75) * explosionRadius;
-      const size = 5 + Math.random() * 9;
-      particles.push({
-        g,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        size,
-        rotSpeed: (Math.random() - 0.5) * 5,
-        type: Math.random() < 0.75 ? "fire" : "debris",
-        driftY: -(18 + Math.random() * 28),
-        maxScale: 1.1 + Math.random() * 1.6
-      });
-    }
-
     const duration = turbo ? 260 : 650 + Math.min(350, maxVal * 4);
     // The sticks blow apart: only the art grows (the cell's own backdrop stays
     // put, so it never covers the neighbours being doubled).
     const artScales = dynArt.map((ch) => ch.scale.x);
+    const fireBase = fire.map((f) => f.s.scale.x);
+    const smokeBase = smoke.map((m) => m.s.scale.x);
+    // The spent cell fades back to a blank while the smoke clears, so there is
+    // no dead black hole where the dynamite was.
+    const logoTex = getExtraTexture("heat_chase_logo_symbol") ?? getExtraTexture("heat_chase_logo");
+    const blank = this.buildEmptyFace(keyPos[0], keyPos[1], logoTex);
+    blank.alpha = 0;
 
     await Promise.all([
       shakePromise,
       doubling,
       tween(duration, (p) => {
-        // Flash fades quickly
-        blastFlash.alpha = Math.max(0, (1 - p * 2.8) * 0.75);
-
-        particles.forEach((pt) => {
-          const x = cx + pt.vx * p;
-          const y = cy + pt.vy * p + (pt.type === "fire" ? pt.driftY * p : 80 * p * p);
-          pt.g.position.set(x, y);
-          pt.g.rotation += pt.rotSpeed * 0.016;
-
-          if (pt.type === "fire") {
-            const color = getExplosionColor(p);
-            const currentSize = pt.size * (0.35 + (pt.maxScale - 0.35) * Math.sin(p * Math.PI * 0.5));
-            const alpha = p < 0.12 ? p / 0.12 : (1 - p) * 1.15;
-            drawFireball(pt.g, currentSize, color, Math.max(0, Math.min(1, alpha)));
-          } else {
-            pt.g.clear();
-            const shardSize = pt.size * 0.38 * (1 - p * 0.5);
-            pt.g.poly([
-              0, -shardSize,
-              shardSize * 0.6, -shardSize * 0.2,
-              shardSize * 0.4, shardSize * 0.5,
-              -shardSize * 0.4, shardSize * 0.3,
-            ]).fill({ color: p < 0.3 ? 0xffcc00 : 0x222222, alpha: 1 - p });
-          }
+        blastLight.alpha = 0.7 * Math.max(0, 1 - p * 2.2);
+        fire.forEach((f, i) => {
+          f.s.position.set(cx + f.vx * p, cy + f.vy * p);
+          f.s.scale.set(fireBase[i]! * (0.6 + f.grow * Math.sin(Math.min(1, p * 1.15) * Math.PI * 0.5)));
+          f.s.tint = fireTint(p);
+          f.s.rotation = f.spin * p;
+          f.s.alpha = p < 0.08 ? p / 0.08 : Math.max(0, 1 - (p - 0.08) / 0.92) * 0.95;
         });
-
+        smoke.forEach((m, i) => {
+          const q = Math.max(0, (p - 0.15) / 0.85);
+          m.s.position.set(cx + m.vx * q, cy + m.vy * q);
+          m.s.scale.set(smokeBase[i]! * (1 + 2.2 * q));
+          m.s.alpha = 0.55 * Math.sin(Math.min(1, q) * Math.PI);
+        });
         dynArt.forEach((ch, i) => {
           if (ch.destroyed) return;
           ch.scale.set(artScales[i]! * (1 + p * 0.8));
           ch.alpha = Math.max(0, 1 - p * 3);
         });
+        if (p > 0.45) {
+          if (!blank.parent) this.placeCell(keyPos, blank);
+          blank.alpha = Math.min(1, (p - 0.45) / 0.4);
+        }
       }, easeOutCubic)
     ]);
 
-    blastFlash.destroy();
-    particles.forEach((pt) => pt.g.destroy());
+    blastLight.destroy();
+    fire.forEach((f) => f.s.destroy());
+    smoke.forEach((m) => m.s.destroy());
 
     // ── 4. The spent cell is a blank again (the engine clears it too) ──────
-    const logoTex = getExtraTexture("heat_chase_logo_symbol") ?? getExtraTexture("heat_chase_logo");
-    const blank = this.buildEmptyFace(keyPos[0], keyPos[1], logoTex);
-    blank.alpha = 0;
-    this.placeCell(keyPos, blank);
+    if (!blank.parent) this.placeCell(keyPos, blank);
     dyn?.destroy({ children: true });
-    await tween(turbo ? 60 : 200, (p) => { blank.alpha = p; }, linear);
+    if (blank.alpha < 1) await tween(turbo ? 60 : 160, (p) => { blank.alpha = Math.max(blank.alpha, p); }, linear);
+    blank.alpha = 1;
     await wait(turbo ? 40 : 120);
+  }
+
+  /** A crackling arc of energy from the blast into a bar being doubled. */
+  private energyArc(x0: number, y0: number, x1: number, y1: number, turbo: boolean): void {
+    const dx = x1 - x0, dy = y1 - y0;
+    const len = Math.hypot(dx, dy);
+    const beam = new Sprite(streakTexture());
+    beam.anchor.set(1, 0.5);
+    beam.blendMode = "add";
+    beam.tint = 0xffd36a;
+    beam.position.set(x1, y1);
+    beam.rotation = Math.atan2(dy, dx);
+    beam.height = 14;
+    beam.width = 1;
+    this.fxLayer.addChild(beam);
+    const bolt = new Graphics();
+    bolt.blendMode = "add";
+    this.fxLayer.addChild(bolt);
+    void tween(turbo ? 140 : 280, (p) => {
+      const grow = Math.min(1, p / 0.35);
+      beam.width = len * grow;
+      beam.alpha = p < 0.35 ? 1 : 1 - (p - 0.35) / 0.65;
+      // jagged core along the same line
+      bolt.clear();
+      if (p < 0.7) {
+        const n = 7;
+        const pts: number[] = [];
+        for (let i = 0; i <= n; i++) {
+          const t = (i / n) * grow;
+          const jitter = i === 0 || i === n ? 0 : (Math.random() - 0.5) * 12;
+          pts.push(x0 + dx * t - (dy / len) * jitter, y0 + dy * t + (dx / len) * jitter);
+        }
+        bolt.poly(pts, false).stroke({ color: 0xfff4c8, width: 2, alpha: 1 - p });
+      }
+    }, linear).then(() => { beam.destroy(); bolt.destroy(); });
+  }
+
+  /** The value on a bar punches up big and settles — the ×2 lands on the number. */
+  private punchNumber(node: Container, turbo: boolean): void {
+    const num = node.getChildByLabel("num");
+    if (!num) return;
+    const s0 = num.scale.x;
+    void tween(turbo ? 160 : 360, (p) => {
+      if (num.destroyed) return;
+      num.scale.set(s0 * (1 + 0.7 * (1 - easeOutBack(p))));
+    }, linear).then(() => { if (!num.destroyed) num.scale.set(s0); });
   }
 
   /** The "×2" tag a target bar wears while the fuse burns. */
@@ -1030,13 +1224,51 @@ export class BonusView extends Container {
 
   /** The Getaway has its own payout stage and audio, independent of base wins. */
   async finish(filled: boolean, totalX: number, turbo: boolean, autoDismiss = false, audio?: GetawayResultAudio): Promise<void> {
+    // Finale tally: the haul lights up bar by bar, in reading order, before the
+    // payout screen takes over — the chase ends on the loot, not on a cut.
+    if (!turbo) {
+      const bars = [...this.cells.entries()]
+        .filter(([, n]) => !n.destroyed && n.getChildByLabel("plate"))
+        .map(([k, n]) => ({ n, c: Number(k.split(":")[0]), r: Number(k.split(":")[1]) }))
+        .sort((a, b) => a.r - b.r || a.c - b.c);
+      const step = bars.length > 12 ? 45 : 70;
+      for (const { n, c, r } of bars) {
+        const rc = this.cellRect(c, r);
+        this.barPulse(n, false, 0.18);
+        this.burstAt(rc.x + rc.w / 2, rc.y + rc.h / 2, Math.min(rc.w, rc.h) * 0.8, 0xffd25a, true, 0.7);
+        await wait(step);
+      }
+      if (bars.length) await wait(320);
+    }
     this.stopAmbient();
     this.heat = 0;
     this.police.clear();
     this.setCollected(totalX, false);
     this.result?.destroy();
     this.result = new GetawayResult();
-    await this.result.present({ filled, totalX, turbo, autoDismiss, audio, bet: this.betAmount, currency: this.currency });
+    // The payout screen is opaque once its entrance lands; stop drawing the
+    // chase underneath it (the full-screen police blur alone is a heavy pass).
+    const result = this.result;
+    const coverTimer = window.setTimeout(() => {
+      if (this.result === result) this.setSceneLayersVisible(false);
+    }, (turbo ? 260 : 520) / getTimeScale());
+    try {
+      const bars = [...this.cells.values()].filter((n) => !n.destroyed && n.getChildByLabel("plate")).length;
+      await result.present({
+        filled, totalX, turbo, autoDismiss, audio, bet: this.betAmount, currency: this.currency,
+        stats: { bars, blasts: this.blasts, spins: this.spinsPlayed },
+      });
+    } finally {
+      window.clearTimeout(coverTimer);
+    }
+  }
+
+  private setSceneLayersVisible(on: boolean): void {
+    this.bgLayer.visible = on;
+    this.lightLayer.visible = on;
+    this.rig.visible = on;
+    this.police.visible = on;
+    this.hudLayer.visible = on;
   }
 
   // ── cinematic helpers (shared by intro + finish) ─────────────────────
@@ -1077,13 +1309,17 @@ export class BonusView extends Container {
 
   hide(): void {
     this.visible = false;
+    this.prepared = false;
+    this.clearBustedGrade();
+    this.introLights = false;
+    this.lightLayer.removeChildren().forEach((child) => child.destroy());
     this.stopAmbient();
-    this.gridLayer.removeChildren();
-    this.lockedLayer.removeChildren();
-    this.dividerLayer.removeChildren();
-    this.fxLayer.removeChildren();
-    this.hudLayer.removeChildren();
-    this.truckLayer.removeChildren();
+    this.setSceneLayersVisible(true);
+    // Destroy, not just detach: every gold bar / badge carries Text textures
+    // that otherwise stayed alive on the GPU after each feature.
+    for (const layer of [this.gridLayer, this.lockedLayer, this.dividerLayer, this.fxLayer, this.hudLayer, this.truckLayer]) {
+      layer.removeChildren().forEach((child) => child.destroy({ children: true }));
+    }
     this.bgLayer.removeChildren().forEach(child => child.destroy({ children: true }));
     this.miamiStreet = null;
     this.doorLayer.removeChildren().forEach((child) => child.destroy({ children: true }));
@@ -1497,9 +1733,12 @@ export class BonusView extends Container {
   }
 
   private buildHud(): void {
-    this.hudLayer.removeChildren();
+    this.hudLayer.removeChildren().forEach((child) => child.destroy({ children: true }));
     const W = this.rect.width;
     const H = this.rect.height;
+    const panel = new Container();
+    this.hudLayer.addChild(panel);
+    this.hudPanel = panel;
 
     // Small kicker title at the very top
     const title = new Text({
@@ -1508,11 +1747,11 @@ export class BonusView extends Container {
     });
     title.anchor.set(0.5, 0);
     title.position.set(W / 2, H * 0.022);
-    this.hudLayer.addChild(title);
+    panel.addChild(title);
 
     // 5 wanted stars, prominently below the title (drawn each frame in drawStars)
     const stars = new Graphics();
-    this.hudLayer.addChild(stars);
+    panel.addChild(stars);
     this.stars = stars;
 
     // SPINS LEFT number, top-right — ticks down on a dead spin; a lock HOLDS it
@@ -1520,14 +1759,25 @@ export class BonusView extends Container {
     // knows exactly how close the feature is to ending.
     const box = new Container();
     box.position.set(W < H ? W / 2 : W * 0.88, H * (W < H ? 0.13 : 0.10));
-    this.hudLayer.addChild(box);
+    panel.addChild(box);
     this.spinsBox = box;
+    // A proper instrument, not floating text: dark glass plate, gold rim.
+    const valSize = Math.max(34, Math.min(52, W / 14));
+    const plateW = Math.max(108, valSize * 2.4);
+    const plateH = 22 + valSize * 1.18;
+    const plateG = new Graphics();
+    plateG.roundRect(-plateW / 2, -9, plateW, plateH, 12)
+      .fill({ color: 0x07090f, alpha: 0.72 })
+      .stroke({ color: GOLD, width: 2, alpha: 0.7 });
+    plateG.roundRect(-plateW / 2 + 4, -5, plateW - 8, plateH - 8, 9).stroke({ color: GOLD_HI, width: 1, alpha: 0.18 });
+    plateG.label = "plate";
+    box.addChild(plateG);
     const sLabel = new Text({ text: "SPINS LEFT", style: new TextStyle({ fill: 0x9fb4d0, fontFamily: FONT, fontSize: 13, letterSpacing: 2 }) });
     sLabel.anchor.set(0.5, 0);
     sLabel.position.set(0, 0);
     box.addChild(sLabel);
     this.spinsLabel = sLabel;
-    const sVal = new Text({ text: `${START_RESPINS}`, style: new TextStyle({ fill: 0xffd95c, fontFamily: FONT, fontSize: Math.max(34, Math.min(52, W / 14)), fontWeight: "900", dropShadow: { color: 0xff6a00, alpha: 0.6, blur: 8, distance: 0, angle: 0 } }) });
+    const sVal = new Text({ text: `${START_RESPINS}`, style: new TextStyle({ fill: 0xffd95c, fontFamily: FONT, fontSize: valSize, fontWeight: "900", dropShadow: { color: 0xff6a00, alpha: 0.6, blur: 8, distance: 0, angle: 0 } }) });
     sVal.anchor.set(0.5, 0);
     sVal.position.set(0, 16);
     box.addChild(sVal);
@@ -1539,28 +1789,28 @@ export class BonusView extends Container {
     // can never overflow: the old layout hung the multiplier off H*0.905 and put
     // the USD line a further (fontSize + 6) below it, which pushed the USD text
     // past the bottom of the view — the real-money total was clipped off-screen.
-    const valSize = Math.max(30, Math.min(46, W / 16));
+    const meterSize = Math.max(30, Math.min(46, W / 16));
     const usdSize = Math.max(15, Math.min(18, W / 46));
     const bottom = H * 0.962;
 
     const usd = new Text({ text: this.fmtTotal(0), style: new TextStyle({ fill: 0xd9e4f5, fontFamily: FONT, fontSize: usdSize, letterSpacing: 1.5, dropShadow: { color: 0x000000, alpha: 0.8, blur: 4, distance: 1, angle: Math.PI / 2 } }) });
     usd.anchor.set(0.5, 1);
     usd.position.set(W / 2, bottom);
-    this.hudLayer.addChild(usd);
+    panel.addChild(usd);
     this.collectedUsdText = usd;
 
     // anchored at its BASELINE-BOTTOM so the count-up pulse grows upward, away
     // from the screen edge, instead of shoving the USD line out of frame.
-    const val = new Text({ text: "0x", style: new TextStyle({ fill: 0xffd95c, fontFamily: FONT, fontSize: valSize, fontWeight: "900", letterSpacing: 1, dropShadow: { color: 0xff6a00, alpha: 0.7, blur: 10, distance: 0, angle: 0 } }) });
+    const val = new Text({ text: "0x", style: new TextStyle({ fill: 0xffd95c, fontFamily: FONT, fontSize: meterSize, fontWeight: "900", letterSpacing: 1, dropShadow: { color: 0xff6a00, alpha: 0.7, blur: 10, distance: 0, angle: 0 } }) });
     val.anchor.set(0.5, 1);
     val.position.set(W / 2, bottom - usdSize * 1.25 - 4);
-    this.hudLayer.addChild(val);
+    panel.addChild(val);
     this.collectedText = val;
 
     const label = new Text({ text: "COLLECTED", style: new TextStyle({ fill: 0x9fb4d0, fontFamily: FONT, fontSize: 13, letterSpacing: 3 }) });
     label.anchor.set(0.5, 1);
-    label.position.set(W / 2, val.y - valSize - 2);
-    this.hudLayer.addChild(label);
+    label.position.set(W / 2, val.y - meterSize - 2);
+    panel.addChild(label);
   }
 
   private setSpins(n: number): void {
@@ -1572,6 +1822,8 @@ export class BonusView extends Container {
     this.spinsText.style.fill = low ? 0xffb000 : 0xffd95c;
     this.spinsLabel.text = v === 1 ? "LAST SPIN!" : "SPINS LEFT";
     this.spinsLabel.style.fill = low ? 0xffb000 : 0x9fb4d0;
+    const plate = this.spinsBox?.getChildByLabel("plate");
+    if (plate) plate.tint = low ? 0xffb39a : 0xffffff;
   }
 
   /**
@@ -1646,14 +1898,14 @@ export class BonusView extends Container {
     const y = this.rect.height * 0.085;
     for (let i = 0; i < 5; i++) {
       const sx = startX + i * gap;
-      // soft colored glow
-      g.poly(this.starPoints(sx, y, r * 1.55, r * 0.66)).fill({ color, alpha: 0.22 * bright });
-      g.poly(this.starPoints(sx, y, r * 1.25, r * 0.55)).fill({ color, alpha: 0.25 * bright });
-      // bright body: white core tinted toward the pulse colour
+      // police-coloured light around the star...
+      g.poly(this.starPoints(sx, y, r * 1.7, r * 0.78)).fill({ color, alpha: 0.16 * bright });
+      g.poly(this.starPoints(sx, y, r * 1.32, r * 0.6)).fill({ color, alpha: 0.26 * bright });
+      // ...on a warm white star with a coloured rim (the old tinted body read pink)
       const pts = this.starPoints(sx, y, r, r * 0.42);
-      g.poly(pts).fill(0xffffff);
-      g.poly(pts).fill({ color, alpha: 0.55 * bright });
-      g.poly(pts).stroke({ color: 0xffffff, width: 1.5, alpha: 0.85 });
+      g.poly(pts).fill(0xfff6e2);
+      g.poly(this.starPoints(sx, y - r * 0.08, r * 0.55, r * 0.24)).fill({ color: 0xffffff, alpha: 0.9 });
+      g.poly(pts).stroke({ color, width: 2, alpha: 0.75 * bright + 0.2 });
     }
   }
 
@@ -1670,7 +1922,8 @@ export class BonusView extends Container {
    */
   private drawPolice(elapsed: number): void {
     this.police.clear();
-    const peak = this.busted ? 0.95 : [0.0, 0.55, 0.78, 1.0][this.heat] ?? 0;
+    const heatPeak = this.busted ? 0.95 : [0.0, 0.55, 0.78, 1.0][this.heat] ?? 0;
+    const peak = Math.max(heatPeak, this.introLights ? 0.5 : 0);
     if (peak <= 0.001) return;
     const W = this.rect.width;
     const H = this.rect.height;
@@ -1686,13 +1939,122 @@ export class BonusView extends Container {
       this.police.ellipse(cx, cy, rx, ry).fill({ color, alpha: Math.min(1, a) });
     };
     // Rear light-bar wash (cop sits behind/below the POV) + upper reflections.
-    src(W * 0.30, H * 0.98, W * 0.30, H * 0.22, POLICE_RED, red * peak);
-    src(W * 0.70, H * 0.98, W * 0.30, H * 0.22, POLICE_BLUE, blue * peak);
+    // Kept to the lower CORNERS so the COLLECTED plate in the middle stays clean.
+    src(W * 0.12, H * 1.0, W * 0.24, H * 0.2, POLICE_RED, red * peak * 0.85);
+    src(W * 0.88, H * 1.0, W * 0.24, H * 0.2, POLICE_BLUE, blue * peak * 0.85);
     src(W * 0.14, H * 0.14, W * 0.20, H * 0.16, POLICE_RED, red * peak * 0.7);
     src(W * 0.86, H * 0.14, W * 0.20, H * 0.16, POLICE_BLUE, blue * peak * 0.7);
     // faint full-scene colour grade so the whole frame feels lit
     if (red > 0) this.police.rect(0, 0, W, H).fill({ color: POLICE_RED, alpha: red * peak * 0.07 });
     if (blue > 0) this.police.rect(0, 0, W, H).fill({ color: POLICE_BLUE, alpha: blue * peak * 0.07 });
+  }
+
+  // ── shared fx ─────────────────────────────────────────────────────────
+  private glow(tint: number, x: number, y: number, w: number, h: number, parent: Container, additive = true): Sprite {
+    const g = new Sprite(softGlowTexture());
+    g.anchor.set(0.5);
+    g.tint = tint;
+    if (additive) g.blendMode = "add";
+    g.position.set(x, y);
+    g.width = w;
+    g.height = h;
+    parent.addChild(g);
+    return g;
+  }
+
+  /** Impact burst on a cell: additive flash, white core, ring and shards. */
+  private burstAt(x: number, y: number, size: number, color: number, turbo: boolean, power = 1): void {
+    const flash = this.glow(color, x, y, size * 1.2 * power, size * 1.2 * power, this.fxLayer);
+    const fs = flash.scale.x;
+    void tween(turbo ? 160 : 320, (p) => {
+      flash.scale.set(fs * (1 + 0.9 * p));
+      flash.alpha = 0.95 * (1 - p) * (1 - p);
+    }, easeOutCubic).then(() => flash.destroy());
+    const core = this.glow(0xffffff, x, y, size * 0.55 * power, size * 0.55 * power, this.fxLayer);
+    const cs = core.scale.x;
+    void tween(turbo ? 110 : 210, (p) => {
+      core.scale.set(cs * (1 + 0.4 * p));
+      core.alpha = 1 - p;
+    }, easeOutCubic).then(() => core.destroy());
+    const ring = new Graphics();
+    ring.circle(0, 0, size * 0.42).stroke({ color, width: 3 });
+    ring.blendMode = "add";
+    ring.position.set(x, y);
+    ring.scale.set(0.5);
+    this.fxLayer.addChild(ring);
+    void tween(turbo ? 180 : 360, (p) => {
+      ring.scale.set(0.5 + 0.9 * power * p);
+      ring.alpha = 1 - p;
+    }, easeOutCubic).then(() => ring.destroy());
+    if (!turbo) this.shardsAt(x, y, color, Math.round(9 * power), null, power);
+  }
+
+  /** Light shards flying out of a point (full circle, or a cone around dir). */
+  private shardsAt(x: number, y: number, color: number, count: number, dir: number | null, power: number, parent: Container = this.fxLayer): void {
+    const list: { s: Sprite; vx: number; vy: number; len: number }[] = [];
+    for (let i = 0; i < count; i++) {
+      const sh = new Sprite(streakTexture());
+      sh.anchor.set(1, 0.5);
+      sh.blendMode = "add";
+      sh.tint = i % 3 === 0 ? 0xffffff : color;
+      sh.position.set(x, y);
+      const a = dir === null ? (i / count) * Math.PI * 2 + Math.random() * 0.5 : dir + (Math.random() - 0.5) * 1.3;
+      const sp = (3.5 + Math.random() * 4.5) * power;
+      const len = 0.3 + Math.random() * 0.4;
+      sh.scale.set(len, 0.5 + Math.random() * 0.3);
+      sh.rotation = a;
+      parent.addChild(sh);
+      list.push({ s: sh, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, len });
+    }
+    void simulate(460, (k, t) => {
+      const drag = Math.pow(0.9, k);
+      for (const d of list) {
+        d.s.x += d.vx * k;
+        d.s.y += d.vy * k;
+        d.vx *= drag;
+        d.vy = d.vy * drag + 0.2 * k;
+        d.s.rotation = Math.atan2(d.vy, d.vx);
+        d.s.scale.x = d.len * (1 - 0.6 * t);
+        d.s.alpha = 1 - t * t;
+      }
+    }).then(() => list.forEach((d) => d.s.destroy()));
+  }
+
+  /**
+   * A gold bar that has STUCK: a recessed gold-rimmed slot with a warm glow
+   * under the bar — the Hold & Spin "locked" read, so held loot never looks
+   * like the reel filler scrolling past it. Idempotent.
+   */
+  private dressLocked(node: Container, col: number, row: number): void {
+    if (node.getChildByLabel("plate")) return;
+    const r = this.cellRect(col, row);
+    const plate = new Container();
+    plate.label = "plate";
+    const slot = new Graphics();
+    slot.roundRect(-r.w / 2 + 3, -r.h / 2 + 3, r.w - 6, r.h - 6, 10)
+      .fill({ color: 0x2a1906, alpha: 0.6 })
+      .stroke({ color: GOLD, width: 2, alpha: 0.8 });
+    slot.roundRect(-r.w / 2 + 6.5, -r.h / 2 + 6.5, r.w - 13, r.h - 13, 8)
+      .stroke({ color: GOLD_HI, width: 1, alpha: 0.28 });
+    plate.addChild(slot);
+    const warm = this.glow(0xffb43c, 0, 0, r.w * 1.0, r.h * 1.0, plate);
+    warm.alpha = 0.3;
+    node.addChildAt(plate, Math.min(1, node.children.length));
+  }
+
+  /** A held bar flaring once (doubling, finale tally). */
+  private barPulse(node: Container, turbo: boolean, amount = 0.2): void {
+    const art = node.children.filter((ch) => ch.label !== "spark" && ch.label !== "plate" && ch.label !== "fx" && ch !== node.children[0]);
+    const scales = art.map((ch) => ch.scale.x);
+    const plate = node.getChildByLabel("plate");
+    void tween(turbo ? 140 : 300, (p) => {
+      const k = Math.sin(p * Math.PI) * (1 - 0.35 * p);
+      art.forEach((ch, i) => { if (!ch.destroyed) ch.scale.set(scales[i]! * (1 + amount * k)); });
+      if (plate && !plate.destroyed) plate.alpha = 1 + k * 0.8;
+    }, linear).then(() => {
+      art.forEach((ch, i) => { if (!ch.destroyed) ch.scale.set(scales[i]!); });
+      if (plate && !plate.destroyed) plate.alpha = 1;
+    });
   }
 
   // ── cell nodes ───────────────────────────────────────────────────────
@@ -1800,8 +2162,9 @@ export class BonusView extends Container {
       const logo = new Sprite(logoTex);
       logo.anchor.set(0.5);
       // The watermark art ships pre-shaded (heat_chase_logo_symbol.webp), so the
-      // alpha only has to mute it slightly — it must still read as a symbol.
-      logo.alpha = 0.7;
+      // alpha only has to mute it — it must still read as a symbol, but sit
+      // back far enough that locked gold is what the eye goes to.
+      logo.alpha = 0.55;
       const maxDim = Math.min(r.w, r.h) * 0.8;
       logo.scale.set(Math.min(maxDim / logoTex.width, maxDim / logoTex.height));
       c.addChild(logo);
@@ -1899,7 +2262,16 @@ export class BonusView extends Container {
     for (let r = 0; r < GRID_ROWS; r++) addFace(r, 0, openSet.has(r));
     // Filler screens stacked BELOW — enough to keep the window full for the whole
     // travel, so every cell of every column ALWAYS shows a symbol.
-    for (let k = 1; k <= screens + 1; k++) for (let r = 0; r < GRID_ROWS; r++) addFace(r, k, false);
+    // The screen in the window when the spin starts shows the resting blank
+    // faces, so the reel starts from what was on screen instead of popping to
+    // random filler on the first frame.
+    for (let k = 1; k <= screens + 1; k++) for (let r = 0; r < GRID_ROWS; r++) {
+      if (k === screens) {
+        const face = this.buildEmptyFace(col, r, logoTex);
+        face.position.set(cx, colTop + r * cellH + cellH / 2 + k * colH);
+        strip.addChild(face);
+      } else addFace(r, k, false);
+    }
 
     // Mask the ENTIRE column span (not just the open rows) so the scrolling strip
     // flows SMOOTHLY behind any sticky/locked symbols instead of being clipped at
@@ -1924,8 +2296,15 @@ export class BonusView extends Container {
     // Constant-speed spin (the continuous illusion) then a smooth settle. The
     // strip is one continuous run of faces, so symbols flow down and fresh ones
     // keep arriving from the top — never a visible disappear/re-pop.
+    // Wind-up (a short lift before the launch) and a weighted stop (it runs a
+    // touch past the line, then settles back) — the reel has mass.
+    const kickPx = turbo ? 0 : cellH * 0.12;
+    const overshootPx = turbo ? cellH * 0.04 : cellH * 0.09;
     return tween(dur, (p) => {
-      strip.y = -travel * (1 - reelPos(p));
+      const kick = p < 0.07 ? -kickPx * Math.sin((p / 0.07) * Math.PI) : 0;
+      const u = (p - 0.84) / 0.16;
+      const settle = u > 0 ? overshootPx * Math.sin(Math.min(1, u) * Math.PI) * (1 - 0.3 * u) : 0;
+      strip.y = -travel * (1 - reelPos(p)) + kick + settle;
       blur.strengthY = blurMax * reelVel(p);   // blurry while fast, razor sharp at rest
     }, linear).then(async () => {
       strip.filters = null;
@@ -1938,7 +2317,9 @@ export class BonusView extends Container {
       for (const r of rows) {
         const cell = grid[col][r];
         if (cell.symbol === "SAFE") {
-          this.placeCell([col, r], this.buildGoldBar(cell.value ?? 0, col, r));
+          const bar = this.buildGoldBar(cell.value ?? 0, col, r);
+          this.dressLocked(bar, col, r);
+          this.placeCell([col, r], bar);
           wins.push([col, r]);
         } else if (cell.symbol === "MASTER_KEY") {
           this.placeCell([col, r], this.buildDynamite(col, r));
@@ -1965,66 +2346,391 @@ export class BonusView extends Container {
     if (!landed) return;
     const node = this.cells.get(keyOf(pos));
     if (!node) return;
-    // Keep the cell backdrop fixed: scaling it covered adjacent held values.
-    const art = node.children.slice(1).filter((child) => child.label !== "spark");
+    const art = node.children.filter((child) => child.label !== "spark" && child.label !== "plate" && child.label !== "fx" && child !== node.children[0]);
     const scales = art.map((child) => child.scale.x);
+    const plate = node.getChildByLabel("plate");
+    const isGold = !!plate;
     const rc = this.cellRect(pos[0], pos[1]);
-    const glint = new Graphics();
-    glint.roundRect(rc.x + 4, rc.y + 4, rc.w - 8, rc.h - 8, 8).fill({ color: 0xfff1c4, alpha: 1 });
-    glint.blendMode = "add";
-    glint.alpha = 0;
-    this.fxLayer.addChild(glint);
-    await tween(turbo ? 110 : 240, (p) => {
-      // A hard hit: overshoot on contact, then settle.
-      const scale = 1 + Math.sin(p * Math.PI) * (1 - p) * 0.22;
-      art.forEach((child, i) => { if (!child.destroyed) child.scale.set(scales[i]! * scale); });
-      glint.alpha = 0.32 * Math.pow(1 - p, 2);
+    const cx = rc.x + rc.w / 2;
+    const cy = rc.y + rc.h / 2;
+    const color = isGold ? 0xffc94a : 0xff8a2a;
+    // Burst on contact (same frame as the landing sound)...
+    this.burstAt(cx, cy, Math.min(rc.w, rc.h), color, turbo, isGold ? 1 : 0.85);
+    // ...a white-hot flash of the art itself...
+    const mainArt = art.find((ch) => ch instanceof Sprite) as Sprite | undefined;
+    if (mainArt && !turbo) {
+      const stamp = new Sprite(mainArt.texture);
+      stamp.anchor.set(0.5);
+      stamp.scale.copyFrom(mainArt.scale);
+      stamp.position.set(cx, cy);
+      stamp.blendMode = "add";
+      this.fxLayer.addChild(stamp);
+      const s0 = stamp.scale.x;
+      void tween(300, (p) => { stamp.alpha = 0.75 * (1 - p); stamp.scale.set(s0 * (1 + 0.12 * p)); }, easeOutCubic)
+        .then(() => stamp.destroy());
+    }
+    // ...and the bar SLAMS into its slot: drops in large, squashes on impact,
+    // recovers with a little spring. The locked slot lights up beneath it.
+    if (plate) plate.alpha = 0;
+    await tween(turbo ? 130 : 300, (p) => {
+      let k: number;
+      if (p < 0.24) k = 1.38 - 0.46 * easeInQuad(p / 0.24);            // 1.38 → 0.92
+      else k = 0.92 + 0.08 * easeOutBack((p - 0.24) / 0.76);          // 0.92 → 1 (spring)
+      art.forEach((child, i) => { if (!child.destroyed) child.scale.set(scales[i]! * k); });
+      if (plate && !plate.destroyed) plate.alpha = Math.min(1, Math.max(0, (p - 0.18) / 0.3));
     }, linear);
     art.forEach((child, i) => { if (!child.destroyed) child.scale.set(scales[i]!); });
-    glint.destroy();
+    if (plate && !plate.destroyed) plate.alpha = 1;
   }
 
-  /** Dead spin (no land): a red wash around the opening + a centred "NO HIT" so
-   *  the player clearly registers that the reel spun and missed. */
-  private deadSpinBeat(): void {
+  /**
+   * Police tape, drawn once per size on a 2D canvas: glossy caution yellow,
+   * bold black "POLICE LINE · DO NOT CROSS" repeated, dark hem lines. A real
+   * crime-scene object, so the miss reads as the cops shutting the haul down.
+   */
+  private tapeTexture(len: number, h: number): Texture {
+    const key = `${Math.round(len)}x${Math.round(h)}`;
+    const cached = this.tapeCache.get(key);
+    if (cached) return cached;
+    const k = 2;
+    const W = Math.ceil(len * k), H = Math.ceil(h * k);
+    if (typeof document === "undefined") return Texture.WHITE;
+    const cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    const c = cv.getContext("2d")!;
+    const g = c.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "#fff27a"); g.addColorStop(0.18, "#ffd60a");
+    g.addColorStop(0.62, "#f5c400"); g.addColorStop(1, "#c99400");
+    c.fillStyle = g;
+    c.fillRect(0, 0, W, H);
+    // gloss band
+    const gl = c.createLinearGradient(0, 0, 0, H);
+    gl.addColorStop(0.08, "rgba(255,255,255,0.55)"); gl.addColorStop(0.3, "rgba(255,255,255,0)");
+    c.fillStyle = gl; c.fillRect(0, 0, W, H * 0.4);
+    // hems
+    c.fillStyle = "#1a1405";
+    c.fillRect(0, H * 0.07, W, H * 0.07);
+    c.fillRect(0, H * 0.86, W, H * 0.07);
+    // text
+    c.font = `${Math.round(H * 0.5)}px 'Heat Display', Impact, sans-serif`;
+    c.textBaseline = "middle";
+    c.fillStyle = "#14100a";
+    const unit = "POLICE LINE   \u2022   DO NOT CROSS   \u2022   ";
+    const uw = c.measureText(unit).width;
+    for (let x = -uw * 0.3; x < W; x += uw) c.fillText(unit, x, H * 0.52);
+    // creases: faint darker diagonal folds so it reads as vinyl, not a bar
+    for (let x = 60; x < W; x += 170 + (x % 90)) {
+      const cr = c.createLinearGradient(x, 0, x + 26, 0);
+      cr.addColorStop(0, "rgba(0,0,0,0)"); cr.addColorStop(0.5, "rgba(80,50,0,0.16)"); cr.addColorStop(1, "rgba(0,0,0,0)");
+      c.fillStyle = cr; c.fillRect(x, 0, 26, H);
+    }
+    const tex = Texture.from(cv);
+    this.tapeCache.set(key, tex);
+    return tex;
+  }
+  private readonly tapeCache = new Map<string, Texture>();
+
+  private clearBustedGrade(): void {
+    this.slowmoTarget = 1;
+    if (this.bustedGrade) {
+      this.bgLayer.filters = null;
+      this.bustedGrade.destroy();
+      this.bustedGrade = null;
+    }
+  }
+
+  /**
+   * Dead spin — the cops shut it down. One strip of police tape (two once the
+   * heat is up) whips across the reel window and slaps taut, a NO HIT stamp
+   * slams onto a red alarm band in the middle, the camera kicks, the police
+   * strobes flare from both sides, and a "-1" is torn off the stamp and flung
+   * into the SPINS meter. On the final spin the stamp reads BUSTED.
+   * Resolves when the "-1" lands (the caller drops the number then); the
+   * tape and stamp clear away on their own afterwards.
+   */
+  private async noHitBeat(heat: number, spinsLeft: number, turbo: boolean): Promise<void> {
     const o = this.opening();
+    const cx = o.x + o.width / 2;
+    const cy = o.y + o.height / 2;
+    const last = spinsLeft <= 0;
+    const W = this.rect.width;
+    const H = this.rect.height;
+    const titleSize = Math.min(96, o.width / 4.2);
 
-    // A dead spin spends one of only three chances, so it has to LAND as bad:
-    // the reel window jolts, dims, and takes a hard amber slam ring — not just
-    // a soft outline pulse.
-    // Dark wash over the window — the light goes out for a beat.
-    const wash = new Graphics();
-    wash.rect(o.x, o.y, o.width, o.height).fill({ color: 0x000000, alpha: 1 });
-    this.fxLayer.addChild(wash);
-    void tween(430, (p) => { wash.alpha = 0.2 * Math.sin(p * Math.PI) ** 0.7; })
-      .then(() => wash.destroy());
-
-    const ring = new Graphics();
-    this.fxLayer.addChild(ring);
-    void tween(420, (p) => {
-      const a = Math.sin(p * Math.PI);
-      ring.clear();
-      // Two rings: a hard inner slam plus a wider one that snaps outward.
-      ring.roundRect(o.x - 8, o.y - 8, o.width + 16, o.height + 16, 10)
-        .stroke({ color: POLICE_RED, width: 3, alpha: a * 0.6 });
-      const g = 10 + 26 * p;
-      ring.roundRect(o.x - g, o.y - g, o.width + g * 2, o.height + g * 2, 14)
-        .stroke({ color: POLICE_RED, width: 3, alpha: a * (1 - p) * 0.8 });
-    }).then(() => ring.destroy());
-
-    const t = new Text({
-      text: "NO HIT",
-      style: new TextStyle({ fill: 0xffb000, fontFamily: FONT, fontSize: Math.min(34, o.width / 7), fontWeight: "900", letterSpacing: 4, stroke: { color: 0x000000, width: 5 }, dropShadow: { color: POLICE_RED, alpha: 0.6, blur: 12, distance: 0, angle: 0 } })
+    // ── the stamp (built first: turbo still shows it) ──
+    const stamp = new Container();
+    stamp.position.set(cx, cy);
+    stamp.rotation = -0.06;
+    const bandH = titleSize * 1.45;
+    const bandW = o.width + 70;
+    const band = new Graphics();
+    const sk = bandH * 0.32;
+    band.poly([-bandW / 2 + sk, -bandH / 2, bandW / 2 + sk * 0.2, -bandH / 2, bandW / 2 - sk, bandH / 2, -bandW / 2 - sk * 0.2, bandH / 2])
+      .fill({ color: 0x0a0204, alpha: 0.86 });
+    // red edge lines that follow the slanted band exactly
+    band.rect(-bandW / 2 + sk, -bandH / 2 - 4, bandW - sk * 0.8, 4).fill({ color: POLICE_RED });
+    band.rect(-bandW / 2 - sk * 0.2, bandH / 2, bandW - sk * 0.8, 4).fill({ color: POLICE_RED });
+    const bandGlow = this.glow(POLICE_RED, 0, 0, bandW * 1.15, bandH * 2.2, stamp);
+    bandGlow.alpha = 0;
+    stamp.addChild(band);
+    const face = new FillGradient({ start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, colorStops: [
+      { offset: 0, color: 0xffffff }, { offset: 0.42, color: 0xffe0d2 },
+      { offset: 0.5, color: last ? 0xff4a3a : 0xff7656 }, { offset: 1, color: 0xb80c22 },
+    ] });
+    const title = new Text({
+      text: last ? "BUSTED" : "NO HIT",
+      style: new TextStyle({
+        fontFamily: DISPLAY_FONT, fontSize: titleSize, fill: face, letterSpacing: 3, padding: 18,
+        stroke: { color: 0x1c0306, width: 9, join: "round" },
+        dropShadow: { color: 0x000000, alpha: 0.9, blur: 0, distance: 6, angle: Math.PI / 2 },
+      }),
     });
-    t.anchor.set(0.5);
-    t.position.set(o.x + o.width / 2, o.y + o.height / 2);
-    this.fxLayer.addChild(t);
-    t.scale.set(0.6);
-    void tween(700, (p) => {
-      t.scale.set(0.6 + 0.5 * easeOutBack(Math.min(1, p * 1.8)));
-      t.alpha = p < 0.3 ? p / 0.3 : 1 - (p - 0.3) / 0.7;
-      t.y = o.y + o.height / 2 - 14 * p;
-    }).then(() => t.destroy());
+    title.anchor.set(0.5);
+    title.skew.x = -0.12;
+    title.y = -titleSize * 0.06;
+    stamp.addChild(title);
+    const sub = new Text({
+      text: last ? "THE CHASE IS OVER" : "\u2212 1  SPIN",
+      style: new TextStyle({ fontFamily: FONT, fontSize: Math.max(14, titleSize * 0.2), fontWeight: "700", letterSpacing: 6, fill: 0xffd2c8, stroke: { color: 0x000000, width: 4 } }),
+    });
+    sub.anchor.set(0.5);
+    sub.y = titleSize * 0.52;
+    stamp.addChild(sub);
+
+    // BUSTED rides the wasted sting: world drops to slow-mo on its first hit,
+    // the stamp slams on its second (~2.5 s in, as in GTA).
+    if (last) this.cue({ kind: "busted" });
+
+    if (turbo) {
+      stamp.scale.set(1.25);
+      stamp.alpha = 0;
+      this.fxLayer.addChild(stamp);
+      await tween(110, (p) => { stamp.alpha = p; stamp.scale.set(1.25 - 0.25 * easeInCubic(p)); }, linear);
+      this.cue({ kind: "nohit", heat, last });
+      this.jolt = Math.max(this.jolt, 6);
+      void wait(160).then(() => tween(110, (p) => { stamp.alpha = 1 - p; }, linear)).then(() => stamp.destroy({ children: true }));
+      return;
+    }
+
+    // ── lights out + red alarm inside the window ──
+    const dim = new Graphics().rect(o.x - 2, o.y - 2, o.width + 4, o.height + 4).fill(0x000000);
+    dim.alpha = 0;
+    this.fxLayer.addChild(dim);
+    const alarm = this.glow(POLICE_RED, cx, cy, o.width * 1.5, o.height * 1.5, this.fxLayer);
+    alarm.alpha = 0;
+    void tween(160, (p) => { dim.alpha = 0.5 * p; alarm.alpha = 0.32 * p; }, easeOutCubic);
+
+    // BUSTED: the world slows to a crawl and drains of colour, then the stamp lands on the sting's second hit.
+    let wastedVeil: Graphics | null = null;
+    const STAMP_HIT_MS = 2460;
+    const bustedStart = performance.now();
+    if (last) {
+      this.slowmoTarget = 0.08;
+      try {
+        const cm = new ColorMatrixFilter();
+        cm.desaturate();
+        cm.alpha = 0;
+        this.bgLayer.filters = [cm];
+        this.bustedGrade = cm;
+      } catch { /* filter unsupported: veil alone still sells it */ }
+      wastedVeil = new Graphics().rect(0, 0, W, H).fill(0x0b0c12);
+      wastedVeil.alpha = 0;
+      this.lightLayer.addChild(wastedVeil);
+      const veil = wastedVeil, grade = this.bustedGrade;
+      void tween(900, (p) => {
+        veil.alpha = 0.42 * p;
+        if (grade) grade.alpha = p;
+      }, easeOutCubic);
+    }
+
+    // ── police strobes flaring in from both edges ──
+    const strobeL = this.glow(POLICE_RED, 0, H * 0.5, W * 0.75, H * 1.3, this.lightLayer);
+    const strobeR = this.glow(POLICE_BLUE, W, H * 0.5, W * 0.75, H * 1.3, this.lightLayer);
+    strobeL.alpha = strobeR.alpha = 0;
+    const flashes = heat >= 2 || last ? 3 : 2;
+    void tween(600, (p) => {
+      const ph = p * flashes;
+      const k = ph % 1;
+      const on = Math.sin(k * Math.PI) ** 2;
+      const red = Math.floor(ph) % 2 === 0;
+      strobeL.alpha = red ? 0.55 * on : 0;
+      strobeR.alpha = red ? 0 : 0.6 * on;
+    }, linear).then(() => { strobeL.destroy(); strobeR.destroy(); });
+
+    // ── police tape: whips in along its own length and slaps taut ──
+    const tapeH = Math.max(30, Math.min(54, o.height * 0.1));
+    const tapeLen = Math.hypot(o.width, o.height) * 1.12;
+    const strips = heat >= 2 || last ? 2 : 1;
+    const tapes: Container[] = [];
+    const travel = 110;
+    const tapeLead = last ? 120 : 0; // busted: tape lands on the sting's first hit
+    const slapAt = (i: number): number => tapeLead + i * 75 + travel;
+    const placeTape = async (i: number): Promise<void> => {
+      await wait(tapeLead + i * 75);
+      const angle = i === 0 ? -0.2 : 0.17;
+      const ty = cy + (i === 0 ? -o.height * 0.16 : o.height * 0.2);
+      const holder = new Container();
+      holder.position.set(cx, ty);
+      holder.rotation = angle;
+      const shadow = new Graphics().rect(-tapeLen / 2, -tapeH / 2 + 7, tapeLen, tapeH).fill({ color: 0x000000, alpha: 0.4 });
+      const tape = new Sprite(this.tapeTexture(tapeLen, tapeH));
+      tape.anchor.set(0.5);
+      tape.width = tapeLen;
+      tape.height = tapeH;
+      holder.addChild(shadow, tape);
+      this.fxLayer.addChild(holder);
+      tapes.push(holder);
+      const dir = i === 0 ? -1 : 1; // comes in from the left, then the right
+      const ux = Math.cos(angle), uy = Math.sin(angle);
+      const from = tapeLen * 1.05 * dir;
+      if (!last) this.cue({ kind: "tape", index: i, seconds: travel / 1000 / getTimeScale() });
+      await tween(travel, (p) => {
+        const d = from * (1 - easeInCubic(p));
+        holder.position.set(cx + ux * d, ty + uy * d);
+        holder.scale.set(1, 1 - 0.18 * (1 - p)); // stretched thin in flight
+      }, linear);
+      holder.position.set(cx, ty);
+      this.jolt = Math.max(this.jolt, 4);
+      // slap: snaps past taut, then flutters to rest
+      void tween(520, (p) => {
+        const wob = Math.sin(p * Math.PI * 7) * Math.exp(-p * 5);
+        holder.rotation = angle + wob * 0.05;
+        holder.scale.set(1 + wob * 0.012, 1 - Math.abs(wob) * 0.06);
+        shadow.y = wob * 3;
+      }, linear);
+    };
+    const tapesDone = Promise.all(Array.from({ length: strips }, (_, i) => placeTape(i)));
+
+    // ── the stamp slams on top ──
+    const stampStart = slapAt(strips - 1) - 30;
+    if (last) {
+      // hold the slow-mo until the sting's second hit (wall clock — the
+      // audio does not follow __slow), the alarm breathing slowly meanwhile
+      const until = STAMP_HIT_MS - 130 - (performance.now() - bustedStart);
+      if (until > 0) {
+        void tween(until, (p) => { alarm.alpha = 0.22 + 0.14 * Math.sin(p * Math.PI * 3); }, linear);
+        await new Promise<void>((r) => window.setTimeout(r, until));
+      }
+    } else {
+      await wait(stampStart);
+    }
+    stamp.scale.set(2.6);
+    stamp.alpha = 0;
+    this.fxLayer.addChild(stamp);
+    const ghosts: Text[] = [];
+    let lastGhost = 0;
+    await tween(130, (p) => {
+      const s2 = 2.6 - 1.6 * easeInCubic(p);
+      stamp.scale.set(s2);
+      stamp.alpha = Math.min(1, p * 3);
+      band.scale.set(0.55 + 0.45 * p, 1);
+      if (p - lastGhost > 0.3 && p < 0.9) {
+        lastGhost = p;
+        const ghost = new Text({ text: title.text, style: title.style });
+        ghost.anchor.set(0.5);
+        ghost.skew.x = title.skew.x;
+        ghost.blendMode = "add";
+        ghost.tint = POLICE_RED;
+        ghost.alpha = 0.35;
+        ghost.position.copyFrom(stamp.position);
+        ghost.rotation = stamp.rotation;
+        ghost.scale.set(s2 * 1.08);
+        this.fxLayer.addChildAt(ghost, this.fxLayer.getChildIndex(stamp));
+        ghosts.push(ghost);
+        void tween(200, (g) => { ghost.alpha = 0.35 * (1 - g); }).then(() => ghost.destroy());
+      }
+    }, linear);
+    stamp.scale.set(1);
+    band.scale.set(1, 1);
+
+    // IMPACT
+    this.cue({ kind: "nohit", heat, last });
+    this.jolt = Math.max(this.jolt, last ? 16 : 11);
+    this.burstAt(cx, cy, Math.min(o.width, o.height) * 0.9, POLICE_RED, false, last ? 1.6 : 1.25);
+    this.shardsAt(cx, cy, 0xffb000, 10, null, 1.3);
+    const flash = this.glow(0xffffff, cx, cy, o.width * 1.1, o.height * 0.7, this.fxLayer);
+    const fs0 = flash.scale.x;
+    void tween(260, (p) => { flash.alpha = 0.85 * (1 - p) * (1 - p); flash.scale.set(fs0 * (1 + 0.4 * p)); }, easeOutCubic)
+      .then(() => flash.destroy());
+    void tween(360, (p) => {
+      // squash on contact, spring back
+      const k = Math.sin(p * Math.PI * 2.4) * Math.exp(-p * 4.5);
+      stamp.scale.set(1 + k * 0.08, 1 - k * 0.1);
+      bandGlow.alpha = 0.55 * Math.exp(-p * 2) + 0.18;
+    }, linear);
+
+    // ── the "-1" is torn off and flung into the spins meter ──
+    const target = this.spinsBox;
+    await wait(last ? 260 : 200);
+    if (target && !last) {
+      const start = { x: cx + this.rig.x, y: cy + sub.y + this.rig.y };
+      sub.alpha = 0.25;
+      const chip = new Container();
+      const chipGlow = this.glow(POLICE_RED, 0, 0, 120, 80, chip);
+      chipGlow.alpha = 0.9;
+      const chipText = new Text({ text: "\u22121", style: new TextStyle({ fontFamily: DISPLAY_FONT, fontSize: 40, fill: 0xffffff, stroke: { color: 0x3a0008, width: 6 }, padding: 8 }) });
+      chipText.anchor.set(0.5);
+      chip.addChild(chipText);
+      chip.position.set(start.x, start.y);
+      this.hudLayer.addChild(chip);
+      const tx = target.x, ty = target.y + 42;
+      const ctrlX = (start.x + tx) / 2 + 40, ctrlY = Math.min(start.y, ty) - 90;
+      let lastTrail = 0;
+      await tween(300, (p) => {
+        const e = easeInCubic(p) * 0.6 + p * 0.4;
+        const a = 1 - e;
+        chip.x = a * a * start.x + 2 * a * e * ctrlX + e * e * tx;
+        chip.y = a * a * start.y + 2 * a * e * ctrlY + e * e * ty;
+        chip.scale.set(1.15 - 0.45 * p);
+        chip.rotation = -0.4 * p;
+        if (p - lastTrail > 0.1) {
+          lastTrail = p;
+          const tr = this.glow(POLICE_RED, chip.x, chip.y, 60, 60, this.hudLayer);
+          void tween(220, (q) => { tr.alpha = 0.8 * (1 - q); }).then(() => tr.destroy());
+        }
+      }, linear);
+      chip.destroy({ children: true });
+      const hit = this.glow(POLICE_RED, tx, ty, 170, 120, this.hudLayer);
+      const hs = hit.scale.x;
+      void tween(320, (q) => { hit.alpha = 1 - q; hit.scale.set(hs * (1 + 0.5 * q)); }, easeOutCubic).then(() => hit.destroy());
+      if (this.spinsBox) {
+        const box = this.spinsBox;
+        void tween(260, (q) => { box.x = tx + Math.sin(q * Math.PI * 5) * 6 * (1 - q); }, linear).then(() => { box.x = tx; });
+      }
+    }
+
+    // ── clear away: tape is torn off, stamp lifts, lights come back ──
+    void (async () => {
+      await tapesDone;
+      await wait(last ? 650 : 300);
+      const t0 = tapes.map((t) => ({ t, x: t.x, y: t.y, r: t.rotation }));
+      await tween(300, (p) => {
+        const e = easeInCubic(p);
+        stamp.alpha = 1 - p;
+        stamp.y = cy - 14 * e;
+        stamp.scale.set(1 + 0.06 * e);
+        dim.alpha = 0.5 * (1 - p);
+        alarm.alpha = 0.32 * (1 - p);
+        t0.forEach(({ t, x, y, r }, i) => {
+          const dir = i === 0 ? 1 : -1;
+          t.x = x + dir * e * o.width * 1.2;
+          t.y = y - e * 40;
+          t.rotation = r + dir * e * 0.25;
+          t.alpha = 1 - e;
+        });
+      }, linear);
+      for (const t of tapes) t.destroy({ children: true });
+      stamp.destroy({ children: true });
+      dim.destroy();
+      alarm.destroy();
+      for (const g of ghosts) if (!g.destroyed) g.destroy();
+      if (wastedVeil) {
+        const veil = wastedVeil, grade = this.bustedGrade;
+        await tween(320, (p) => { veil.alpha = 0.42 * (1 - p); if (grade && this.bustedGrade === grade) grade.alpha = 1 - p; }, linear);
+        veil.destroy();
+        this.clearBustedGrade();
+      }
+    })();
   }
 
   private hitFlash(): void {
@@ -2048,11 +2754,15 @@ export class BonusView extends Container {
     this.lockedLayer.position.set(0, 0);
     this.fxLayer.position.set(0, 0);
     this.shakeBoost = 0;
+    this.slowmo = this.slowmoTarget = 1;
     this.ambientCb = (dt, elapsed) => {
-      this.updateHighway(dt, elapsed);
+      this.slowmo += (this.slowmoTarget - this.slowmo) * Math.min(1, dt * 4);
+      this.updateHighway(dt * this.slowmo, elapsed);
       this.drawStars(elapsed);
       this.drawPolice(elapsed);
       this.driveShake(dt, elapsed);
+      this.updateStreetLights(dt);
+      this.updateGlints(dt);
     };
     ambientTicker.add(this.ambientCb);
   }
@@ -2073,14 +2783,127 @@ export class BonusView extends Container {
     const ry = Math.sin(t * 52) * 0.5 + Math.sin(t * 89) * 0.3;
     const rx = Math.sin(t * 61) * 0.4 + Math.sin(t * 97) * 0.25;
     const bob = Math.sin(t * 5.0) * 0.5;
-    const amp = 1.6 + this.heat * 0.6 + this.shakeBoost * 2.6;
-    const ox = rx * amp;
-    const oy = (ry + bob) * amp;
+    const amp = (1.6 + this.heat * 0.6 + this.shakeBoost * 2.6) * this.slowmo;
+    this.jolt *= Math.exp(-dt * 11);
+    const jx = this.jolt > 0.05 ? (Math.random() * 2 - 1) * this.jolt : 0;
+    const jy = this.jolt > 0.05 ? (Math.random() * 2 - 1) * this.jolt * 0.75 : 0;
+    const ox = rx * amp + jx;
+    const oy = (ry + bob) * amp + jy;
     this.rig.position.set(ox, oy);
   }
 
   private stopAmbient(): void {
     if (this.ambientCb) { ambientTicker.remove(this.ambientCb); this.ambientCb = null; }
+  }
+
+  /**
+   * Street lamps passing overhead: every second or so a warm band of light
+   * rolls over the truck from top to bottom, faster as the chase speeds up.
+   * It is what makes the truck itself feel like it is moving through the city,
+   * not just the scenery beside it.
+   */
+  private updateStreetLights(dt: number): void {
+    this.sweepTimer -= dt * (this.highwaySpeed / HW_RATE_CRUISE);
+    if (this.sweepTimer > 0) return;
+    this.sweepTimer = 1.05 + Math.random() * 0.5;
+    const W = this.rect.width;
+    const H = this.rect.height;
+    const band = this.glow(0xffb468, W / 2, -H * 0.35, W * 1.15, H * 0.55, this.lightLayer);
+    band.alpha = 0;
+    const dur = 700 / Math.max(0.7, this.highwaySpeed / HW_RATE_CRUISE);
+    void tween(dur, (p) => {
+      if (band.destroyed) return;
+      band.y = -H * 0.35 + H * 1.7 * p;
+      band.alpha = 0.16 * Math.sin(p * Math.PI);
+    }, linear).then(() => band.destroy());
+  }
+
+  /** Locked gold catches the light: one bar at a time gets a quick shine. */
+  private updateGlints(dt: number): void {
+    this.glintTimer -= dt;
+    if (this.glintTimer > 0) return;
+    this.glintTimer = 0.45 + Math.random() * 0.6;
+    const locked = [...this.cells.values()].filter((n) => !n.destroyed && n.parent && n.getChildByLabel("plate"));
+    if (!locked.length) return;
+    const node = locked[(Math.random() * locked.length) | 0]!;
+    const art = node.children.find((ch) => ch instanceof Sprite && ch.label !== "spark") as Sprite | undefined;
+    if (!art) return;
+    const w = art.width;
+    const h = art.height;
+    const shine = new Sprite(streakTexture());
+    shine.anchor.set(0.5);
+    shine.blendMode = "add";
+    shine.rotation = -0.55;
+    shine.width = h * 1.1;
+    shine.height = Math.max(6, h * 0.16);
+    shine.alpha = 0;
+    shine.label = "fx";
+    node.addChild(shine);
+    void tween(520, (p) => {
+      if (shine.destroyed) return;
+      shine.x = -w * 0.45 + w * 0.9 * p;
+      shine.y = h * 0.1 - h * 0.2 * p;
+      shine.alpha = 0.8 * Math.sin(p * Math.PI);
+    }, easeInOutCubic).then(() => { if (!shine.destroyed) shine.destroy(); });
+    // a twinkle on the bar's corner
+    const tw = new Sprite(sparkDotTexture());
+    tw.anchor.set(0.5);
+    tw.blendMode = "add";
+    tw.position.set(w * 0.3, -h * 0.28);
+    tw.alpha = 0;
+    tw.label = "fx";
+    node.addChild(tw);
+    void tween(600, (p) => {
+      if (tw.destroyed) return;
+      const k = Math.sin(p * Math.PI);
+      tw.alpha = k;
+      tw.scale.set(0.3 + 0.7 * k);
+      tw.rotation = p * 1.2;
+    }, linear).then(() => { if (!tw.destroyed) tw.destroy(); });
+  }
+
+  /** Gold orbs stream from each newly locked bar into the COLLECTED meter. */
+  private async collectFlight(positions: Position[]): Promise<void> {
+    const target = this.collectedText;
+    if (!target) return;
+    const tx = target.x;
+    const ty = target.y - target.height * 0.5;
+    const ox = this.rig.x;
+    const oy = this.rig.y;
+    const flights = positions.slice(0, 8).map(([c, r], i) => {
+      const rc = this.cellRect(c, r);
+      const x0 = rc.x + rc.w / 2 + ox;
+      const y0 = rc.y + rc.h / 2 + oy;
+      const orb = new Container();
+      const halo = this.glow(0xffc23a, 0, 0, 46, 46, orb);
+      halo.alpha = 0.9;
+      this.glow(0xffffff, 0, 0, 16, 16, orb);
+      orb.position.set(x0, y0);
+      orb.scale.set(0.4);
+      this.hudLayer.addChild(orb);
+      const side = x0 < tx ? -1 : 1;
+      const cxp = (x0 + tx) / 2 + side * 60;
+      const cyp = Math.min(y0, ty) - 70;
+      let lastTrail = 0;
+      return wait(i * 70).then(() => tween(460, (p) => {
+        const e = easeInCubic(p) * 0.65 + p * 0.35;
+        const a = 1 - e;
+        orb.x = a * a * x0 + 2 * a * e * cxp + e * e * tx;
+        orb.y = a * a * y0 + 2 * a * e * cyp + e * e * ty;
+        orb.scale.set(0.4 + 0.6 * Math.sin(Math.min(1, p * 1.4) * Math.PI * 0.5));
+        if (p - lastTrail > 0.08) {
+          lastTrail = p;
+          const tr = this.glow(0xffb02a, orb.x, orb.y, 26, 26, this.hudLayer);
+          void tween(240, (q) => { tr.alpha = 0.7 * (1 - q); tr.scale.set(tr.scale.x * 0.97); }).then(() => tr.destroy());
+        }
+      }, linear)).then(() => {
+        orb.destroy({ children: true });
+        const hit = this.glow(0xffd76a, tx, ty, 90, 60, this.hudLayer);
+        const hs = hit.scale.x;
+        void tween(260, (q) => { hit.alpha = 1 - q; hit.scale.set(hs * (1 + 0.6 * q)); }, easeOutCubic).then(() => hit.destroy());
+      });
+    });
+    await Promise.all(flights);
   }
 
   private sumGrid(grid: BonusCell[][]): number {

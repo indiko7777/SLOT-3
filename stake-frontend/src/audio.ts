@@ -1,8 +1,9 @@
 import type { GameEvent } from "./domain";
+import { dudArm, dudFizzle, noHitImpact, tapeSlap } from "./audio/bonusStings";
 import { GetawayResultSound } from "./audio/GetawayResultSound";
 import { FoleyGate, hasFoley, playFoley } from "./audio/SymbolFoley";
 import { ApprovedAudio } from "./audio/ApprovedAudio";
-import type { GetawayCue } from "./audio/GetawaySound";
+import type { GetawayCue } from "./pixi/types";
 
 /* ═══════════════════════════════════════════════════
    Layered Audio Bus – GTA 6 Miami Heist theme
@@ -200,12 +201,28 @@ export class EventAudioBus {
     return true;
   }
   playApprovedEffect(id: string): void { this.reviewed(id); }
+  /** Run a procedural sting once audio is live (respects mute/hidden tab). */
+  private sting(play: (ctx: AudioContext, out: AudioNode) => void): void {
+    if (this.silenced || document.hidden) return;
+    void this.unlock().then(() => {
+      if (!this.ctx || this.silenced || document.hidden || this.ctx.state !== "running") return;
+      play(this.ctx, this.output);
+    });
+  }
   getawayCue(cue: GetawayCue, turbo: boolean): void {
     const gain = turbo ? .5 : .8;
+    const scale = turbo ? .6 : 1;
+    // NO HIT and the DUD have their own synced stings (bonusStings.ts).
+    if (cue.kind === "tape") { this.sting((c, o) => tapeSlap(c, o, cue.index, cue.seconds, scale)); return; }
+    // BUSTED belongs to the wasted sting (both its hits are synced to the
+    // visuals), so the procedural stamp hit stays out of its way.
+    if (cue.kind === "busted") { this.reviewed("busted", { gain: turbo ? 1.1 : 1.6 }); return; }
+    if (cue.kind === "nohit") { if (!cue.last) this.sting((c, o) => noHitImpact(c, o, cue.heat, false, scale)); return; }
+    if (cue.kind === "dud_arm") { this.approved.stop("fuse"); this.sting((c, o) => dudArm(c, o, cue.seconds, scale)); return; }
+    if (cue.kind === "dud") { this.approved.stop("fuse"); this.sting((c, o) => dudFizzle(c, o, scale)); return; }
     if (cue.kind === "boom") { this.approved.stop("fuse"); this.dynamiteBlast(turbo); return; }
     if (cue.kind === "fuse") { this.reviewed("fuse", {gain,loop:true,duration:cue.seconds}); return; }
-    const ids: Partial<Record<GetawayCue["kind"],string>> = { dynamite:"dynamite",double:"double",held:"held",spent:"spent",dud:"dud",spin_start:"bonusspin",column_stop:"bonusstop" };
-    if (cue.kind === "dud") this.approved.stop("fuse");
+    const ids: Partial<Record<GetawayCue["kind"],string>> = { dynamite:"dynamite",double:"double",held:"held",spent:"spent",spin_start:"bonusspin",column_stop:"bonusstop" };
     const id=ids[cue.kind]; if(id)this.reviewed(id,{gain});
   }
   private readonly symbolFoleyGate = new FoleyGate(90, 4, 140);
