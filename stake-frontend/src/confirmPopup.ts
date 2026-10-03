@@ -49,7 +49,7 @@ function popupMarkup(c: PopupCopy): string {
   const unitWord = c.social ? "PLAY" : "BET";
   const kicker = c.social ? "FEATURE" : "BONUS BUY";
   const confirmLabel = c.isSuper ? "Confirm Super" : c.social ? "Confirm" : "Confirm Buy";
-  const art = c.isSuper ? "assets/popup/super_keyart.webp" : "assets/popup/getaway_keyart.webp";
+  const art = c.isSuper ? "assets/popup/super_keyart_v5.webp" : "assets/popup/getaway_keyart_v5.webp";
   const stars = c.isSuper
     ? `<div class="hc-pop-stars" aria-hidden="true">${Array.from({ length: 5 }, (_, i) =>
         `<svg viewBox="0 0 24 24" style="--i:${i}"><path d="m12 1.5 3.3 6.8 7.4 1-5.4 5.3 1.3 7.4L12 18.5 5.4 22l1.3-7.4L1.3 9.3l7.4-1z"/></svg>`).join("")}</div>`

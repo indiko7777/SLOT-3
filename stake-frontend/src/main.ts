@@ -2,7 +2,7 @@ import { Application } from "pixi.js";
 import { loadUiFonts } from "./typography";
 import { EventAudioBus } from "./audio";
 import { SoundToggle } from "./audio/SoundToggle";
-import { displayCurrency, uiStrings, type BonusCell, type Board, type GameEvent, type Position, type RoundRecord, type SymbolId } from "./domain";
+import { MAX_WIN_MULTIPLIER, displayCurrency, uiStrings, type BonusCell, type Board, type GameEvent, type Position, type RoundRecord, type SymbolId } from "./domain";
 import { isModalOpen, showChoiceModal, showToast } from "./modals";
 import { formatWin } from "./rgs/client";
 import { hideLoader, showLoader, updateLoader } from "./loader";
@@ -505,7 +505,10 @@ async function boot(): Promise<void> {
     // by the engine's rules: two bars in one column, a big bar, a live dynamite
     // doubling two bars, a dud with nothing beside it, dead spins down to the
     // last spin, then the result stage.
-    (window as unknown as { __getaway: () => Promise<void> }).__getaway = async () => {
+    // __getaway("max") plays the same script with bar values high enough to
+    // end on the capped max win (the escape ending, never BUSTED).
+    (window as unknown as { __getaway: (mode?: "max") => Promise<void> }).__getaway = async (mode) => {
+      const k = mode === "max" ? 120 : 1;
       if (isPlaying) return;
       isPlaying = true;
       try {
@@ -539,14 +542,14 @@ async function boot(): Promise<void> {
         await play({ type: "board_settle", board: filler() });
         await play({ type: "bonus_trigger", mode: "getaway", scatterPositions: [[0, 0], [2, 1], [4, 2]] });
         await spin([
-          { symbol: "SAFE", position: [1, 1], value: 2 }, { symbol: "SAFE", position: [1, 2], value: 5 },
-          { symbol: "SAFE", position: [2, 0], value: 3 }, { symbol: "MASTER_KEY", position: [2, 1] },
-          { symbol: "SAFE", position: [3, 0], value: 30 }, { symbol: "MASTER_KEY", position: [4, 3] },
+          { symbol: "SAFE", position: [1, 1], value: 2 * k }, { symbol: "SAFE", position: [1, 2], value: 5 * k },
+          { symbol: "SAFE", position: [2, 0], value: 3 * k }, { symbol: "MASTER_KEY", position: [2, 1] },
+          { symbol: "SAFE", position: [3, 0], value: 30 * k }, { symbol: "MASTER_KEY", position: [4, 3] },
         ]);
         await spin([]); await spin([]); await spin([]);
         await spin([{ symbol: "SAFE", position: [0, 3], value: 1 }]);
         await spin([]); await spin([]);
-        const total = grid.flat().reduce((s, cell) => s + (cell.symbol === "SAFE" ? cell.value ?? 0 : 0), 0);
+        const total = Math.min(MAX_WIN_MULTIPLIER, grid.flat().reduce((s, cell) => s + (cell.symbol === "SAFE" ? cell.value ?? 0 : 0), 0));
         await play({ type: "bonus_end", totalPayout: total, filledScreen: false });
         await play({ type: "round_end", payoutMultiplier: total, capApplied: false });
       } finally {
@@ -587,8 +590,9 @@ async function boot(): Promise<void> {
         };
         panel.appendChild(button);
       };
-      const dev = window as unknown as { __getaway: () => Promise<void>; __trigger: (via: "stars" | "trucks") => Promise<void> };
+      const dev = window as unknown as { __getaway: (mode?: "max") => Promise<void>; __trigger: (via: "stars" | "trucks") => Promise<void> };
       add("QA Getaway", () => dev.__getaway());
+      add("QA Max Getaway", () => dev.__getaway("max"));
       add("QA Stars", () => dev.__trigger("stars"));
       add("QA Trucks", () => dev.__trigger("trucks"));
       add("QA Stash", async () => {

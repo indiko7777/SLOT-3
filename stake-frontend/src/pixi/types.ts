@@ -25,6 +25,8 @@ export type GetawayCue =
   | { kind: "tape"; index: number; seconds: number }
   /** the final spin missed — the BUSTED sequence starts (its sting owns the moment) */
   | { kind: "busted" }
+  /** the feature ended on the max win: the escape, never a bust */
+  | { kind: "maxwin" }
   /** the NO HIT stamp lands (last = the chase is over: BUSTED) */
   | { kind: "nohit"; heat: number; last: boolean }
   | { kind: "held" }

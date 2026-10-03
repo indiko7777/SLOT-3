@@ -217,6 +217,8 @@ export class EventAudioBus {
     // BUSTED belongs to the wasted sting (both its hits are synced to the
     // visuals), so the procedural stamp hit stays out of its way.
     if (cue.kind === "busted") { this.reviewed("busted", { gain: turbo ? 1.1 : 1.6 }); return; }
+    // Max win: the same top-tier sting as the base game's MAX WIN banner.
+    if (cue.kind === "maxwin") { this.fire("win_max", turbo ? 0.7 : 1); return; }
     if (cue.kind === "nohit") { if (!cue.last) this.sting((c, o) => noHitImpact(c, o, cue.heat, false, scale)); return; }
     if (cue.kind === "dud_arm") { this.approved.stop("fuse"); this.sting((c, o) => dudArm(c, o, cue.seconds, scale)); return; }
     if (cue.kind === "dud") { this.approved.stop("fuse"); this.sting((c, o) => dudFizzle(c, o, scale)); return; }

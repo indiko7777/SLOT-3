@@ -119,88 +119,90 @@ export function tapeSlap(ctx: Ctx, out: AudioNode, index: number, seconds: numbe
   const tone = 1 + index * 0.06;
   noise(ctx, hit, 0.07, 0.75, pan, { type: "bandpass", f0: 2300 * tone, q: 0.9 });
   noise(ctx, hit, 0.025, 0.5, pan, { type: "highpass", f0: 5200 });
-  osc(ctx, "triangle", 230 * tone, 110, hit, 0.09, 0.32, pan, 0.002);
-  // flutter: the tape buzzing as it settles
-  const flutter = ctx.createGain();
-  const lfo = ctx.createOscillator();
-  const lfoGain = ctx.createGain();
-  lfo.frequency.value = 34;
-  lfoGain.gain.value = 0.5;
-  flutter.gain.value = 0.5;
-  lfo.connect(lfoGain).connect(flutter.gain);
-  flutter.connect(pan);
-  noise(ctx, hit + 0.03, 0.2, 0.12, flutter, { type: "bandpass", f0: 1500, q: 2 });
-  lfo.start(hit);
-  lfo.stop(hit + 0.3);
+  osc(ctx, "triangle", 180 * tone, 70, hit, 0.12, 0.42, pan, 0.002);
+}
+
+/** Soft-clip curve: warm saturation that adds audible harmonics to low tones. */
+function drive(ctx: Ctx, amount: number): WaveShaperNode {
+  const ws = ctx.createWaveShaper();
+  const n = 1024;
+  const curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1;
+    curve[i] = Math.tanh(amount * x) / Math.tanh(amount);
+  }
+  ws.curve = curve;
+  ws.oversample = "2x";
+  return ws;
 }
 
 /**
- * The NO HIT stamp landing: a cinematic low brass "braam", a punchy kick, a
- * heavy metal stamp, and a two-tone police yelp — the pursuit closing in.
- * Grows with heat; the last spin (BUSTED) adds a long dread tail.
+ * The NO HIT stamp landing — a heavy cinematic "failure" hit, no cartoon
+ * elements (no siren, no metal ping): a thick saturated impact, a sub that
+ * drops through the floor, and a dark minor chord that winds down like a tape
+ * stopping — the sound of momentum dying. Deeper and longer with heat.
  */
-export function noHitImpact(ctx: Ctx, out: AudioNode, heat: number, last: boolean, scale = 1): void {
+export function noHitImpact(ctx: Ctx, out: AudioNode, heat: number, _last: boolean, scale = 1): void {
   const t = ctx.currentTime;
-  const inten = (1 + Math.min(3, Math.max(0, heat)) * 0.1 + (last ? 0.18 : 0)) * scale;
-  const b = bus(ctx, out, 1.0 * inten, last ? 0.4 : 0.3);
+  const h = Math.min(3, Math.max(0, heat));
+  const inten = (1 + h * 0.1) * scale;
+  const len = 0.95 + h * 0.12;
+  const b = bus(ctx, out, 0.72 * inten, 0.42);
 
-  // Braam: detuned saws on a dark minor cluster, filter clamping shut.
-  const lp = ctx.createBiquadFilter();
-  lp.type = "lowpass";
-  lp.Q.value = 2.2;
-  lp.frequency.setValueAtTime(3400, t);
-  lp.frequency.exponentialRampToValueAtTime(420, t + 0.75);
-  const braam = ctx.createGain();
-  env(braam.gain, t, 0.5, 0.012, last ? 1.5 : 0.95);
-  lp.connect(braam).connect(b);
-  const root = last ? 65.4 : 73.4;
-  for (const [mult, det] of [[1, -8], [1, 9], [1.5, 0], [2, -5], [2.12, 6]] as const) {
+  // 1. Impact: a thick low-mid slam, saturated so it reads on small speakers.
+  const hitDrive = drive(ctx, 3.2);
+  const hitLp = ctx.createBiquadFilter();
+  hitLp.type = "lowpass";
+  hitLp.frequency.setValueAtTime(2600, t);
+  hitLp.frequency.exponentialRampToValueAtTime(240, t + 0.22);
+  const hitG = ctx.createGain();
+  env(hitG.gain, t, 0.55, 0.003, 0.32);
+  hitDrive.connect(hitLp).connect(hitG).connect(b);
+  const body = ctx.createOscillator();
+  body.type = "triangle";
+  body.frequency.setValueAtTime(150, t);
+  body.frequency.exponentialRampToValueAtTime(48, t + 0.25);
+  body.connect(hitDrive);
+  body.start(t);
+  body.stop(t + 0.4);
+  noise(ctx, t, 0.09, 0.5, hitDrive, { type: "bandpass", f0: 700, q: 0.6 });
+  noise(ctx, t, 0.018, 0.35, b, { type: "highpass", f0: 3000 }); // attack edge
+
+  // 2. Sub drop: falls through the floor and keeps falling.
+  osc(ctx, "sine", 92, 26, t, len, 0.85, b, 0.004);
+
+  // 3. Power-down: a dark minor chord, saturated, filter closing while the
+  //    pitch sags an octave — a tape grinding to a halt.
+  const pdDrive = drive(ctx, 2.2);
+  const pdLp = ctx.createBiquadFilter();
+  pdLp.type = "lowpass";
+  pdLp.Q.value = 1.4;
+  pdLp.frequency.setValueAtTime(2400, t + 0.02);
+  pdLp.frequency.exponentialRampToValueAtTime(160, t + len);
+  const pdG = ctx.createGain();
+  pdG.gain.setValueAtTime(0.0001, t);
+  pdG.gain.exponentialRampToValueAtTime(0.32, t + 0.03);
+  pdG.gain.setValueAtTime(0.32, t + len * 0.35);
+  pdG.gain.exponentialRampToValueAtTime(0.0001, t + len + 0.1);
+  pdDrive.connect(pdLp).connect(pdG).connect(b);
+  const root = 55 - h * 2; // A1, sinking a touch lower each miss
+  for (const [mult, det] of [[1, -7], [1, 7], [1.189, 0], [1.498, -4], [2, 5]] as const) {
     const o = ctx.createOscillator();
     o.type = "sawtooth";
-    o.frequency.setValueAtTime(root * mult * 1.02, t);
-    o.frequency.exponentialRampToValueAtTime(root * mult * 0.985, t + 0.9);
+    o.frequency.setValueAtTime(root * mult, t);
+    // tape-stop curve: holds briefly, then sags hard
+    o.frequency.setValueAtTime(root * mult, t + 0.08);
+    o.frequency.exponentialRampToValueAtTime(root * mult * 0.5, t + len);
     o.detune.value = det;
     const g = ctx.createGain();
-    g.gain.value = 0.16;
-    o.connect(g).connect(lp);
+    g.gain.value = 0.18;
+    o.connect(g).connect(pdDrive);
     o.start(t);
-    o.stop(t + (last ? 1.7 : 1.1));
+    o.stop(t + len + 0.15);
   }
 
-  // Kick: sub thump with an audible mid body.
-  osc(ctx, "sine", 170, 44, t, 0.2, 0.55, b, 0.002);
-  osc(ctx, "triangle", 330, 115, t, 0.16, 0.6, b, 0.002);
-  noise(ctx, t, 0.012, 0.55, b, { type: "highpass", f0: 3800 });
-
-  // Metal stamp: inharmonic partials with a fast decay.
-  for (const [f, g, d] of [[392, 0.32, 0.5], [987, 0.22, 0.38], [1561, 0.15, 0.3], [2418, 0.1, 0.22], [3190, 0.07, 0.16]] as const) {
-    osc(ctx, "sine", f, f * 0.97, t, d, g, b, 0.002);
-  }
-  noise(ctx, t, 0.13, 0.65, b, { type: "bandpass", f0: 1150, q: 0.7 });
-
-  // Police yelp: square through a lowpass, swept up and back.
-  const yelp = (start: number, up: number): void => {
-    const o = ctx.createOscillator();
-    o.type = "square";
-    o.frequency.setValueAtTime(520 * up, start);
-    o.frequency.exponentialRampToValueAtTime(1380 * up, start + 0.15);
-    o.frequency.exponentialRampToValueAtTime(820 * up, start + 0.34);
-    const f = ctx.createBiquadFilter();
-    f.type = "lowpass";
-    f.frequency.value = 2300;
-    const g = ctx.createGain();
-    env(g.gain, start, 0.13 * inten, 0.02, 0.33);
-    const p = ctx.createStereoPanner();
-    p.pan.value = 0.4;
-    o.connect(f).connect(g).connect(p).connect(b);
-    o.start(start);
-    o.stop(start + 0.4);
-  };
-  yelp(t + 0.05, 1);
-  if (heat >= 2 || last) yelp(t + 0.36, 1.06);
-
-  // Busted: a long sub swell under everything.
-  if (last) osc(ctx, "sine", 55, 41, t + 0.04, 1.3, 0.35, b, 0.05);
+  // 4. Dark rumble tail.
+  noise(ctx, t + 0.04, len + 0.3, 0.22, b, { type: "lowpass", f0: 520, f1: 120, q: 0.7 }, 0.05);
 }
 
 /* ─────────────────────────── DUD ─────────────────────────── */

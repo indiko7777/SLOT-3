@@ -232,3 +232,8 @@
   .getaway-result__art, .getaway-result__value, .getaway-result__tier::after, .getaway-result__cta::before { animation: none !important; }
   .getaway-result__cta::after { display: none; }
 }
+
+/* Portrait screens: keep the heroine in frame (she sits right of centre). */
+@media (max-aspect-ratio: 1/1) {
+  .getaway-result__art { object-position: 76% 50%; }
+}

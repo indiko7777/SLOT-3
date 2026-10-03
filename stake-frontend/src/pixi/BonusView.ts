@@ -1,6 +1,6 @@
 import { MiamiStreet } from "./MiamiStreet";
 import { BlurFilter, ColorMatrixFilter, Container, FillGradient, Graphics, PerspectiveMesh, Sprite, Text, TextStyle, Texture } from "pixi.js";
-import { BONUS_START_RESPINS, GRID_COLUMNS, GRID_ROWS, type BonusCell, type Position } from "../domain";
+import { BONUS_START_RESPINS, GRID_COLUMNS, GRID_ROWS, MAX_WIN_MULTIPLIER, type BonusCell, type Position } from "../domain";
 import { getExtraTexture } from "./assets";
 import { softGlowTexture, sparkDotTexture, streakTexture } from "./fxTextures";
 import { DISPLAY_FONT, UI_FONT } from "../typography";
@@ -641,8 +641,11 @@ export class BonusView extends Container {
       this.heat = Math.min(3, deadSpins);
       this.cue({ kind: "dead", heat: this.heat });
       // Police tape + the NO HIT stamp; resolves when the "-1" reaches the
-      // spins meter, so the number drops on the frame it is hit.
-      await this.noHitBeat(this.heat, respins, turbo);
+      // spins meter, so the number drops on the frame it is hit. A final spin
+      // that ends on the max win is an ESCAPE, never a bust.
+      const maxWin = respins <= 0 && this.sumGrid(grid) >= MAX_WIN_MULTIPLIER;
+      if (maxWin) await this.maxWinBeat(turbo);
+      else await this.noHitBeat(this.heat, respins, turbo);
       this.cue({ kind: "spent", spinsLeft: respins });
       this.animateSpinsBeat(respins, turbo);
       await wait(turbo ? 80 : 470);
@@ -2430,6 +2433,89 @@ export class BonusView extends Container {
   }
   private readonly tapeCache = new Map<string, Texture>();
 
+  /**
+   * The chase ends on the maximum win: no tape, no BUSTED, no wasted sting.
+   * The police lights cut out, the grid flares gold bar by bar, and a MAX WIN
+   * stamp slams in on a burst of light with the game's top-tier win sting.
+   */
+  private async maxWinBeat(turbo: boolean): Promise<void> {
+    const o = this.opening();
+    const cx = o.x + o.width / 2;
+    const cy = o.y + o.height / 2;
+    const size = Math.min(110, o.width / 3.8);
+    this.heat = 0;
+    this.cue({ kind: "maxwin" });
+
+    // golden wash from the grid outward
+    const wash = this.glow(0xffc95a, cx, cy, o.width * 2.2, o.height * 2.2, this.fxLayer);
+    wash.alpha = 0;
+    void tween(turbo ? 200 : 520, (p) => { wash.alpha = 0.55 * Math.sin(p * Math.PI); }, linear).then(() => wash.destroy());
+
+    // every locked bar flares, in a fast sweep
+    const bars = [...this.cells.entries()]
+      .filter(([, n]) => !n.destroyed && n.getChildByLabel("plate"))
+      .map(([k, n]) => ({ n, c: Number(k.split(":")[0]), r: Number(k.split(":")[1]) }))
+      .sort((a, b) => (a.c + a.r) - (b.c + b.r));
+    bars.forEach(({ n, c, r }, i) => {
+      void wait(i * (turbo ? 12 : 30)).then(() => {
+        const rc = this.cellRect(c, r);
+        this.barPulse(n, turbo, 0.2);
+        this.burstAt(rc.x + rc.w / 2, rc.y + rc.h / 2, Math.min(rc.w, rc.h) * 0.8, 0xffd25a, true, 0.8);
+      });
+    });
+
+    // the stamp
+    const stamp = new Container();
+    stamp.position.set(cx, cy);
+    stamp.rotation = -0.05;
+    const band = new Graphics();
+    const bw = o.width + 80, bh = size * 1.55, sk = bh * 0.3;
+    band.poly([-bw / 2 + sk, -bh / 2, bw / 2 + sk * 0.2, -bh / 2, bw / 2 - sk, bh / 2, -bw / 2 - sk * 0.2, bh / 2])
+      .fill({ color: 0x0b0710, alpha: 0.88 });
+    band.rect(-bw / 2 + sk, -bh / 2 - 4, bw - sk * 0.8, 4).fill({ color: 0xffd25a });
+    band.rect(-bw / 2 - sk * 0.2, bh / 2, bw - sk * 0.8, 4).fill({ color: 0x3fe3ff });
+    const halo = this.glow(0xffc95a, 0, 0, bw * 1.2, bh * 2.4, stamp);
+    halo.alpha = 0.5;
+    stamp.addChild(band);
+    const title = new Text({
+      text: "MAX WIN",
+      style: new TextStyle({
+        fontFamily: DISPLAY_FONT, fontSize: size, letterSpacing: 4, padding: 18,
+        fill: new FillGradient({ start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, colorStops: [
+          { offset: 0, color: 0xffffff }, { offset: 0.4, color: 0xfff1b8 }, { offset: 0.5, color: 0xffc23a }, { offset: 1, color: 0xff6a2a },
+        ] }),
+        stroke: { color: 0x2a1204, width: 9, join: "round" },
+        dropShadow: { color: 0x000000, alpha: 0.9, blur: 0, distance: 6, angle: Math.PI / 2 },
+      }),
+    });
+    title.anchor.set(0.5);
+    title.skew.x = -0.12;
+    title.y = -size * 0.06;
+    stamp.addChild(title);
+    const sub = new Text({
+      text: `CLEAN ESCAPE  \u2022  ${MAX_WIN_MULTIPLIER.toLocaleString("en-US")}\u00d7`,
+      style: new TextStyle({ fontFamily: FONT, fontSize: Math.max(14, size * 0.2), fontWeight: "700", letterSpacing: 5, fill: 0xbff6ff, stroke: { color: 0x000000, width: 4 } }),
+    });
+    sub.anchor.set(0.5);
+    sub.y = size * 0.55;
+    stamp.addChild(sub);
+    stamp.scale.set(2.4);
+    stamp.alpha = 0;
+    this.fxLayer.addChild(stamp);
+    await wait(turbo ? 60 : 180);
+    await tween(turbo ? 90 : 150, (p) => { stamp.alpha = Math.min(1, p * 3); stamp.scale.set(2.4 - 1.4 * easeInCubic(p)); }, linear);
+    stamp.scale.set(1);
+    this.jolt = Math.max(this.jolt, turbo ? 4 : 10);
+    this.burstAt(cx, cy, Math.min(o.width, o.height), 0xffd25a, turbo, 1.7);
+    this.shardsAt(cx, cy, 0x3fe3ff, turbo ? 6 : 14, null, 1.4);
+    void tween(400, (p) => {
+      const k = Math.sin(p * Math.PI * 2.4) * Math.exp(-p * 4.5);
+      stamp.scale.set(1 + k * 0.08, 1 - k * 0.1);
+    }, linear);
+    await wait(turbo ? 350 : 1100);
+    void tween(300, (p) => { stamp.alpha = 1 - p; stamp.y = cy - 14 * p; }, linear).then(() => stamp.destroy({ children: true }));
+  }
+
   private clearBustedGrade(): void {
     this.slowmoTarget = 1;
     if (this.bustedGrade) {
@@ -2922,7 +3008,9 @@ export class BonusView extends Container {
     const revision = ++this.collectedRevision;
     this.collectedTarget = total;
     if (!this.collectedText) return;
-    const paint = (v: number): void => {
+    // The win is capped at the max win, so the meter never shows more.
+    const paint = (raw: number): void => {
+      const v = Math.min(MAX_WIN_MULTIPLIER, raw);
       if (this.collectedText) this.collectedText.text = fmtX(v);
       if (this.collectedUsdText) this.collectedUsdText.text = this.fmtTotal(v);
     };

@@ -1,4 +1,5 @@
 import { formatWin } from "../rgs/client";
+import { MAX_WIN_MULTIPLIER } from "../domain";
 import { createWinCount } from "./winCount";
 import { getTimeScale } from "./tween";
 import { runGetawayExit } from "./getawayExit";
@@ -29,6 +30,8 @@ const TIERS = [
  *  its own rather than sharing the top tier's — held back until the total lands
  *  so it reads as the last beat rather than as one more promotion. */
 const PERFECT = "PERFECT HEIST";
+/** The capped jackpot gets its own title at settle, above every tier. */
+const MAX_TITLE = "MAX WIN";
 
 const tierFor = (multiplier: number): number => {
   for (let level = TIERS.length - 1; level > 0; level--) {
@@ -62,7 +65,7 @@ export class GetawayResult {
     this.root.dataset.phase = "intro";
     this.root.innerHTML = `
       <div class="getaway-result__sky" aria-hidden="true">
-        <img class="getaway-result__art" src="assets/popup/payout_keyart.webp" alt="" draggable="false" />
+        <img class="getaway-result__art" src="assets/popup/payout_keyart_v5.webp" alt="" draggable="false" />
         <div class="getaway-result__grade"></div>
         <div class="getaway-result__streaks"><i></i><i></i><i></i></div>
         <div class="getaway-result__ring"></div>
@@ -279,9 +282,11 @@ export class GetawayResult {
       if (instant && !dismissed && amount > 0) audio?.end();
       // The perfect-heist title is held back for the total, so the rarest result
       // gets its own beat instead of arriving partway through the count.
-      if (filled) {
-        this.find("tier").textContent = PERFECT;
-        this.find("tier").dataset.text = PERFECT;
+      const maxWin = totalX >= MAX_WIN_MULTIPLIER;
+      if (filled || maxWin) {
+        const title = maxWin ? MAX_TITLE : PERFECT;
+        this.find("tier").textContent = title;
+        this.find("tier").dataset.text = title;
         this.root.dataset.perfect = "true";
       }
       this.root.dataset.phase = "settled";
