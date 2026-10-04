@@ -88,6 +88,8 @@ export interface SceneRuntime {
   /** Whether the head-start is active for the current bet (false = dimmed). */
   isHeadStartActive?(): boolean;
   onAction(action: string): Promise<void>;
+  /** Girl collection reveal sound moments, fired on their visual frames. */
+  onCollectionCue?(cue: "lock" | "snap" | "sweep" | "shutter" | "name", turbo: boolean): void;
   onSafeLand?: (index: number, total: number) => void;
   /** A Getaway moment (see GetawayCue), fired on its visual frame. */
   onGetawayCue?: (cue: GetawayCue, turbo: boolean) => void;

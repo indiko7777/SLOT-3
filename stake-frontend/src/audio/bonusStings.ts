@@ -9,7 +9,7 @@
  * reverb glues the layers into one cinematic hit instead of a pile of beeps.
  */
 
-type Ctx = BaseAudioContext;
+export type Ctx = BaseAudioContext;
 
 const noiseCache = new WeakMap<Ctx, AudioBuffer>();
 const roomCache = new WeakMap<AudioNode, GainNode>();
@@ -54,7 +54,7 @@ function room(ctx: Ctx, out: AudioNode): GainNode {
 }
 
 /** A bus: dry to `out`, plus `wet` into the room. */
-function bus(ctx: Ctx, out: AudioNode, gain: number, wet: number): GainNode {
+export function bus(ctx: Ctx, out: AudioNode, gain: number, wet: number): GainNode {
   const g = ctx.createGain();
   g.gain.value = gain;
   g.connect(out);
@@ -64,13 +64,13 @@ function bus(ctx: Ctx, out: AudioNode, gain: number, wet: number): GainNode {
   return g;
 }
 
-function env(g: AudioParam, t: number, peak: number, attack: number, decay: number): void {
+export function env(g: AudioParam, t: number, peak: number, attack: number, decay: number): void {
   g.setValueAtTime(0.0001, t);
   g.exponentialRampToValueAtTime(Math.max(0.0002, peak), t + attack);
   g.exponentialRampToValueAtTime(0.0001, t + attack + decay);
 }
 
-function osc(ctx: Ctx, type: OscillatorType, f0: number, f1: number, t: number, dur: number, peak: number, dest: AudioNode, attack = 0.005): OscillatorNode {
+export function osc(ctx: Ctx, type: OscillatorType, f0: number, f1: number, t: number, dur: number, peak: number, dest: AudioNode, attack = 0.005): OscillatorNode {
   const o = ctx.createOscillator();
   const g = ctx.createGain();
   o.type = type;
@@ -84,7 +84,7 @@ function osc(ctx: Ctx, type: OscillatorType, f0: number, f1: number, t: number, 
 }
 
 /** Filtered noise burst. `sweep` moves the filter from f0 to f1 over the burst. */
-function noise(ctx: Ctx, t: number, dur: number, peak: number, dest: AudioNode,
+export function noise(ctx: Ctx, t: number, dur: number, peak: number, dest: AudioNode,
   filter: { type: BiquadFilterType; f0: number; f1?: number; q?: number }, attack = 0.002): void {
   const src = ctx.createBufferSource();
   src.buffer = noiseBuffer(ctx);
@@ -123,7 +123,7 @@ export function tapeSlap(ctx: Ctx, out: AudioNode, index: number, seconds: numbe
 }
 
 /** Soft-clip curve: warm saturation that adds audible harmonics to low tones. */
-function drive(ctx: Ctx, amount: number): WaveShaperNode {
+export function drive(ctx: Ctx, amount: number): WaveShaperNode {
   const ws = ctx.createWaveShaper();
   const n = 1024;
   const curve = new Float32Array(n);

@@ -403,6 +403,9 @@ async function boot(): Promise<void> {
     onSymbolFoley: (id, cue, turbo) => {
       if (!muted) audioBus.symbolFoley(id, cue, turbo);
     },
+    onCollectionCue: (cue, turbo) => {
+      if (!muted) audioBus.collectionCue(cue, turbo);
+    },
     onGetawayCue: (cue, turbo) => {
       if (!muted) audioBus.getawayCue(cue, turbo);
     },

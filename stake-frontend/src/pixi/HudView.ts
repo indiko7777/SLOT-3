@@ -1077,7 +1077,14 @@ export class HudView extends Container {
     const multiplier = prog.artPrefix !== "char" ? 1.25 : 1.0;
     assembly.scale.set(scale * multiplier);
     assembly.position.set(rect.x + rect.width / 2, rect.y + 60 + (rect.height - 60) / 2);
+    assembly.label = "artChar";
     this.underParticlesContainer.addChild(assembly);
+  }
+
+  /** Hide the art-panel girl while a full-screen reveal draws its own copy of her. */
+  setArtCharVisible(visible: boolean): void {
+    const c = this.underParticlesContainer.getChildByLabel("artChar");
+    if (c) c.visible = visible;
   }
 
   private starPoints(cx: number, cy: number, outerR: number, innerR: number): number[] {

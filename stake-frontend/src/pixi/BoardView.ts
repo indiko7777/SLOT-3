@@ -995,8 +995,16 @@ export class BoardView extends Container {
     }
   }
 
-  updateCollectionCounter(count: number): void {
-    this.counterText.text = `[${count}/8]`;
+  /** "[n/total]" — punches when a new piece lands. */
+  updateCollectionCounter(count: number, total = 8, punch = false): void {
+    this.counterText.text = `[${count}/${total}]`;
+    if (!punch) return;
+    const t = this.counterText;
+    void tween(420, (p) => {
+      if (t.destroyed) return;
+      const k = Math.sin(p * Math.PI) * (1 - 0.3 * p);
+      t.scale.set(1 + 0.45 * k);
+    }, linear).then(() => { if (!t.destroyed) t.scale.set(1); });
   }
 
   /** Screen-space slot for the "[n/8]" counter (from wantedStarsGeometry): the

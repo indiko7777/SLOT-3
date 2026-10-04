@@ -1,5 +1,6 @@
 import type { GameEvent } from "./domain";
 import { dudArm, dudFizzle, noHitImpact, tapeSlap } from "./audio/bonusStings";
+import { collectionSting, type CollectionCue } from "./audio/collectionStings";
 import { GetawayResultSound } from "./audio/GetawayResultSound";
 import { FoleyGate, hasFoley, playFoley } from "./audio/SymbolFoley";
 import { ApprovedAudio } from "./audio/ApprovedAudio";
@@ -208,6 +209,10 @@ export class EventAudioBus {
       if (!this.ctx || this.silenced || document.hidden || this.ctx.state !== "running") return;
       play(this.ctx, this.output);
     });
+  }
+  /** Girl collection reveal moments (lock-on, snap, sweep, shutter, name card). */
+  collectionCue(cue: CollectionCue, turbo: boolean): void {
+    this.sting((c, o) => collectionSting(c, o, cue, turbo));
   }
   getawayCue(cue: GetawayCue, turbo: boolean): void {
     const gain = turbo ? .5 : .8;

@@ -83,6 +83,31 @@ export function raysTexture(): Texture {
   }));
 }
 
+let beam: Texture | null = null;
+
+/**
+ * Spotlight cone: narrow and hot at the top (the lamp), widening and fading
+ * towards the bottom, with soft edges. Anchor at (0.5, 0) to hang from the lamp.
+ */
+export function beamTexture(): Texture {
+  return (beam ??= canvasTexture(256, 512, (ctx) => {
+    const W = 256, H = 512, top = 6;
+    for (let y = 0; y < H; y++) {
+      const t = y / H;
+      const half = top + (W / 2 - top) * t;
+      const a = 0.9 * Math.pow(1 - t, 1.35) * Math.min(1, t * 14);
+      const g = ctx.createLinearGradient(W / 2 - half, 0, W / 2 + half, 0);
+      g.addColorStop(0, "rgba(255,255,255,0)");
+      g.addColorStop(0.28, `rgba(255,255,255,${(a * 0.55).toFixed(3)})`);
+      g.addColorStop(0.5, `rgba(255,255,255,${a.toFixed(3)})`);
+      g.addColorStop(0.72, `rgba(255,255,255,${(a * 0.55).toFixed(3)})`);
+      g.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(W / 2 - half, y, half * 2, 1);
+    }
+  }));
+}
+
 export function allFxTextures(): Texture[] {
-  return [softGlowTexture(), sparkDotTexture(), streakTexture(), raysTexture()];
+  return [softGlowTexture(), sparkDotTexture(), streakTexture(), raysTexture(), beamTexture()];
 }
