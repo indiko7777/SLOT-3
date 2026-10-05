@@ -1,4 +1,4 @@
-import { formatWin } from "../rgs/client";
+import { amountDecimals, formatAmount, formatMultiplier } from "../format";
 import { MAX_WIN_MULTIPLIER } from "../domain";
 import { createWinCount } from "./winCount";
 import { getTimeScale } from "./tween";
@@ -40,11 +40,11 @@ const tierFor = (multiplier: number): number => {
   return 0;
 };
 
-/** The payout is MONEY, not a multiplier, so it always carries two decimals and
- *  thousands separators. formatWin is a multiplier formatter and renders a total
- *  as a raw float ("28.8", "120.2742"), which reads as a bug on a payout screen. */
-const money = (amount: number): string =>
-  amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** The win is MONEY: thousands separators and at least two decimals, but never
+ *  rounded — a 0.0115 win shows 0.0115. `decimals` pins the precision for the
+ *  whole count-up so the digits don't flicker between 2 and 4 places. */
+const money = (amount: number, decimals = amountDecimals(amount)): string =>
+  formatAmount(amount, true, decimals);
 
 /** Getaway-only payout and exit surface. It stays mounted until the regular game
  *  has been restored behind an opaque wipe, including across resize and key-up. */
@@ -65,7 +65,7 @@ export class GetawayResult {
     this.root.dataset.phase = "intro";
     this.root.innerHTML = `
       <div class="getaway-result__sky" aria-hidden="true">
-        <img class="getaway-result__art" src="assets/popup/payout_keyart_v5.webp" alt="" draggable="false" />
+        <img class="getaway-result__art" src="assets/popup/payout_keyart_v8.webp" alt="" draggable="false" />
         <div class="getaway-result__grade"></div>
         <div class="getaway-result__streaks"><i></i><i></i><i></i></div>
         <div class="getaway-result__ring"></div>
@@ -196,7 +196,8 @@ export class GetawayResult {
     // A zero bet means the screen is showing bare multipliers (replay/preview).
     const asMoney = bet > 0;
     const amount = totalX * (asMoney ? bet : 1);
-    const finalText = money(amount);
+    const decimals = amountDecimals(amount);
+    const finalText = money(amount, decimals);
     this.find("currency").textContent = asMoney ? currency : "×";
     this.promote(tierFor(0), audio);
 
@@ -262,8 +263,8 @@ export class GetawayResult {
         duration: instant ? 0 : Math.min(4600, 2000 + Math.log10(Math.max(1, totalX)) * 620) / getTimeScale(),
         update: (p) => {
           const shownX = totalX * p;
-          value.textContent = money(amount * p);
-          chip.textContent = `${formatWin(Math.round(shownX * 100) / 100)}×`;
+          value.textContent = money(amount * p, decimals);
+          chip.textContent = `${formatMultiplier(Math.round(shownX * 100) / 100, true)}×`;
           // Set on the bar itself: a custom property changed on the ROOT every
           // frame re-styled (and re-rasterised) the whole full-screen backdrop.
           ruleBar.style.transform = `scaleX(${p})`;

@@ -1,8 +1,9 @@
-/** Use the payout's precision for the entire roll instead of flickering between
- * two and four decimals as intermediate floating-point values change. */
+import { amountDecimals } from "../format";
+
+/** Use the final win's EXACT precision (2–6 decimals, never rounded) for the
+ * entire roll instead of flickering as intermediate values change. */
 export function winCountFormatter(finalAmount: number): (amount: number) => string {
-  const cents = finalAmount * 100;
-  const precision = Math.abs(cents - Math.round(cents)) < 1e-6 ? 2 : 4;
+  const precision = amountDecimals(finalAmount);
   return amount => Math.min(finalAmount, Math.max(0, amount)).toFixed(precision);
 }
 

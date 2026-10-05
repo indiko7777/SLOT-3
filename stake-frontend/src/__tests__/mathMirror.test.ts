@@ -4,10 +4,10 @@ import {
   BONUS_CELLS,
   BONUS_START_RESPINS,
   CASCADE_LADDER,
-  CLUSTER_PAY_X,
-  CLUSTER_SIZE_FACTORS,
-  clusterSizeFactor,
-  MAX_WIN_MULTIPLIER
+  clusterPay,
+  GOLD_BAR_VALUES,
+  MAX_WIN_MULTIPLIER,
+  PAYTABLE_X
 } from "../domain";
 import * as math from "../../../stake-math/src/model";
 
@@ -18,20 +18,20 @@ import * as math from "../../../stake-math/src/model";
  * to ship silently.
  */
 describe("frontend display values mirror stake-math exactly", () => {
-  it("cluster pays match CLUSTER_PAY", () => {
+  it("the paytable matches PAYTABLE for every symbol and cluster size 5..20", () => {
+    expect(Object.keys(PAYTABLE_X).sort()).toEqual([...math.PAYABLE_SYMBOLS].sort());
     for (const sym of math.PAYABLE_SYMBOLS) {
-      expect(CLUSTER_PAY_X[sym], `pay for ${sym}`).toBe(math.CLUSTER_PAY[sym]);
+      expect([...PAYTABLE_X[sym]!], `paytable row for ${sym}`).toEqual([...math.PAYTABLE[sym]!]);
+      for (let size = 4; size <= 21; size++) {
+        expect(clusterPay(sym, size), `${sym} x${size}`).toBe(math.clusterPay(sym, size));
+      }
     }
   });
 
-  it("cluster size factors match clusterSizeFactor for every size 5..20", () => {
-    for (let size = 5; size <= 20; size++) {
-      expect(CLUSTER_SIZE_FACTORS[size - 5], `factor for size ${size}`).toBe(
-        math.clusterSizeFactor(size)
-      );
-      expect(clusterSizeFactor(size)).toBe(math.clusterSizeFactor(size));
+  it("every mode's Gold Bar values match the math tables", () => {
+    for (const mode of Object.keys(math.MODES) as Array<keyof typeof math.MODES>) {
+      expect([...GOLD_BAR_VALUES[mode]], `gold bars for ${mode}`).toEqual(math.goldBarValues(mode));
     }
-    expect(clusterSizeFactor(4)).toBe(0);
   });
 
   it("cascade ladder matches CASCADE_LADDER", () => {

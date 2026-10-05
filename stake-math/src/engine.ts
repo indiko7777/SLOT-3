@@ -16,9 +16,8 @@ import {
   BASEGAME_TEASE_WEIGHTS,
   BONUS_CELLS,
   BONUS_START_RESPINS,
-  CLUSTER_PAY,
   cascadeMultiplier,
-  clusterSizeFactor,
+  clusterPay,
   type Criteria,
   LOW_SYMBOLS,
   MAX_BONUS_SPINS,
@@ -41,10 +40,11 @@ interface Cluster {
   payout: number;
 }
 
-/** Quantize a multiplier to Stake's 0.1x grid (payout %% 10 == 0 in hundredths). */
+/** Snap a multiplier to the books' 0.01x grid (integer hundredths). Every pay
+ *  value already sits on this grid, so this only removes float noise from sums
+ *  (0.1 + 0.2) — it never moves a real value. */
 export function quantize(x: number): number {
-  const q = Math.round(x / PAYOUT_QUANTUM_X) * PAYOUT_QUANTUM_X;
-  return Number(q.toFixed(1));
+  return Math.round(x / PAYOUT_QUANTUM_X) / Math.round(1 / PAYOUT_QUANTUM_X);
 }
 
 export interface SimResult {
@@ -156,8 +156,13 @@ export function simulateRound(
   let globalMultiplier = cascadeMultiplier(0); // 1
   let winCounter = 0;
   let baseGameWin = 0;
+  // Max-win cap reached inside the base game: the crossing cluster pays only
+  // what is left up to MAX_WIN_MULTIPLIER and the round stops tumbling (the
+  // math SDK's `wincap_triggered`). Every other cluster pays its exact
+  // paytable value × the cascade rung — never rescaled.
+  let baseCapped = false;
 
-  for (let guard = 0; guard < MAX_TUMBLES; guard++) {
+  for (let guard = 0; guard < MAX_TUMBLES && !baseCapped; guard++) {
     const clusters = findClusters(board);
     if (clusters.length === 0) break;
 
@@ -165,9 +170,14 @@ export function simulateRound(
 
     for (const cluster of clusters) {
       winCounter += 1;
-      const baseMultiplier = Number(cluster.payout.toFixed(4));
-      const payout = Number((baseMultiplier * globalMultiplier).toFixed(4));
-      baseGameWin += payout;
+      const baseMultiplier = cluster.payout;
+      let payout = quantize(baseMultiplier * globalMultiplier);
+      if (baseCapped) payout = 0;
+      else if (baseGameWin + payout >= MAX_WIN_MULTIPLIER) {
+        payout = quantize(MAX_WIN_MULTIPLIER - baseGameWin);
+        baseCapped = true;
+      }
+      baseGameWin = quantize(baseGameWin + payout);
       events.push({
         type: "cluster_win",
         winId: `w${winCounter}`,
@@ -258,7 +268,7 @@ export function simulateRound(
     }
   }
 
-  baseGameWin = Number(baseGameWin.toFixed(4));
+  baseGameWin = quantize(baseGameWin);
 
   // ---- Bonus: The Getaway Hold & Spin ----
   // Two trigger paths, both fully in-book: (1) the WANTED-LEVEL path — a chain
@@ -268,7 +278,8 @@ export function simulateRound(
   const reachedMaxHeat = heat >= triggerHeat;
   const finalScatters = findSymbol(board, SCATTER);
   const scatterTriggered = finalScatters.length >= SCATTER_TRIGGER_COUNT;
-  const triggered = forceBonus || reachedMaxHeat || scatterTriggered;
+  // A base game that already reached the max win ends the round: no bonus.
+  const triggered = !baseCapped && (forceBonus || reachedMaxHeat || scatterTriggered);
 
   if (triggered) {
     const bonusMode = mode === "super_getaway" ? "super_getaway" : "getaway";
@@ -286,12 +297,21 @@ export function simulateRound(
     bonusWin = runHoldAndSpin(events, rng, mode, forceWincap);
   }
 
-  // ---- Settle, quantize, cap ----
-  const rawTotal = Number((baseGameWin + bonusWin).toFixed(4));
-  const capped = rawTotal >= MAX_WIN_MULTIPLIER;
-  const finalX = Math.min(quantize(rawTotal), MAX_WIN_MULTIPLIER);
-
-  scaleEventPayouts(events, rawTotal, finalX);
+  // ---- Settle + cap ----
+  // The round total is the plain sum of the event wins (all on the 0.01x
+  // grid). Only the max-win cap can lower a win: the Getaway's award is
+  // trimmed to what is left up to MAX_WIN_MULTIPLIER (game info: "wins are
+  // capped at 5,000x"), so the events still sum exactly to the total.
+  const bonusEnd = events.find(
+    (e): e is Extract<GameEvent, { type: "bonus_end" }> => e.type === "bonus_end"
+  );
+  if (bonusEnd && baseGameWin + bonusWin >= MAX_WIN_MULTIPLIER) {
+    bonusWin = quantize(MAX_WIN_MULTIPLIER - baseGameWin);
+    bonusEnd.totalPayout = bonusWin;
+  }
+  const finalX = Math.min(quantize(baseGameWin + bonusWin), MAX_WIN_MULTIPLIER);
+  const capped = baseCapped || finalX >= MAX_WIN_MULTIPLIER;
+  assertEventsSum(events, finalX);
 
   events.push({
     type: "round_end",
@@ -411,9 +431,7 @@ function findClusters(board: Board): Cluster[] {
           candidates.push({
             symbol,
             positions: comp,
-            payout: Number(
-              (CLUSTER_PAY[symbol] * clusterSizeFactor(comp.length)).toFixed(4)
-            )
+            payout: clusterPay(symbol, comp.length)
           });
         }
       }
@@ -657,7 +675,7 @@ function runHoldAndSpin(
         const cell = grid[nb[0]]![nb[1]]!;
         if (cell.symbol === "SAFE" && cell.value) {
           const oldValue = cell.value;
-          const newValue = Number((oldValue * 2).toFixed(4));
+          const newValue = quantize(oldValue * 2);
           grid[nb[0]]![nb[1]] = { symbol: "SAFE", value: newValue };
           affected.push({ position: nb, oldValue, newValue });
         }
@@ -679,7 +697,7 @@ function runHoldAndSpin(
       const cell = grid[c]![r]!;
       if (cell.symbol === "SAFE" && cell.value) total += cell.value;
     }
-  total = Number(total.toFixed(4));
+  total = quantize(total);
   const filledScreen = locked >= BONUS_CELLS;
   if (filledScreen && total < MAX_WIN_MULTIPLIER) total = MAX_WIN_MULTIPLIER;
 
@@ -695,29 +713,14 @@ function cloneGrid(grid: BonusCell[][]): BonusCell[][] {
 // Payout assembly
 // ---------------------------------------------------------------------------
 
-/** Scale every payout-bearing event so they sum exactly to the final value. */
-function scaleEventPayouts(events: GameEvent[], rawTotal: number, finalX: number): void {
-  if (rawTotal <= 0 || finalX <= 0) {
-    for (const e of events) {
-      if (e.type === "cluster_win") e.payout = 0;
-      if (e.type === "bonus_end") e.totalPayout = 0;
-    }
-    return;
+/** Guard: the round total must be EXACTLY the sum of its event wins. */
+function assertEventsSum(events: GameEvent[], finalX: number): void {
+  let sum = 0;
+  for (const e of events) {
+    if (e.type === "cluster_win") sum = quantize(sum + e.payout);
+    else if (e.type === "bonus_end") sum = quantize(sum + e.totalPayout);
   }
-  const k = finalX / rawTotal;
-  let running = 0;
-  const scalable = events.filter(
-    (e): e is Extract<GameEvent, { type: "cluster_win" | "bonus_end" }> =>
-      e.type === "cluster_win" || e.type === "bonus_end"
-  );
-  scalable.forEach((e, i) => {
-    const orig = e.type === "cluster_win" ? e.payout : e.totalPayout;
-    let scaled = Number((orig * k).toFixed(2));
-    if (i === scalable.length - 1) scaled = Number((finalX - running).toFixed(2));
-    running = Number((running + scaled).toFixed(2));
-    if (e.type === "cluster_win") e.payout = scaled;
-    else e.totalPayout = scaled;
-  });
+  if (sum !== finalX) throw new Error(`event wins ${sum} != round total ${finalX}`);
 }
 
 function pickWeighted(

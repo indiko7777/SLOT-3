@@ -1,3 +1,4 @@
+import { formatMultiplier } from "../format";
 import { MiamiStreet } from "./MiamiStreet";
 import { BlurFilter, ColorMatrixFilter, Container, FillGradient, Graphics, PerspectiveMesh, Sprite, Text, TextStyle, Texture } from "pixi.js";
 import { BONUS_START_RESPINS, GRID_COLUMNS, GRID_ROWS, MAX_WIN_MULTIPLIER, type BonusCell, type Position } from "../domain";
@@ -125,15 +126,15 @@ function reelVel(p: number): number {
 const FUSE_TIP = { x: 125, y: -195 };
 const FUSE_BASE = { x: 66, y: -98 };
 
+/** Gold-bar multiplier, exact: "1.15x", "862.5x". */
 function fmtX(v: number): string {
-  const r = Math.round(v * 100) / 100;
-  return `${r.toLocaleString("en-US", { maximumFractionDigits: 2 })}x`;
+  return `${formatMultiplier(v, true)}x`;
 }
 
-/** Compact money number: "4", "1.5", "0.25", "1,250" — no trailing zeros. */
+/** Compact but EXACT money: "4", "1.5", "0.0115", "1,250" — no trailing zeros,
+ *  never rounded (a 1.15x bar on a 0.01 bet is 0.0115). */
 function fmtMoneyNum(amount: number): string {
-  const r = Math.round(amount * 100) / 100;
-  return r.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  return formatMultiplier(amount, true);
 }
 
 export class BonusView extends Container {
@@ -967,7 +968,8 @@ export class BonusView extends Container {
     // Dynamic scale of the explosion based on multiplier
     const explosionRadius = reach * (1.1 + Math.min(1.0, maxVal * 0.015));
 
-    // Screen thud/shake scaling with max multiplier
+    // Dynamite is the ONE beat that still shakes the camera (by request:
+    // shakes are fine for blasts, never for regular spins).
     const shakeIntensity = 3 + Math.min(4, maxVal * 0.12);
     const shakeDuration = turbo ? 180 : 320;
     const origX = this.x;
@@ -2505,7 +2507,6 @@ export class BonusView extends Container {
     await wait(turbo ? 60 : 180);
     await tween(turbo ? 90 : 150, (p) => { stamp.alpha = Math.min(1, p * 3); stamp.scale.set(2.4 - 1.4 * easeInCubic(p)); }, linear);
     stamp.scale.set(1);
-    this.jolt = Math.max(this.jolt, turbo ? 4 : 10);
     this.burstAt(cx, cy, Math.min(o.width, o.height), 0xffd25a, turbo, 1.7);
     this.shardsAt(cx, cy, 0x3fe3ff, turbo ? 6 : 14, null, 1.4);
     void tween(400, (p) => {
@@ -2593,7 +2594,6 @@ export class BonusView extends Container {
       this.fxLayer.addChild(stamp);
       await tween(110, (p) => { stamp.alpha = p; stamp.scale.set(1.25 - 0.25 * easeInCubic(p)); }, linear);
       this.cue({ kind: "nohit", heat, last });
-      this.jolt = Math.max(this.jolt, 6);
       void wait(160).then(() => tween(110, (p) => { stamp.alpha = 1 - p; }, linear)).then(() => stamp.destroy({ children: true }));
       return;
     }
@@ -2676,7 +2676,6 @@ export class BonusView extends Container {
         holder.scale.set(1, 1 - 0.18 * (1 - p)); // stretched thin in flight
       }, linear);
       holder.position.set(cx, ty);
-      this.jolt = Math.max(this.jolt, 4);
       // slap: snaps past taut, then flutters to rest
       void tween(520, (p) => {
         const wob = Math.sin(p * Math.PI * 7) * Math.exp(-p * 5);
@@ -2731,7 +2730,6 @@ export class BonusView extends Container {
 
     // IMPACT
     this.cue({ kind: "nohit", heat, last });
-    this.jolt = Math.max(this.jolt, last ? 16 : 11);
     this.burstAt(cx, cy, Math.min(o.width, o.height) * 0.9, POLICE_RED, false, last ? 1.6 : 1.25);
     this.shardsAt(cx, cy, 0xffb000, 10, null, 1.3);
     const flash = this.glow(0xffffff, cx, cy, o.width * 1.1, o.height * 0.7, this.fxLayer);
@@ -2859,23 +2857,14 @@ export class BonusView extends Container {
    * spin (and with the heat level) for anticipation. The HUD and the police glow
    * stay rock-steady so the numbers and lighting remain readable.
    */
-  private driveShake(dt: number, elapsed: number): void {
-    // Ease the boost toward 1 while spinning, back to 0 once settled.
+  private driveShake(dt: number, _elapsed: number): void {
+    // No chase rumble on spins (by request). The only camera kick left is the
+    // dud dynamite's thud; shakeBoost still eases because the highway uses it.
     const target = this.isSpinning ? 1 : 0;
     this.shakeBoost += (target - this.shakeBoost) * Math.min(1, dt * 6);
-    const t = elapsed;
-    // Layered sines ≈ a pseudo-random rumble; the vertical axis dominates (the
-    // forward thrust / road bumps), with a slower suspension bob on top.
-    const ry = Math.sin(t * 52) * 0.5 + Math.sin(t * 89) * 0.3;
-    const rx = Math.sin(t * 61) * 0.4 + Math.sin(t * 97) * 0.25;
-    const bob = Math.sin(t * 5.0) * 0.5;
-    const amp = (1.6 + this.heat * 0.6 + this.shakeBoost * 2.6) * this.slowmo;
     this.jolt *= Math.exp(-dt * 11);
-    const jx = this.jolt > 0.05 ? (Math.random() * 2 - 1) * this.jolt : 0;
-    const jy = this.jolt > 0.05 ? (Math.random() * 2 - 1) * this.jolt * 0.75 : 0;
-    const ox = rx * amp + jx;
-    const oy = (ry + bob) * amp + jy;
-    this.rig.position.set(ox, oy);
+    const j = this.jolt > 0.05 ? this.jolt : 0;
+    this.rig.position.set(j ? (Math.random() * 2 - 1) * j : 0, j ? (Math.random() * 2 - 1) * j * 0.75 : 0);
   }
 
   private stopAmbient(): void {

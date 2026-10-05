@@ -14,10 +14,13 @@ import { decompress, init } from "@bokuweb/zstd-wasm";
 
 const PORT = Number(process.env.MOCK_RGS_PORT ?? 8787);
 const START_BALANCE = Number(process.env.MOCK_BALANCE ?? 1_000_000); // display units
-/** MOCK_SOCIAL=1 simulates Stake.US: socialCasino flag + XGC currency, to
+/** MOCK_SOCIAL=1 (or --social) simulates stake.us: socialCasino flag + a social
+ *  currency (XGC unless MOCK_CURRENCY / --currency=XSC|XEC says otherwise), to
  *  verify the restricted-word swaps and GC/SC display locally. */
-const SOCIAL = process.env.MOCK_SOCIAL === "1";
-const CURRENCY = SOCIAL ? "XGC" : (process.env.MOCK_CURRENCY ?? "USD");
+const argFlag = (name: string): string | undefined =>
+  process.argv.find((a) => a === `--${name}` || a.startsWith(`--${name}=`))?.split("=")[1] ?? (process.argv.includes(`--${name}`) ? "1" : undefined);
+const SOCIAL = process.env.MOCK_SOCIAL === "1" || argFlag("social") === "1";
+const CURRENCY = argFlag("currency") ?? process.env.MOCK_CURRENCY ?? (SOCIAL ? "XGC" : "USD");
 const API = 1_000_000; // 6dp integer money
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PUBLISH = path.resolve(here, "../../stake-math/publish_files");

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { validateRoundRecord } from "../src/domain";
 import { quantize, simulateRound } from "../src/engine";
-import { type Criteria, TARGET_RTP } from "../src/model";
+import { CASCADE_LADDER, type Criteria, clusterPay, MODES, PAYTABLE, TARGET_RTP } from "../src/model";
 import { optimizeMode } from "../src/optimize";
 import { Rng } from "../src/rng";
 import type { Sim } from "../src/simulate";
@@ -18,25 +18,68 @@ describe("rng", () => {
   });
 });
 
+const onGrid = (x: number): boolean => Math.abs(x * 100 - Math.round(x * 100)) < 1e-9;
+
 describe("quantize", () => {
-  it("snaps to the Stake 0.1x grid (payout %% 10 == 0 in hundredths)", () => {
-    for (const x of [0, 0.04, 0.06, 0.12, 1.249, 37.77, 4999.95]) {
-      const q = quantize(x);
-      expect(Math.round(q * 100) % 10).toBe(0);
+  it("snaps to the 0.01x grid without moving on-grid values", () => {
+    expect(quantize(0.1 + 0.2)).toBe(0.3);
+    expect(quantize(3 * 1.15)).toBe(3.45);
+    for (const x of [0, 0.05, 0.11, 37.8, 4999.99]) expect(quantize(x)).toBe(x);
+  });
+});
+
+describe("paytable", () => {
+  it("has a 0.01x-grid value for every cluster size 5..20, non-decreasing", () => {
+    for (const [sym, row] of Object.entries(PAYTABLE)) {
+      expect(row, sym).toHaveLength(16);
+      row!.forEach((v, i) => {
+        expect(onGrid(v), `${sym}@${i + 5}`).toBe(true);
+        if (i > 0) expect(v).toBeGreaterThanOrEqual(row![i - 1]!);
+      });
     }
+  });
+  it("every gold bar value is on the 0.01x grid", () => {
+    for (const [mode, cfg] of Object.entries(MODES))
+      for (const s of cfg.safeValues) expect(onGrid(s.value), `${mode} ${s.value}`).toBe(true);
   });
 });
 
 describe("engine", () => {
-  it("produces deterministic, schema-valid rounds with quantized payouts", () => {
+  it("produces deterministic, schema-valid rounds on the 0.01x grid", () => {
     for (const crit of ["zero", "basegame", "freegame", "wincap"] as Criteria[]) {
       const a = simulateRound("base", crit, 999, 1);
       const b = simulateRound("base", crit, 999, 1);
       expect(JSON.stringify(a.record)).toEqual(JSON.stringify(b.record));
       expect(() => validateRoundRecord(a.record)).not.toThrow();
-      expect(Math.round(a.record.payoutMultiplier * 100) % 10).toBe(0);
+      expect(onGrid(a.record.payoutMultiplier)).toBe(true);
       expect(a.record.payoutMultiplier).toBeLessThanOrEqual(5000);
     }
+  });
+
+  it("every cluster win is EXACTLY paytable value x cascade rung, and wins sum to the total", () => {
+    // Engine review: "frontend math must match exactly what is written in game
+    // info and what is returned by RGS". No rescaling, ever (the cap aside).
+    const crits: Criteria[] = ["basegame", "basebig", "freegame", "wincap", "zero"];
+    let clusters = 0;
+    for (const mode of ["base", "ante", "base_tier2", "getaway", "super_getaway"] as const) {
+      for (let seed = 1; seed <= 600; seed++) {
+        const { record } = simulateRound(mode, crits[seed % crits.length]!, seed * 104729, seed);
+        const end = record.events.at(-1) as { type: string; capApplied: boolean };
+        let sum = 0;
+        for (const ev of record.events) {
+          if (ev.type === "cluster_win") {
+            clusters++;
+            expect(ev.baseMultiplier).toBe(clusterPay(ev.symbol, ev.positions.length));
+            expect(CASCADE_LADDER).toContain(ev.appliedGlobalMultiplier);
+            if (!end.capApplied)
+              expect(ev.payout).toBe(quantize(ev.baseMultiplier * ev.appliedGlobalMultiplier));
+            sum = quantize(sum + ev.payout);
+          } else if (ev.type === "bonus_end") sum = quantize(sum + ev.totalPayout);
+        }
+        expect(sum).toBe(record.payoutMultiplier);
+      }
+    }
+    expect(clusters).toBeGreaterThan(500);
   });
 });
 
@@ -98,7 +141,6 @@ describe("optimizer", () => {
     for (const w of opt.weighted) {
       expect(Number.isInteger(w.weight)).toBe(true);
       expect(w.weight).toBeGreaterThanOrEqual(0);
-      expect(w.payoutCents % 10).toBe(0);
     }
   });
 

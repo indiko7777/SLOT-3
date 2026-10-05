@@ -149,6 +149,9 @@ export function silhouetteOffset(
 /** Optional images — loaded per-file so a missing one never blocks the game.
  *  The Getaway (POV chase) bonus renders procedural fallbacks until these exist. */
 const OPTIONAL_ASSETS: Record<string, string> = {
+  // Living base street: keyed, sunlit golden-hour palms.
+  "palm_c": "palm_c.webp",
+  "palm_d": "palm_d.webp",
   // Distant illustrated night city. Independent scenery passes in MiamiStreet;
   // the original getaway_highway image remains on the Super confirmation card.
   "chase_city": "chase_skyline.webp",
@@ -175,7 +178,7 @@ const OPTIONAL_ASSETS: Record<string, string> = {
 
 /** Background images — loaded separately so a missing file doesn't block the game */
 const BG_ASSETS: Record<string, string> = {
-  "bg_base": "miami_daylight_gameplay_v2.webp",
+  "bg_base": "street_golden_v1.webp",
   "bg_bonus": "vault_bonus.webp",
 };
 
@@ -294,6 +297,6 @@ export function createSkelSymbol(id: SymbolId): SkelSymbol | null {
 export const IMAGE_DROP_IN_GUIDE = {
   basePath: "public/assets/",
   requiredSymbolFiles: Object.values(SYMBOL_ASSETS).map((skin) => skin.assetKey),
-  backgrounds: ["miami_daylight_gameplay_v2.webp", "vault_bonus.webp"],
+  backgrounds: ["street_golden_v1.webp", "vault_bonus.webp"],
   rightPanel: ["brand/logo.webp", "characters/getaway_driver.webp", "vehicles/cyan_sports_car.webp"]
 } as const;

@@ -1,3 +1,5 @@
+import { API_AMOUNT_MULTIPLIER } from "./types";
+
 /**
  * Reads the Stake game-launch query string. In production the RGS injects
  * these into the game iframe URL; nothing here is ever hardcoded.
@@ -44,7 +46,7 @@ export function parseLaunch(
 
   const isReplayMode = q.get("replay") === "true" || q.has("event") || q.has("eventId") || q.has("replayId") || q.has("roundId");
   const replayEvent = q.get("event") ?? q.get("eventId") ?? q.get("replayId") ?? q.get("roundId") ?? "";
-  const replayAmount = parseFloat(q.get("amount") ?? "0");
+  const replayAmount = parseReplayAmount(q.get("amount"));
   const replayMode = q.get("mode") ?? "base";
   const replayGame = q.get("game") ?? "heat-chase";
   const replayVersion = q.get("version") ?? "1";
@@ -95,6 +97,17 @@ export function readSession(): GameSession {
     window.location.hostname,
     isDev
   );
+}
+
+/** Replay `amount` is the base bet in RGS units — an integer with six implied
+ *  decimals (10000 = 0.01, 1000000 = 1.00), exactly like every other RGS money
+ *  value. A value written with a decimal point is already in display units.
+ *  Missing/invalid → 0 (the caller falls back to a 1.00 base bet). */
+export function parseReplayAmount(raw: string | null): number {
+  if (!raw) return 0;
+  const n = Number(raw.trim());
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return raw.includes(".") ? n : n / API_AMOUNT_MULTIPLIER;
 }
 
 function remapLang(lang: string): string {

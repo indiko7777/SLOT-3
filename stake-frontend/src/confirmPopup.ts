@@ -2,6 +2,7 @@
 import { trackModalClosed, trackModalOpen } from "./modals";
 import { attachDialog } from "./dialog";
 import { BET_MODES, BONUS_START_RESPINS, MAX_WIN_MULTIPLIER } from "./domain";
+import { formatAmount } from "./format";
 import "./confirmPopup.css";
 
 type FeatureAction = "getaway" | "super_getaway";
@@ -49,7 +50,7 @@ function popupMarkup(c: PopupCopy): string {
   const unitWord = c.social ? "PLAY" : "BET";
   const kicker = c.social ? "FEATURE" : "BONUS BUY";
   const confirmLabel = c.isSuper ? "Confirm Super" : c.social ? "Confirm" : "Confirm Buy";
-  const art = c.isSuper ? "assets/popup/super_keyart_v5.webp" : "assets/popup/getaway_keyart_v5.webp";
+  const art = c.isSuper ? "assets/popup/super_keyart_v6.webp" : "assets/popup/getaway_keyart_v6.webp";
   const stars = c.isSuper
     ? `<div class="hc-pop-stars" aria-hidden="true">${Array.from({ length: 5 }, (_, i) =>
         `<svg viewBox="0 0 24 24" style="--i:${i}"><path d="m12 1.5 3.3 6.8 7.4 1-5.4 5.3 1.3 7.4L12 18.5 5.4 22l1.3-7.4L1.3 9.3l7.4-1z"/></svg>`).join("")}</div>`
@@ -84,12 +85,12 @@ function popupMarkup(c: PopupCopy): string {
           <li style="--i:1"><span class="hc-pop-medal">${ICON.lock}</span><div><strong>GOLD LOCKS IN</strong><p>${c.isSuper ? "Highest Gold Bar values" : "Boosted Gold Bar values"}</p></div></li>
           <li style="--i:2"><span class="hc-pop-medal">${ICON.blast}</span><div><strong>DYNAMITE ×2</strong><p>Doubles the Gold Bars beside it</p></div></li>
         </ul>
-        <p class="hc-pop-rule">At zero spins every locked Gold Bar pays. Fill all 20 cells for the ${c.maxWin}× max win.</p>
+        <p class="hc-pop-rule">At zero spins every locked Gold Bar is added up. Fill all 20 cells for the ${c.maxWin}× max win.</p>
       </div>
 
       <div class="hc-pop-foot">
         <div class="hc-pop-cost">
-          <span class="lbl">TOTAL COST</span>
+          <span class="lbl">${c.social ? "PLAY AMOUNT" : "TOTAL COST"}</span>
           <span class="val">${c.formattedCost}<small>${c.currency}</small></span>
           <span class="sub">${c.multiplier.toLocaleString("en-US")}× BASE ${unitWord}</span>
         </div>
@@ -122,7 +123,8 @@ function copyFor(action: FeatureAction, betAmount: number, currency: string, cos
   const multiplier = costMultiplier ?? BET_MODES[action].priceMultiplier;
   return {
     isSuper: action === "super_getaway",
-    formattedCost: (betAmount * multiplier).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    // Exact: a 0.01 base at 1.5x is 0.015, never "0.02".
+    formattedCost: formatAmount(betAmount * multiplier, true),
     currency,
     multiplier,
     social,
@@ -156,7 +158,7 @@ export function showConfirmPopup(
   playAudio: () => void,
   /** Cost multiplier sourced from the RGS bet-mode config (never hardcoded). */
   costMultiplier?: number,
-  /** Stake.US social casino — strips every restricted word (buy/bet). */
+  /** Social casino (stake.us) — strips every restricted word (buy/bet/cost/pay). */
   social = false
 ): Promise<boolean> {
   // Single instance: a second confirmation can never stack on an open one.

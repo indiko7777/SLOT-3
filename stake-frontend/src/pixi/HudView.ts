@@ -1,13 +1,16 @@
-import { Container, Graphics, Sprite, Text, TextStyle } from "pixi.js";
+import { FillGradient, Container, Graphics, Sprite, Text, TextStyle } from "pixi.js";
 import { TEXT, type Position } from "../domain";
 import type { PlaybackSnapshot } from "../playback";
 import { winCountFormatter } from "./winCount";
 import { getExtraTexture, silhouetteOffset } from "./assets";
+import { drawCabinetBack, drawCabinetFront } from "./cabinet";
+import { buildLivingBackground, BASE_STREET } from "./livingBackground";
+import { pieceBounds } from "./girlReveal";
 import { makeText } from "./text";
 import { ambientTicker, tween, wait, easeOutBack, easeOutCubic, easeInCubic, linear } from "./tween";
 import { softGlowTexture } from "./fxTextures";
 import type { LayoutMetrics, Rect, SceneRuntime } from "./types";
-import { formatBalance, formatWin } from "../rgs/client";
+import { formatAmount, formatBalance, formatMultiplier } from "../format";
 import { OutlineFilter, DropShadowFilter } from "pixi-filters";
 import { getPrestigeTitle } from "../meta/collection";
 import { UI_FONT } from "../typography";
@@ -71,6 +74,8 @@ export class HudView extends Container {
     }
   }
   private ambientCbs: Array<(dt: number, elapsed: number) => void> = [];
+  /** The living street survives HUD redraws (rebuilt only when the size changes). */
+  private living: { key: string; world: Container; tick: (dt: number, t: number) => void } | null = null;
   private readonly starEffects = new Container();
   private statusText: Text | null = null;
   private winText: Text | null = null;
@@ -121,7 +126,9 @@ export class HudView extends Container {
     this.cleanupAmbient();
     this.cancelWinAnim();
     for (const child of this.removeChildren()) child.destroy({ children: true });
-    for (const child of this.bgContainer.removeChildren()) child.destroy({ children: true });
+    for (const child of this.bgContainer.removeChildren()) {
+      if (child !== this.living?.world) child.destroy({ children: true });
+    }
     for (const child of this.underParticlesContainer.removeChildren()) {
       if (child !== this.starEffects) child.destroy({ children: true });
     }
@@ -134,7 +141,7 @@ export class HudView extends Container {
     if (layout.artPanel) this.drawArt(layout.artPanel, snapshot);
     // Portrait: draw the 5 wanted stars in the dedicated strip above the board.
     if (layout.starsBar) this.drawWantedStars(layout.starsBar);
-    this.drawBoardFrame(layout.boardFrame);
+    this.drawBoardFrame(layout, snapshot);
     this.drawControls(layout.bottomBar, snapshot);
     // Running star tweens own their lifetime and survive an unrelated HUD redraw.
     this.underParticlesContainer.addChild(this.starEffects);
@@ -171,13 +178,14 @@ export class HudView extends Container {
     }
   }
 
-  /** Money formatter shared by the win counter, credit and bet displays. */
+  /** The balance — the only figure rounded to 2 decimals. */
   private fmtMoney(amount: number): string {
     return formatBalance(amount);
   }
-  
+
+  /** Wins and the bet: exact, with every decimal they need (0.0005). */
   private fmtWinMoney(amount: number): string {
-    return formatWin(amount);
+    return formatAmount(amount);
   }
 
   /** Animate the win counter (in real money) from the current value to target. */
@@ -279,7 +287,32 @@ export class HudView extends Container {
     const isBonus = snapshot.state.startsWith("bonus");
     const bgTex = getExtraTexture(isBonus ? "bg_bonus" : "bg_base");
 
-    if (bgTex) {
+    // Base game: the living street (swaying palms, glints, gulls). Kept alive
+    // across redraws so the trees never snap back after a spin.
+    let living = false;
+    if (!isBonus) {
+      const key = `${layout.width}x${layout.height}`;
+      if (this.living && this.living.key !== key) {
+        ambientTicker.remove(this.living.tick);
+        this.living.world.destroy({ children: true });
+        this.living = null;
+      }
+      if (!this.living) {
+        const built = buildLivingBackground(this.bgContainer, { w: layout.width, h: layout.height }, BASE_STREET);
+        if (built) {
+          this.living = { key, ...built };
+          ambientTicker.add(built.tick);
+        }
+      } else {
+        this.bgContainer.addChildAt(this.living.world, 0);
+      }
+      living = !!this.living;
+    }
+    if (living) {
+      const dim = new Graphics();
+      dim.rect(0, 0, layout.width, layout.height).fill({ color: 0x0b151c, alpha: 0.06 });
+      this.bgContainer.addChild(dim);
+    } else if (bgTex) {
       const sprite = new Sprite(bgTex);
       const scaleX = layout.width / bgTex.width;
       const scaleY = layout.height / bgTex.height;
@@ -327,8 +360,8 @@ export class HudView extends Container {
     }
 
     const anteH = 86; // Reduced height for Ante button in landscape mode
-    this.panelButton(rect.x, rect.y, panelWidth, 112, kicker, TEXT.buy, `${buyX.toFixed(2)}x`, "getaway");
-    this.panelButton(rect.x, rect.y + 124, panelWidth, 124, kicker, TEXT.superBuy, `${superX.toFixed(2)}x`, "super_getaway");
+    this.panelButton(rect.x, rect.y, panelWidth, 112, kicker, TEXT.buy, `${formatMultiplier(buyX)}x`, "getaway");
+    this.panelButton(rect.x, rect.y + 124, panelWidth, 124, kicker, TEXT.superBuy, `${formatMultiplier(superX)}x`, "super_getaway");
     this.panelButton(rect.x, rect.y + 260, panelWidth, anteH, TEXT.ante, anteSub, anteVal, "ante");
 
     const logoTex = getExtraTexture("heat_chase_logo");
@@ -543,20 +576,40 @@ export class HudView extends Container {
     this.addChild(panel);
   }
 
-  private drawBoardFrame(rect: Rect): void {
-    const frame = new Graphics();
-    frame.roundRect(rect.x - 2, rect.y - 2, rect.width + 4, rect.height + 4, 12)
-      .stroke({ color: this.palette.amber, width: 2, alpha: 0.45 });
-    frame.roundRect(rect.x, rect.y, rect.width, rect.height, 10)
-      .stroke({ color: this.palette.gold, width: 1, alpha: 0.25 });
-    this.underParticlesContainer.addChild(frame);
+  /** The reel cabinet: glass + bezel under the reels, neon + deco over the edge. */
+  private drawBoardFrame(layout: LayoutMetrics, snapshot: PlaybackSnapshot): void {
+    const bgTex = getExtraTexture(snapshot.state.startsWith("bonus") ? "bg_bonus" : "bg_base");
+    drawCabinetBack(this.bgContainer, layout.boardFrame, layout.board, bgTex, { w: layout.width, h: layout.height });
+    this.addAmbient(drawCabinetFront(this.underParticlesContainer, layout.boardFrame, layout.board));
   }
 
   private drawControls(rect: Rect, snapshot: PlaybackSnapshot): void {
     // Bar background
+    // Dark smoked glass with a neon edge (matches the reel cabinet).
     const bar = new Graphics();
-    bar.rect(rect.x, rect.y, rect.width, rect.height).fill({ color: 0x000000, alpha: 0.65 });
-    bar.rect(rect.x, rect.y, rect.width, 1).fill({ color: 0xffffff, alpha: 0.15 });
+    bar.rect(rect.x, rect.y, rect.width, rect.height).fill(new FillGradient({
+      type: "linear", start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, textureSpace: "local",
+      colorStops: [
+        { offset: 0, color: "rgba(14,22,30,0.78)" },
+        { offset: 0.35, color: "rgba(9,12,18,0.86)" },
+        { offset: 1, color: "rgba(5,6,10,0.94)" },
+      ],
+    }));
+    const edge = new FillGradient({
+      type: "linear", start: { x: 0, y: 0 }, end: { x: 1, y: 0 }, textureSpace: "local",
+      colorStops: [
+        { offset: 0, color: "rgba(255,111,150,0)" },
+        { offset: 0.22, color: "rgba(255,111,150,0.85)" },
+        { offset: 0.5, color: "rgba(255,240,222,0.8)" },
+        { offset: 0.78, color: "rgba(47,183,173,0.85)" },
+        { offset: 1, color: "rgba(47,183,173,0)" },
+      ],
+    });
+    bar.rect(rect.x, rect.y, rect.width, 1.5).fill(edge);
+    bar.rect(rect.x, rect.y + 1.5, rect.width, 10).fill(new FillGradient({
+      type: "linear", start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, textureSpace: "local",
+      colorStops: [{ offset: 0, color: "rgba(255,170,140,0.08)" }, { offset: 1, color: "rgba(255,170,140,0)" }],
+    }));
     this.addChild(bar);
 
     const credit = this.runtime.getCredit();
@@ -612,7 +665,7 @@ export class HudView extends Container {
       this.addChild(this.creditText);
 
       this.betText = new Text({
-        text: `${this.t().betLabel} ${this.fmtMoney(effectiveBet)} ${currency}`,
+        text: `${this.t().betLabel} ${this.fmtWinMoney(effectiveBet)} ${currency}`,
         style: new TextStyle({
           fill: 0xffdf65,
           fontFamily: UI_FONT,
@@ -684,7 +737,7 @@ export class HudView extends Container {
     this.addChild(this.creditText);
 
     this.betText = new Text({
-      text: `${this.t().betLabel} ${this.fmtMoney(effectiveBet)} ${currency}`,
+      text: `${this.t().betLabel} ${this.fmtWinMoney(effectiveBet)} ${currency}`,
       style: new TextStyle({
         fill: 0xffdf65,
         fontFamily: UI_FONT,
@@ -970,14 +1023,18 @@ export class HudView extends Container {
     const headStart = Math.max(0, Math.min(5, this.runtime.getHeadStartStars?.() ?? 0));
     const activeTier = Math.max(0, Math.min(5, this.runtime.getActiveTier?.() ?? 0));
 
-    this.underParticlesContainer.addChild(makeText(
+    const wantedLabel = makeText(
       headStart > 0 ? `WANTED LEVEL · ${headStart} STAR MODE` : "WANTED LEVEL",
       labelSize,
-      0x9fb4d0,
+      0xffffff,
       rect.x + rect.width / 2,
       starCY - starR - labelSize - 2,
       "center"
-    ));
+    );
+    // readable over the bright sunset sky: white with a soft dark shadow
+    wantedLabel.style.letterSpacing = 1.5;
+    wantedLabel.style.dropShadow = { color: 0x1a0c14, alpha: 0.75, blur: 4, distance: 1, angle: Math.PI / 2 };
+    this.underParticlesContainer.addChild(wantedLabel);
 
     for (let i = 0; i < 5; i++) {
       const sx = startX + i * (starR * 2 + gap);
@@ -1077,14 +1134,25 @@ export class HudView extends Container {
     const multiplier = prog.artPrefix !== "char" ? 1.25 : 1.0;
     assembly.scale.set(scale * multiplier);
     assembly.position.set(rect.x + rect.width / 2, rect.y + 60 + (rect.height - 60) / 2);
+    // Contact shadow: she stands ON the street, not pasted over it.
+    const fb = pieceBounds(silTex);
+    const k = scale * multiplier;
+    const footY = assembly.y + (fb.oy + silOff.y + fb.h / 2) * k;
+    const footX = assembly.x + (fb.ox + silOff.x) * k;
+    const shadowW = fb.w * k * 0.62;
+    const contact = new Graphics();
+    for (let i = 5; i >= 1; i--) {
+      contact.ellipse(footX, footY - 3, shadowW * (0.5 + i * 0.1), 4 + i * 2.4).fill({ color: 0x07040e, alpha: 0.09 });
+    }
+    contact.label = "artChar";
+    this.underParticlesContainer.addChild(contact);
     assembly.label = "artChar";
     this.underParticlesContainer.addChild(assembly);
   }
 
   /** Hide the art-panel girl while a full-screen reveal draws its own copy of her. */
   setArtCharVisible(visible: boolean): void {
-    const c = this.underParticlesContainer.getChildByLabel("artChar");
-    if (c) c.visible = visible;
+    for (const c of this.underParticlesContainer.children) if (c.label === "artChar") c.visible = visible;
   }
 
   private starPoints(cx: number, cy: number, outerR: number, innerR: number): number[] {

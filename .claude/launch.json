@@ -49,6 +49,31 @@
         "mock-rgs"
       ],
       "port": 8787
+    },
+    {
+      "name": "mock-rgs-social-xec",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "stake-frontend",
+        "run",
+        "mock-rgs",
+        "--",
+        "--social",
+        "--currency=XEC"
+      ],
+      "port": 8787
+    },
+    {
+      "name": "web-only",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "stake-frontend",
+        "run",
+        "dev"
+      ],
+      "port": 5176
     }
   ]
 }

@@ -98,9 +98,3 @@ export class RgsError extends Error {
 export const toDisplay = (apiAmount: number): number =>
   apiAmount / API_AMOUNT_MULTIPLIER;
 
-export const formatBalance = (amount: number): string => amount.toFixed(2);
-export const formatWin = (amount: number): string => {
-  const parts = amount.toString().split(".");
-  if (parts.length === 1) return parts[0]!;
-  return `${parts[0]}.${parts[1]!.substring(0, 4)}`;
-};

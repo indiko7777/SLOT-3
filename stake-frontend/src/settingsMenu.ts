@@ -16,18 +16,20 @@ import { UI_FONT } from "./typography";
  *              selector, then activate Start; it must never begin from a
  *              single click.
  *  MODES     — RTP / Max Win / cost stated individually for EVERY bet mode.
- *  PAYTABLE  — per-symbol payouts that exactly match the math model
- *              (domain.ts mirrors stake-math/src/model.ts; a test pins them
- *              together) + win-combination rules.
+ *  PAYTABLE  — the win of every cluster size per symbol, exactly the math
+ *              model's PAYTABLE (domain.ts mirrors stake-math/src/model.ts; a
+ *              test pins them together), the win formula, and a picture of a
+ *              winning vs. a non-winning shape.
  *  FEATURES  — cascade multiplier, Wanted Level, The Getaway, special
  *              symbols, Collection & Head-Start.
  *  CONTROLS  — the user-interaction guide covering every button.
- *  INFO      — the mandatory Stake Engine disclaimer.
+ *  INFO      — the mandatory Engine general disclaimer.
  *
- * Together the tabs satisfy the Stake approval checklist (previously the Pixi
- * PaytableView). All wording flows through hooks.getUiStrings() so social
- * casinos (Stake.US) never see a restricted word. No hit rates /
- * probabilities are ever displayed.
+ * Together the tabs satisfy the Engine approval checklist. All wording flows
+ * through hooks.getUiStrings() / symbolLabel() so social casinos (stake.us)
+ * never see a restricted word. No hit rates / probabilities are ever
+ * displayed. A visible CLOSE button (and tappable hints) closes the menu on
+ * devices without an Esc key.
  *
  * DOM overlay (same pattern as confirmPopup / RadioWheel) so it stays
  * decoupled from the Pixi scene and is cheap to mount/unmount.
@@ -35,24 +37,30 @@ import { UI_FONT } from "./typography";
 
 import {
   CASCADE_LADDER,
-  CLUSTER_PAY_X,
-  CLUSTER_SIZE_FACTORS,
+  clusterPay,
+  GOLD_BAR_VALUES,
+  MAX_CLUSTER,
+  MAX_WIN_MULTIPLIER,
+  MIN_CLUSTER,
   SYMBOLS,
+  symbolLabel,
   type SymbolId,
+  type UiStrings,
 } from "./domain";
+import { formatMultiplier } from "./format";
 import { SYMBOL_ASSETS } from "./pixi/assets";
 import { COLLECTION_RULES, GETAWAY_RULES } from "./rules";
 
 export type TurboMode = "off" | "turbo" | "super";
 export type MenuTab = "game" | "modes" | "paytable" | "features" | "controls" | "info";
 
-const TABS: Array<{ key: MenuTab; label: string }> = [
-  { key: "game", label: "Game" },
-  { key: "modes", label: "Modes" },
-  { key: "paytable", label: "Paytable" },
-  { key: "features", label: "Features" },
-  { key: "controls", label: "Controls" },
-  { key: "info", label: "Info" },
+const TABS: Array<{ key: MenuTab; label: (t: UiStrings) => string }> = [
+  { key: "game", label: () => "Game" },
+  { key: "modes", label: () => "Modes" },
+  { key: "paytable", label: (t) => t.paytableTab },
+  { key: "features", label: () => "Features" },
+  { key: "controls", label: () => "Controls" },
+  { key: "info", label: () => "Info" },
 ];
 
 export interface SettingsMenuFlags {
@@ -70,7 +78,7 @@ export interface SettingsMenuHooks {
   getFlags(): SettingsMenuFlags;
   playClick?(): void;
   // Game-info content sources (same ones PaytableView used via SceneRuntime).
-  getUiStrings(): { betLabel: string; costWord: string; betWord: string };
+  getUiStrings(): UiStrings;
   isSocial(): boolean;
   getBetModes(): Record<string, { costMultiplier?: number } | undefined>;
 }
@@ -84,14 +92,8 @@ const SPEED_LABELS: Record<TurboMode, string> = {
   super: "Extra Turbo",
 };
 
-/** Representative cluster sizes shown as paytable columns. */
-const SHOWN_SIZES = [5, 8, 12, 15, 20];
-
-const SYMBOL_GROUPS: Array<{ title: string; color: string; symbols: SymbolId[] }> = [
-  { title: "Premium", color: "#ffdf65", symbols: ["BIKE", "DIAMOND", "CASH"] },
-  { title: "Mid", color: "#9ae64e", symbols: ["DUFFEL", "AMMO", "PISTOL"] },
-  { title: "Low", color: "#fb6f52", symbols: ["KNIFE", "BRASS"] },
-];
+/** Paytable columns, premium → low (the order players scan a paytable in). */
+const PAY_SYMBOLS: SymbolId[] = ["BIKE", "DIAMOND", "CASH", "DUFFEL", "AMMO", "PISTOL", "KNIFE", "BRASS"];
 
 const TIER_COLOR: Record<string, string> = {
   premium: "#ffdf65",
@@ -99,32 +101,39 @@ const TIER_COLOR: Record<string, string> = {
   low: "#fb6f52",
 };
 
+/** Engine's template general disclaimer (Approval Guidelines → General Disclaimer). */
 const DISCLAIMER =
   "Malfunction voids all wins and plays. A consistent internet connection is required. " +
   "In the event of a disconnection, reload the game to finish any uncompleted rounds. " +
   "The expected return is calculated over many plays. The game display is not representative " +
   "of any physical device and is for illustrative purposes only. Winnings are settled according " +
   "to the amount received from the Remote Game Server and not from events within the web browser. " +
-  "TM and © 2026 Stake Engine.";
+  "TM and © 2026 Engine.";
 
-/** Exact pay value for a symbol at a cluster size, matching the engine. */
-function payAt(symId: SymbolId, size: number): number {
-  const base = CLUSTER_PAY_X[symId] ?? 0;
-  const factor = CLUSTER_SIZE_FACTORS[Math.min(size, 20) - 5] ?? 0;
-  return Number((base * factor).toFixed(4));
-}
-
-/** Trim trailing zeros but keep full precision (0.048 stays 0.048). */
-function fmtX(v: number): string {
-  return `${Number(v.toFixed(4))}x`;
-}
+/** Cell indexes (col + row * 5) of the two example shapes on the 5x4 grid. */
+const WIN_SHAPE = [1, 2, 7, 12, 13]; // every cell shares a SIDE with the next
+const NO_WIN_SHAPE = [1, 7, 13, 11, 17]; // five cells touching only at corners
 
 function num2hex(c: number): string {
   return `#${c.toString(16).padStart(6, "0")}`;
 }
 
+/** Bonus-only symbols are drawn by the Getaway itself and have no reel art. */
+const INFO_ART: Partial<Record<SymbolId, string>> = {
+  SAFE: "gold_bar.webp",
+  MASTER_KEY: "dynamite.webp",
+};
+
 function symbolImgSrc(symId: SymbolId): string {
-  return `assets/${SYMBOL_ASSETS[symId].assetKey}`;
+  return `assets/${INFO_ART[symId] ?? SYMBOL_ASSETS[symId].assetKey}`;
+}
+
+function ordinal(n: number): string {
+  return n === 1 ? "1st" : n === 2 ? "2nd" : n === 3 ? "3rd" : `${n}th`;
+}
+
+function listX(values: readonly number[]): string {
+  return values.map((v) => `${formatMultiplier(v, true)}x`).join(", ");
 }
 
 // Chalet (the actual GTA V UI face) is proprietary; Archivo Narrow is the
@@ -146,7 +155,15 @@ function injectStyle(): void {
     opacity:0;transition:opacity .15s ease-out;
     font-family:${FONT};color:#fff;user-select:none;-webkit-user-select:none;}
   #settings-overlay.show{opacity:1;}
-  .gta-head{padding:clamp(12px,3.5vh,30px) var(--gx) 10px;flex-shrink:0;}
+  .gta-head{padding:clamp(12px,3.5vh,30px) var(--gx) 10px;flex-shrink:0;
+    display:flex;align-items:center;justify-content:space-between;gap:12px;}
+  .gta-close{flex-shrink:0;display:flex;align-items:center;gap:8px;cursor:pointer;
+    background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.45);border-radius:6px;color:#fff;
+    font:700 clamp(13px,2.8vw,15px)/1 ${FONT};letter-spacing:1.5px;text-transform:uppercase;
+    padding:10px 14px;min-height:44px;transition:background .12s,color .12s;}
+  .gta-close b{font-size:1.25em;line-height:1;}
+  .gta-close:hover,.gta-close:active{background:#fff;color:#000;}
+  .gta-hint-btn{cursor:pointer;}
   .gta-title{font-size:clamp(28px,5.5vw,46px);font-weight:700;line-height:1;
     text-transform:uppercase;letter-spacing:.5px;text-shadow:0 2px 10px rgba(0,0,0,.8);}
   .gta-tabs{display:flex;gap:clamp(16px,3.5vw,30px);border-bottom:2px solid rgba(255,255,255,.95);
@@ -194,20 +211,30 @@ function injectStyle(): void {
   .gta-key{display:inline-block;border:1px solid rgba(255,255,255,.55);border-radius:3px;
     padding:1px 6px;margin-right:6px;font-size:11px;color:#fff;}
   /* ── info tabs ── */
-  .gta-payhead,.gta-symrow{display:grid;align-items:center;
-    grid-template-columns:minmax(clamp(110px,30vw,220px),1.6fr) repeat(5,1fr);
-    padding:7px var(--gx);margin-top:2px;}
-  .gta-payhead{background:rgba(0,0,0,.72);color:rgba(255,255,255,.55);font-weight:600;
-    font-size:clamp(11px,2.2vw,13px);letter-spacing:1px;}
-  .gta-payhead span{text-align:center;}
-  .gta-symrow{background:rgba(0,0,0,.52);}
-  .gta-symcell{display:flex;align-items:center;gap:clamp(6px,1.6vw,12px);min-width:0;}
-  .gta-symcell img{width:clamp(28px,6vw,42px);height:clamp(28px,6vw,42px);object-fit:contain;flex-shrink:0;}
-  .gta-symcell span{font-weight:600;font-size:clamp(12px,2.6vw,15.5px);letter-spacing:.3px;
-    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .gta-pay{text-align:center;font-weight:600;font-size:clamp(11px,2.4vw,14px);}
-  .gta-tier{padding:14px var(--gx) 4px;font-size:clamp(11px,2.2vw,12.5px);font-weight:600;
-    letter-spacing:2px;text-transform:uppercase;}
+  .gta-paytable{display:grid;grid-template-columns:clamp(30px,8vw,64px) repeat(8,minmax(0,1fr));
+    padding:0 var(--gx);margin-top:2px;gap:2px;}
+  .gta-paytable > div{background:rgba(0,0,0,.52);padding:6px 2px;text-align:center;
+    font-weight:600;font-size:clamp(10.5px,2.3vw,14px);font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .gta-paytable > .ph{background:rgba(0,0,0,.72);display:flex;flex-direction:column;align-items:center;gap:3px;
+    padding:6px 1px;color:rgba(255,255,255,.8);font-size:clamp(8.5px,1.9vw,11.5px);letter-spacing:.3px;
+    white-space:normal;line-height:1.15;}
+  .gta-paytable > .ph img{width:clamp(26px,6vw,46px);height:clamp(26px,6vw,46px);object-fit:contain;}
+  .gta-paytable > .sz{background:rgba(0,0,0,.72);color:#fff;}
+  .gta-paytable > .corner{background:rgba(0,0,0,.72);color:rgba(255,255,255,.6);font-size:clamp(8.5px,1.9vw,11.5px);
+    display:flex;align-items:flex-end;justify-content:center;white-space:normal;line-height:1.15;}
+  .gta-shapes{display:flex;flex-wrap:wrap;gap:clamp(14px,4vw,40px);padding:12px var(--gx);
+    background:rgba(0,0,0,.38);margin-top:2px;}
+  .gta-shape{display:flex;flex-direction:column;align-items:center;gap:8px;}
+  .gta-shape .cap{font-weight:700;letter-spacing:1.5px;font-size:clamp(12px,2.6vw,14px);text-transform:uppercase;}
+  .gta-shape.ok .cap{color:#4ee06a;}
+  .gta-shape.bad .cap{color:#ff5252;}
+  .gta-shape .grid{display:grid;grid-template-columns:repeat(5,clamp(20px,5vw,30px));
+    grid-auto-rows:clamp(20px,5vw,30px);gap:4px;padding:8px;background:#141a26;border-radius:6px;}
+  .gta-shape .grid i{display:block;border-radius:4px;background:#283247;}
+  .gta-shape.ok .grid i.on{background:#2fbf55;box-shadow:0 0 8px rgba(78,224,106,.55);}
+  .gta-shape.bad .grid i.on{background:#d83a3a;box-shadow:0 0 8px rgba(255,82,82,.5);}
+  .gta-shape .sub{max-width:clamp(150px,40vw,230px);text-align:center;font-size:clamp(11.5px,2.4vw,13px);
+    color:#bcbcbc;line-height:1.45;}
   .gta-special{display:grid;grid-template-columns:clamp(48px,10vw,68px) 1fr;gap:clamp(10px,2.2vw,18px);
     align-items:center;background:rgba(0,0,0,.52);padding:10px var(--gx);margin-top:2px;}
   .gta-special img{width:100%;max-height:clamp(44px,9vw,60px);object-fit:contain;}
@@ -219,6 +246,10 @@ function injectStyle(): void {
   .gta-ctl .txt{font-size:clamp(12px,2.5vw,13.5px);color:#bcbcbc;line-height:1.55;}
   @media (max-width:520px){
     .gta-ctl{grid-template-columns:1fr;gap:3px;}
+    .gta-paytable{padding:0 6px;gap:1px;}
+  }
+  @media (hover:none){
+    .gta-hints .gta-key{display:none;}
   }
   `;
   document.head.appendChild(s);
@@ -280,15 +311,26 @@ export class SettingsMenu {
     const title = document.createElement("div");
     title.className = "gta-title";
     title.textContent = "Heat Chase";
-    head.appendChild(title);
+    // Always-visible close control: phones and tablets have no Esc key.
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "gta-close";
+    closeBtn.setAttribute("aria-label", "Close game information");
+    closeBtn.innerHTML = '<span>Close</span><b aria-hidden="true">✕</b>';
+    closeBtn.addEventListener("click", () => {
+      this.hooks.playClick?.();
+      this.close();
+    });
+    head.append(title, closeBtn);
     overlay.appendChild(head);
 
     const tabs = document.createElement("div");
     tabs.className = "gta-tabs";
+    const strings = this.hooks.getUiStrings();
     for (const { key, label } of TABS) {
       const t = document.createElement("div");
       t.className = "gta-tab";
-      t.textContent = label;
+      t.textContent = label(strings);
       t.addEventListener("click", () => {
         this.hooks.playClick?.();
         this.switchTab(key);
@@ -387,21 +429,25 @@ export class SettingsMenu {
     }
 
     // Selection + description box only exist on the interactive GAME tab.
+    // The Tab / Back hints are buttons too, so touch players can use them.
+    const tail =
+      `<span class="gta-hint-btn" data-hint="tab"><span class="gta-key">Q / E</span>Next Tab</span>` +
+      `<span class="gta-hint-btn" data-hint="back"><span class="gta-key">Esc</span>Back</span>`;
     if (this.tab === "game") {
       this.descEl.style.display = "";
       this.hintsEl.innerHTML =
         `<span><span class="gta-key">◄ ►</span>Change</span>` +
-        `<span><span class="gta-key">⏎</span>Select</span>` +
-        `<span><span class="gta-key">Q / E</span>Tab</span>` +
-        `<span><span class="gta-key">Esc</span>Back</span>`;
+        `<span><span class="gta-key">⏎</span>Select</span>` + tail;
       this.updateSelection();
     } else {
       this.descEl.style.display = "none";
-      this.hintsEl.innerHTML =
-        `<span><span class="gta-key">▲ ▼</span>Scroll</span>` +
-        `<span><span class="gta-key">Q / E</span>Tab</span>` +
-        `<span><span class="gta-key">Esc</span>Back</span>`;
+      this.hintsEl.innerHTML = `<span><span class="gta-key">▲ ▼</span>Scroll</span>` + tail;
     }
+    this.hintsEl.querySelector('[data-hint="tab"]')?.addEventListener("click", () => this.stepTab(1));
+    this.hintsEl.querySelector('[data-hint="back"]')?.addEventListener("click", () => {
+      this.hooks.playClick?.();
+      this.close();
+    });
 
     // Retrigger the slide-in so switching tabs feels like GTA's page flip.
     this.scrollEl.classList.remove("anim");
@@ -503,9 +549,9 @@ export class SettingsMenu {
       { key: "ante", name: "Ante Mode", desc: "Plays at 1.5x your selected amount. Wilds and Armored Trucks appear more often, so The Getaway triggers more frequently." },
       { key: "getaway", name: "The Getaway", desc: "Starts The Getaway Hold & Spin immediately. Gold bar values use an increased value table." },
       { key: "super_getaway", name: "Super Getaway", desc: "Starts The Getaway immediately with the highest gold bar value table." },
-      { key: "base_tier1", name: "Head-Start I", desc: "Base game variant reached through the free Collection: The Getaway appears more often. Same cost as the base game." },
-      { key: "base_tier2", name: "Head-Start II", desc: "Second Collection level: The Getaway appears even more often. Same cost as the base game." },
-      { key: "base_tier3", name: "Head-Start III", desc: "Highest Collection level with the most frequent Getaway. Same cost as the base game." },
+      { key: "base_tier1", name: "Head-Start I", desc: "Base game variant reached through the free Collection: The Getaway appears more often. Same play amount as the base game." },
+      { key: "base_tier2", name: "Head-Start II", desc: "Second Collection level: The Getaway appears even more often. Same play amount as the base game." },
+      { key: "base_tier3", name: "Head-Start III", desc: "Highest Collection level with the most frequent Getaway. Same play amount as the base game." },
     ];
     for (const card of modeCards) {
       const rgsMode = modes[card.key];
@@ -519,7 +565,7 @@ export class SettingsMenu {
       name.textContent = card.name;
       const stat = document.createElement("span");
       stat.className = "gta-stat";
-      stat.textContent = `${t.costWord}: ${Number(mult.toFixed(2))}x ${t.betWord} · RTP 96.00% · MAX WIN 5,000x`;
+      stat.textContent = `${t.costWord}: ${formatMultiplier(mult)}x ${t.betWord} · RTP 96.00% · MAX WIN 5,000x`;
       row.append(name, stat);
       block.appendChild(row);
       block.appendChild(this.bodyText(card.desc));
@@ -538,58 +584,121 @@ export class SettingsMenu {
   // ────────────────────────── PAYTABLE tab ──────────────────────────
 
   private renderPaytableTab(parent: HTMLElement): void {
-    const betWord = this.hooks.getUiStrings().betWord;
+    const t = this.hooks.getUiStrings();
+    const social = this.hooks.isSocial();
+    const unit = t.betWord.toLowerCase();
 
-    parent.appendChild(this.sep("Symbol Payouts"));
+    parent.appendChild(this.sep(t.payoutsHeading));
     parent.appendChild(
       this.bodyText(
-        `Symbols pay in CLUSTERS of 5 or more matching symbols connected horizontally or vertically. Values below are multiples of your total ${betWord.toLowerCase()} and show the cluster's base pay BEFORE the cascade multiplier is applied.`,
+        `A cluster is ${MIN_CLUSTER} or more matching symbols connected horizontally or vertically. ` +
+          `The table shows what one cluster wins for each cluster size, as a multiple of your total ${unit}, ` +
+          "BEFORE the cascade multiplier. Wilds join any cluster and count toward its size; a cluster needs at least one of its own symbol.",
       ),
     );
-    const head = document.createElement("div");
-    head.className = "gta-payhead";
-    const spacer = document.createElement("span");
-    spacer.style.textAlign = "left";
-    spacer.textContent = "Symbol";
-    head.appendChild(spacer);
-    for (const size of SHOWN_SIZES) {
-      const c = document.createElement("span");
-      c.textContent = size === 20 ? "20" : `${size}+`;
-      head.appendChild(c);
-    }
-    parent.appendChild(head);
+    parent.appendChild(this.paytableGrid(social));
 
-    for (const group of SYMBOL_GROUPS) {
-      const tier = document.createElement("div");
-      tier.className = "gta-tier";
-      tier.textContent = group.title;
-      tier.style.color = group.color;
-      parent.appendChild(tier);
-      for (const symId of group.symbols) {
-        parent.appendChild(this.symbolRow(symId));
-      }
-    }
+    parent.appendChild(this.sep("Winning Shapes"));
+    parent.appendChild(this.shapesDiagram());
 
-    parent.appendChild(this.sep("Cluster Size Factor"));
-    parent.appendChild(
-      this.bodyText(
-        "The symbol value scales with the size of the cluster: " +
-          "5: ×0.4 · 6: ×0.7 · 7: ×1 · 8: ×1.4 · 9: ×1.9 · 10: ×2.5 · 11: ×3.2 · 12: ×4 · " +
-          "13: ×5 · 14: ×6.2 · 15: ×7.6 · 16: ×9.2 · 17: ×11 · 18: ×13 · 19: ×15.5 · 20: ×18.",
-      ),
-    );
     parent.appendChild(this.sep("How A Win Is Calculated"));
     parent.appendChild(
       this.bodyText(
-        `CLUSTER WIN = symbol value × size factor × cascade multiplier. Example: a 12-symbol Cash cluster on the 3rd cascade pays 0.8 × 4 × 4 = 12.8x your ${betWord.toLowerCase()}.`,
+        `CLUSTER WIN = table value × cascade multiplier × your total ${unit}. ` +
+          `The cascade multiplier for each tumble of a spin is ${CASCADE_LADDER.map((m, i) => `${ordinal(i + 1)} ×${m}`).join(" · ")} ` +
+          "(and ×80 for every later tumble). The spin's total win is the sum of all its cluster wins plus any Getaway win.",
       ),
     );
+    const cashName = symbolLabel("CASH", social);
+    const example = clusterPay("CASH", 12);
+    parent.appendChild(
+      this.bodyText(
+        `Example: a 12-symbol ${cashName} cluster on the 3rd tumble wins ${formatMultiplier(example)} × 4 = ` +
+          `${formatMultiplier(example * 4)}x your ${unit}. At a 1.00 ${unit} that is ${(example * 4).toFixed(2)}; ` +
+          `at a 0.01 ${unit} it is ${formatMultiplier(example * 4 * 0.01)}.`,
+      ),
+    );
+    parent.appendChild(
+      this.bodyText(
+        `Every round's total win is capped at ${MAX_WIN_MULTIPLIER.toLocaleString("en-US")}x the base ${unit}; ` +
+          "a round that reaches the cap ends there.",
+      ),
+    );
+  }
+
+  /** Symbol columns × cluster-size rows, every value straight from the math PAYTABLE. */
+  private paytableGrid(social: boolean): HTMLDivElement {
+    const grid = document.createElement("div");
+    grid.className = "gta-paytable";
+    const corner = document.createElement("div");
+    corner.className = "corner";
+    corner.textContent = "Size";
+    grid.appendChild(corner);
+    for (const symId of PAY_SYMBOLS) {
+      const head = document.createElement("div");
+      head.className = "ph";
+      const img = document.createElement("img");
+      img.src = symbolImgSrc(symId);
+      img.alt = symbolLabel(symId, social);
+      img.draggable = false;
+      const name = document.createElement("span");
+      name.textContent = symbolLabel(symId, social);
+      name.style.color = num2hex(SYMBOL_ASSETS[symId].text);
+      head.append(img, name);
+      grid.appendChild(head);
+    }
+    for (let size = MIN_CLUSTER; size <= MAX_CLUSTER; size++) {
+      const sz = document.createElement("div");
+      sz.className = "sz";
+      sz.textContent = String(size);
+      grid.appendChild(sz);
+      for (const symId of PAY_SYMBOLS) {
+        const cell = document.createElement("div");
+        cell.textContent = formatMultiplier(clusterPay(symId, size));
+        cell.style.color = TIER_COLOR[SYMBOLS[symId].tier] ?? "#fff";
+        grid.appendChild(cell);
+      }
+    }
+    return grid;
+  }
+
+  /** Visual rule: side-by-side connections win, corner-only touches do not. */
+  private shapesDiagram(): HTMLDivElement {
+    const wrap = document.createElement("div");
+    wrap.className = "gta-shapes";
+    const shape = (ok: boolean, cells: number[], caption: string, sub: string): HTMLDivElement => {
+      const box = document.createElement("div");
+      box.className = `gta-shape ${ok ? "ok" : "bad"}`;
+      const cap = document.createElement("div");
+      cap.className = "cap";
+      cap.textContent = caption;
+      const grid = document.createElement("div");
+      grid.className = "grid";
+      grid.setAttribute("aria-hidden", "true");
+      for (let i = 0; i < 20; i++) {
+        const cell = document.createElement("i");
+        if (cells.includes(i)) cell.className = "on";
+        grid.appendChild(cell);
+      }
+      const text = document.createElement("div");
+      text.className = "sub";
+      text.textContent = sub;
+      box.append(cap, grid, text);
+      return box;
+    };
+    wrap.append(
+      shape(true, WIN_SHAPE, "✓ Win", "5 matching symbols, each touching the next by a side (horizontally or vertically)."),
+      shape(false, NO_WIN_SHAPE, "✕ No win", "5 matching symbols that only touch at the corners (diagonally) are not connected."),
+    );
+    return wrap;
   }
 
   // ────────────────────────── FEATURES tab ──────────────────────────
 
   private renderFeaturesTab(parent: HTMLElement): void {
-    const betWord = this.hooks.getUiStrings().betWord;
+    const social = this.hooks.isSocial();
+    const unit = this.hooks.getUiStrings().betWord.toLowerCase();
+    const cashName = symbolLabel("CASH", social);
 
     parent.appendChild(this.sep("Cascade Multiplier"));
     parent.appendChild(
@@ -602,8 +711,8 @@ export class SettingsMenu {
     parent.appendChild(
       this.bodyText(
         "The five stars above the reels are the live Wanted Level: each winning tumble in a spin adds one star. " +
-          "2★ BUST THE STASH — all Brass Knuckles and Knives on the board transform into Cash. " +
-          "3★ and 4★ GETAWAY DRIVER — a 2x2 mega wild car is placed on the board. " +
+          `2★ BUST THE STASH — all Brass Knuckles and Knives on the board transform into ${cashName}. ` +
+          "3★ and 4★ GETAWAY DRIVER — a 2x2 mega wild is placed on the board. " +
           "5★ — THE GETAWAY bonus triggers on that same spin. The stars reset at the start of every spin. " +
           "Gold stars shown before a spin are Head-Start stars from the Collection — they pre-fill the meter so fewer tumbles are needed.",
       ),
@@ -611,40 +720,39 @@ export class SettingsMenu {
 
     parent.appendChild(this.sep("The Getaway — Hold & Spin"));
     parent.appendChild(
-      this.specialRow("SAFE", "Gold Bar", `Sticky value symbol worth 1x–750x your ${betWord.toLowerCase()} (higher value tables in feature plays).`),
-    );
-    parent.appendChild(
-      this.specialRow("MASTER_KEY", "Dynamite", "Doubles the value of every adjacent Gold Bar, then clears its cell."),
-    );
-    parent.appendChild(
-      this.bodyText(
-        GETAWAY_RULES,
+      this.specialRow(
+        "SAFE",
+        "Gold Bar",
+        `Sticky value symbol. Every value it can land with, as a multiple of your ${unit}: ` +
+          `base game, Ante and Head-Start: ${listX(GOLD_BAR_VALUES.base)} · ` +
+          `The Getaway feature: ${listX(GOLD_BAR_VALUES.getaway)} · ` +
+          `Super Getaway feature: ${listX(GOLD_BAR_VALUES.super_getaway)}.`,
       ),
     );
+    parent.appendChild(
+      this.specialRow("MASTER_KEY", "Dynamite", "Doubles the value of every Gold Bar beside it (above, below, left, right), then clears its cell."),
+    );
+    parent.appendChild(this.bodyText(GETAWAY_RULES));
 
     parent.appendChild(this.sep("Special Symbols"));
     parent.appendChild(
-      this.specialRow("CAR_WILD", "Body Armor", "WILD — substitutes for every paying symbol (it does not trigger the bonus). At 3★/4★ Wanted Level it lands as a 2x2 mega wild."),
+      this.specialRow("CAR_WILD", "Body Armor", "WILD — substitutes for every symbol in the table (it does not trigger the bonus). At 3★/4★ Wanted Level it lands as a 2x2 mega wild."),
     );
     parent.appendChild(
-      this.specialRow("WILD", "Beach Girl Wild", "WILD — substitutes for every paying symbol AND reveals one Collection gallery piece each time it lands."),
+      this.specialRow("WILD", "Beach Girl Wild", "WILD — substitutes for every symbol in the table AND reveals one Collection gallery piece each time it lands."),
     );
     parent.appendChild(
-      this.specialRow("PHONE_SCATTER", "Armored Truck", "SCATTER — pays no prize of its own; 3 or more on one paid spin trigger The Getaway."),
+      this.specialRow("PHONE_SCATTER", "Armored Truck", "SCATTER — has no win value of its own; 3 or more on one spin trigger The Getaway."),
     );
     parent.appendChild(
       this.bodyText(
-        "Armored Trucks award no coin prize — their only function is triggering the bonus. " +
-          "Feature plays enter The Getaway directly: the entry board is presentation only and never awards a scatter prize of its own.",
+        "Armored Trucks only trigger the bonus. " +
+          "Feature plays enter The Getaway directly: their entry board is presentation only and never adds a win of its own.",
       ),
     );
 
     parent.appendChild(this.sep("Collection & Head-Start"));
-    parent.appendChild(
-      this.bodyText(
-        COLLECTION_RULES,
-      ),
-    );
+    parent.appendChild(this.bodyText(COLLECTION_RULES));
   }
 
   // ────────────────────────── CONTROLS tab ──────────────────────────
@@ -652,16 +760,18 @@ export class SettingsMenu {
   private renderControlsTab(parent: HTMLElement): void {
     const t = this.hooks.getUiStrings();
     const social = this.hooks.isSocial();
+    const amount = t.betLabel.toLowerCase();
 
     parent.appendChild(this.sep("Controls"));
     const controls: Array<[string, string]> = [
-      ["SPIN", `Plays one round at the shown ${t.betLabel.toLowerCase()} amount. On desktop the SPACEBAR also spins (only while no window is open). During autoplay this button shows STOP and halts the run.`],
-      ["+ / −", `Raise or lower the ${t.betLabel.toLowerCase()} amount through the levels provided by the operator. Locked while a round or autoplay is running.`],
+      ["SPIN", `Plays one round at the shown ${amount} amount. On desktop the SPACEBAR also spins (only while no window is open). During autoplay this button shows STOP and halts the run.`],
+      ["+ / −", `Raise or lower the ${amount} amount through the levels provided by the operator. Locked while a round or autoplay is running.`],
       ["☰ MENU", "Opens this menu on the GAME tab: spin speed (Normal / Turbo / Extra Turbo) and Autoplay. Autoplay needs a spin count selection plus a separate Start press, and stops automatically if the balance cannot cover the next spin."],
       ["📻 RADIO", "Music and sound: pick a station or OFF to mute all game audio."],
-      ["i INFO", "Opens this menu on the PAYTABLE tab with all game information."],
-      [social ? "GETAWAY / SUPER" : "BUY GETAWAY / SUPER", `Feature plays: open a confirmation window showing the full price (100x / 500x your ${t.betLabel.toLowerCase()}) before anything is played.`],
-      ["ANTE", `Toggles Ante Mode (1.5x ${t.betLabel.toLowerCase()}) with more Wilds and Armored Trucks.`],
+      ["i INFO", `Opens this menu on the ${t.paytableTab.toUpperCase()} tab with all game information.`],
+      ["CLOSE ✕", "Closes this menu (or press Esc on a keyboard)."],
+      [social ? "GETAWAY / SUPER" : "BUY GETAWAY / SUPER", `Feature plays: open a confirmation window showing the full price (100x / 500x your ${amount}) before anything is played.`],
+      ["ANTE", `Toggles Ante Mode (1.5x ${amount}) with more Wilds and Armored Trucks.`],
       ["GALLERY CARD", "Shows your Collection progress. Holding SPACE during a spin gives momentary turbo."],
     ];
     for (const [name, txt] of controls) {
@@ -687,42 +797,13 @@ export class SettingsMenu {
     parent.appendChild(
       this.bodyText(
         social
-          ? "Heat Chase: Grand Escape — cluster-pays game on a 5x4 grid with cascading wins, a Wanted Level meter and The Getaway Hold & Spin bonus. Every mode returns an expected 96.00% over many plays; wins are capped at 5,000x the base play amount."
+          ? "Heat Chase: Grand Escape — cluster game on a 5x4 grid with cascading wins, a Wanted Level meter and The Getaway Hold & Spin bonus. Every mode returns an expected 96.00% over many plays; wins are capped at 5,000x the base play amount."
           : "Heat Chase: Grand Escape — cluster-pays slot on a 5x4 grid with cascading wins, a Wanted Level meter and The Getaway Hold & Spin bonus. Every mode returns an expected 96.00% RTP over many plays; wins are capped at 5,000x the base bet.",
       ),
     );
 
     parent.appendChild(this.sep("Disclaimer"));
     parent.appendChild(this.bodyText(DISCLAIMER));
-  }
-
-  /** Paytable row: symbol image + name + exact pay columns (engine values). */
-  private symbolRow(symId: SymbolId): HTMLDivElement {
-    const def = SYMBOLS[symId];
-    const row = document.createElement("div");
-    row.className = "gta-symrow";
-
-    const cell = document.createElement("div");
-    cell.className = "gta-symcell";
-    const img = document.createElement("img");
-    img.src = symbolImgSrc(symId);
-    img.alt = def.label;
-    img.draggable = false;
-    const name = document.createElement("span");
-    name.textContent = def.label.toUpperCase();
-    name.style.color = num2hex(SYMBOL_ASSETS[symId].text);
-    cell.append(img, name);
-    row.appendChild(cell);
-
-    const color = TIER_COLOR[def.tier] ?? "#fff";
-    for (const size of SHOWN_SIZES) {
-      const pay = document.createElement("span");
-      pay.className = "gta-pay";
-      pay.textContent = fmtX(payAt(symId, size));
-      pay.style.color = color;
-      row.appendChild(pay);
-    }
-    return row;
   }
 
   /** Special-symbol row: image + name + description. */

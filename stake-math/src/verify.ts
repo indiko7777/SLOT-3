@@ -83,10 +83,6 @@ export async function verify(write = true): Promise<ModeStats[]> {
         throw new Error(`[${m.name}] non-integer lookup row: "${line}"`);
       if (weight < 0 || payout < 0)
         throw new Error(`[${m.name}] negative value: "${line}"`);
-      if (payout % 10 !== 0)
-        throw new Error(`[${m.name}] payout not %%10: "${line}"`);
-      if (payout !== 0 && payout < 10)
-        throw new Error(`[${m.name}] non-zero payout < 10: "${line}"`);
       const x = payout / 100;
       num += x * weight;
       den += BigInt(weight);

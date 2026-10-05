@@ -2,9 +2,9 @@ import { Application } from "pixi.js";
 import { loadUiFonts } from "./typography";
 import { EventAudioBus } from "./audio";
 import { SoundToggle } from "./audio/SoundToggle";
-import { MAX_WIN_MULTIPLIER, displayCurrency, uiStrings, type BonusCell, type Board, type GameEvent, type Position, type RoundRecord, type SymbolId } from "./domain";
+import { MAX_WIN_MULTIPLIER, displayCurrency, isSocialCurrency, uiStrings, type BonusCell, type Board, type GameEvent, type Position, type RoundRecord, type SymbolId } from "./domain";
 import { isModalOpen, showChoiceModal, showToast } from "./modals";
-import { formatWin } from "./rgs/client";
+import { formatAmount, formatMultiplier } from "./format";
 import { hideLoader, showLoader, updateLoader } from "./loader";
 import { showIntro } from "./intro";
 import { applyEvent, INITIAL_SNAPSHOT, type PlaybackSnapshot } from "./playback";
@@ -132,15 +132,15 @@ let spinOrganic = false; // base/ante/tier spin (points accrue) vs a bought bonu
 
 const currentBet = (): number => betLevels[betIndex] ?? 0;
 
-/** Stake.US social casino — flips every restricted word in the UI. Replay
- *  launches carry no authenticate/jurisdiction, so the social currencies
- *  (XGC/XSC) imply it there — the replay window must stay restricted-word
- *  free too. */
+/** Social casino (stake.us) — flips every restricted word in the UI. Replay
+ *  launches carry no authenticate/jurisdiction, so `social=true` or a social
+ *  currency (XGC/XSC/XEC) implies it there — the replay window must stay
+ *  restricted-word free too. */
 const isSocial = (): boolean =>
   session.social ||
   Boolean(jurisdiction?.socialCasino) ||
-  (isReplayActive && (currency === "XGC" || currency === "XSC"));
-/** Currency code for DISPLAY (XGC→GC, XSC→SC); wire calls keep the raw code. */
+  (isReplayActive && isSocialCurrency(currency));
+/** Currency code for DISPLAY (XGC→GC, XSC/XEC→SC); wire calls keep the raw code. */
 const displayCur = (): string => displayCurrency(currency);
 const ui = () => uiStrings(isSocial());
 
@@ -168,7 +168,6 @@ function anyOverlayOpen(): boolean {
     isModalOpen() ||
     (settingsMenu?.isOpen() ?? false) ||
     (radioWheel?.isOpen() ?? false) ||
-    (scene?.isPaytableOpen() ?? false) ||
     (scene?.isGalleryOpen() ?? false)
   );
 }
@@ -288,7 +287,7 @@ async function boot(): Promise<void> {
       currency = session.currencyHint || "USD";
       balance = 0; // Balance hidden in replay
       jurisdiction = null;
-      betLevels = [session.replayAmount > 0 ? session.replayAmount : 0.01];
+      betLevels = [session.replayAmount > 0 ? session.replayAmount : 1];
       betIndex = 0;
 
       activeModeKey = session.replayMode || "base";
@@ -348,13 +347,22 @@ async function boot(): Promise<void> {
         };
         activeModeKey = auth.round.mode || "base";
         anteEnabled = activeModeKey === "ante";
-        // The interrupted round dictates the bet: round.amount is the total
-        // debit, so divide the mode's cost multiplier back out to recover the
-        // selected bet level (e.g. a 100x feature at 2.00 → amount 200.00).
+        // The interrupted round dictates the bet. round.amount is the BASE bet
+        // the play request sent (the RGS debits it × the mode's cost, and the
+        // round pays amount × payoutMultiplier), so it maps straight onto a bet
+        // level. Older RGS builds reported the total debit instead, so a value
+        // that only matches once the cost multiplier is divided out is accepted
+        // too; anything else is added as the session's exact bet.
         const costMult = betModes[activeModeKey]?.costMultiplier || 1;
-        const activeBet = toDisplay(auth.round.amount) / costMult;
-        if (activeBet > 0) {
-          betIndex = Math.max(0, indexOfClosest(betLevels, activeBet));
+        const roundAmount = toDisplay(auth.round.amount);
+        if (roundAmount > 0) {
+          let idx = betLevels.findIndex((level) => sameAmount(level, roundAmount));
+          if (idx < 0 && costMult !== 1) idx = betLevels.findIndex((level) => sameAmount(level, roundAmount / costMult));
+          if (idx < 0) {
+            betLevels = [...betLevels, roundAmount].sort((a, b) => a - b);
+            idx = betLevels.indexOf(roundAmount);
+          }
+          betIndex = idx;
         }
       }
     }
@@ -696,7 +704,7 @@ async function boot(): Promise<void> {
       disabledAutoplay: isReplayActive || Boolean(jurisdiction?.disabledAutoplay)
     }),
     playClick: () => { if (!muted) audioBus.playUI("click", false); },
-    // GAME INFO tab content sources (same data the Pixi paytable used).
+    // GAME INFO tab content sources.
     getUiStrings: () => ui(),
     isSocial: () => isSocial(),
     getBetModes: () => betModes
@@ -771,10 +779,10 @@ async function resumeInterruptedRound(record: RoundRecord): Promise<void> {
     {
       title: "Unfinished Round",
       lines: [
-        { label: s.baseBetLabel, value: `${formatWin(betAmount)} ${cur}` },
-        { label: s.finalMultLabel, value: `${formatWin(record.payoutMultiplier)}x` }
+        { label: s.baseBetLabel, value: `${formatAmount(betAmount)} ${cur}` },
+        { label: s.finalMultLabel, value: `${formatMultiplier(record.payoutMultiplier)}x` }
       ],
-      text: "Your last round was interrupted. Watch it play out, or skip straight to the result — the outcome is already decided and will be credited either way.",
+      text: "Your last round was interrupted. Watch it play out, or skip straight to the result — the outcome is already decided and is added to your balance either way.",
       buttons: [
         { key: "watch", label: "Watch Round", primary: true },
         { key: "skip", label: "Skip to Result" }
@@ -809,8 +817,8 @@ async function resumeInterruptedRound(record: RoundRecord): Promise<void> {
         {
           title: "Round Result",
           lines: [
-            { label: "Total Win", value: `${formatWin(total)} ${cur}` },
-            { label: s.finalMultLabel, value: `${formatWin(record.payoutMultiplier)}x` }
+            { label: s.totalWinLabel, value: `${formatAmount(total)} ${cur}` },
+            { label: s.finalMultLabel, value: `${formatMultiplier(record.payoutMultiplier)}x` }
           ],
           buttons: [{ key: "ok", label: "Continue", primary: true }]
         },
@@ -825,9 +833,11 @@ async function resumeInterruptedRound(record: RoundRecord): Promise<void> {
 }
 
 /**
- * Replay mode: intro popup states the play cost (base amount, the feature's
- * cost multiplier and the resulting total) before anything runs; the end
- * popup shows the final result and offers to replay the same event again.
+ * Replay mode: the intro popup states everything about the round up front —
+ * mode, base bet, the feature's cost multiplier, the resulting total cost,
+ * AND the round's total win and payout multiplier (known from the replay
+ * response) — before anything runs. The end popup repeats the result and
+ * offers to replay the same event again.
  */
 async function runReplayFlow(record: RoundRecord): Promise<void> {
   const s = ui();
@@ -835,7 +845,12 @@ async function runReplayFlow(record: RoundRecord): Promise<void> {
   const betAmount = currentBet();
   const costMult = betModes[activeModeKey]?.costMultiplier ?? 1;
   const totalCost = betAmount * costMult;
+  const totalWin = record.payoutMultiplier * betAmount;
   const modeLabel = activeModeKey.replaceAll("_", " ").toUpperCase();
+  const resultLines = [
+    { label: s.totalWinLabel, value: `${formatAmount(totalWin)} ${cur}` },
+    { label: s.finalMultLabel, value: `${formatMultiplier(record.payoutMultiplier)}x` }
+  ];
 
   for (;;) {
     await showChoiceModal(
@@ -843,9 +858,10 @@ async function runReplayFlow(record: RoundRecord): Promise<void> {
         title: "Replay",
         lines: [
           { label: "Mode", value: modeLabel },
-          { label: s.baseBetLabel, value: `${formatWin(betAmount)} ${cur}` },
-          { label: s.costMultLabel, value: `${formatWin(costMult)}x` },
-          { label: s.totalCostLabel, value: `${formatWin(totalCost)} ${cur}` }
+          { label: s.baseBetLabel, value: `${formatAmount(betAmount)} ${cur}` },
+          { label: s.costMultLabel, value: `${formatMultiplier(costMult)}x` },
+          { label: s.totalCostLabel, value: `${formatAmount(totalCost)} ${cur}` },
+          ...resultLines
         ],
         buttons: [{ key: "start", label: "Start Replay", primary: true }]
       },
@@ -856,13 +872,12 @@ async function runReplayFlow(record: RoundRecord): Promise<void> {
     scene.resetRound(snapshot);
     await replayRound(record, false);
 
-    const total = record.payoutMultiplier * betAmount;
     const again = await showChoiceModal(
       {
         title: "Replay Finished",
         lines: [
-          { label: "Total Win", value: `${formatWin(total)} ${cur}` },
-          { label: s.finalMultLabel, value: `${formatWin(record.payoutMultiplier)}x` }
+          { label: s.totalCostLabel, value: `${formatAmount(totalCost)} ${cur}` },
+          ...resultLines
         ],
         buttons: [
           { key: "again", label: "Replay Event", primary: true },
@@ -1104,6 +1119,11 @@ async function replayRound(record: RoundRecord, active: boolean): Promise<void> 
 
 function turboDisabled(): boolean {
   return Boolean(jurisdiction?.disabledTurbo || jurisdiction?.disabledSpacebar);
+}
+
+/** Money equality on the RGS micro-unit grid (6 decimals). */
+function sameAmount(a: number, b: number): boolean {
+  return Math.round(a * 1_000_000) === Math.round(b * 1_000_000);
 }
 
 function indexOfClosest(levels: number[], target: number): number {

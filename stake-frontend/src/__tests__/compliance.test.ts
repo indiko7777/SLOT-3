@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { displayCurrency, uiStrings } from "../domain";
-import { formatBalance, formatWin, RgsClient } from "../rgs/client";
-import { parseLaunch } from "../rgs/session";
+import { displayCurrency, isSocialCurrency, SOCIAL_RESTRICTED, symbolLabel, uiStrings } from "../domain";
+import { formatAmount, formatBalance, formatMultiplier } from "../format";
+import { RgsClient } from "../rgs/client";
+import { parseLaunch, parseReplayAmount } from "../rgs/session";
 
 describe("public replay requests", () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
@@ -34,35 +35,57 @@ describe("public replay requests", () => {
 });
 
 describe("win/balance display precision", () => {
-  it("balance is always exactly 2 decimals", () => {
+  it("balance is the only value rounded — always exactly 2 decimals", () => {
     expect(formatBalance(1000)).toBe("1000.00");
     expect(formatBalance(0.009)).toBe("0.01");
   });
 
-  it("wins show up to 4 decimals, TRUNCATED not rounded", () => {
-    expect(formatWin(0.009)).toBe("0.009");
-    expect(formatWin(0.0024)).toBe("0.0024");
-    expect(formatWin(1234.56789)).toBe("1234.5678"); // truncated
-    expect(formatWin(5)).toBe("5");
-    expect(formatWin(0.99999)).toBe("0.9999"); // never rounds up
+  it("wins, bets and costs are shown exactly — never truncated or rounded", () => {
+    expect(formatAmount(0.05 * 0.01)).toBe("0.0005"); // 0.05x on a 0.01 bet
+    expect(formatAmount(0.11 * 0.01)).toBe("0.0011");
+    expect(formatAmount(0.0024)).toBe("0.0024");
+    expect(formatAmount(1.15 * 0.01)).toBe("0.0115"); // getaway gold bar
+    expect(formatAmount(0.015)).toBe("0.015"); // 1.5x ante cost on 0.01
+    expect(formatAmount(1234.56789)).toBe("1234.56789");
+    expect(formatAmount(5)).toBe("5.00");
+    expect(formatAmount(0.1 + 0.2)).toBe("0.30"); // float noise is not precision
+    expect(formatAmount(1250.5, true)).toBe("1,250.50");
+  });
+
+  it("multipliers show every decimal they have", () => {
+    expect(formatMultiplier(0.05)).toBe("0.05");
+    expect(formatMultiplier(37.8)).toBe("37.8");
+    expect(formatMultiplier(100)).toBe("100");
+    expect(formatMultiplier(862.5)).toBe("862.5");
   });
 });
 
 describe("social currency display", () => {
-  it("maps XGC/XSC to GC/SC and passes other codes through", () => {
+  it("maps XGC to GC and XSC/XEC to SC; passes other codes through", () => {
     expect(displayCurrency("XGC")).toBe("GC");
     expect(displayCurrency("XSC")).toBe("SC");
+    expect(displayCurrency("XEC")).toBe("SC");
     expect(displayCurrency("USD")).toBe("USD");
     expect(displayCurrency("JPY")).toBe("JPY");
+    expect(isSocialCurrency("XEC")).toBe(true);
+    expect(isSocialCurrency("EUR")).toBe(false);
   });
 });
 
 describe("social terminology", () => {
-  it("social strings never contain bet/buy", () => {
+  it("social strings never contain an Engine restricted term", () => {
     const social = uiStrings(true);
     for (const [key, value] of Object.entries(social)) {
-      expect(value, `social string ${key}`).not.toMatch(/\b(bet|buy)/i);
+      expect(value, `social string ${key}`).not.toMatch(SOCIAL_RESTRICTED);
     }
+    expect(symbolLabel("CASH", true)).not.toMatch(SOCIAL_RESTRICTED);
+  });
+
+  it("the restricted-term matcher catches Engine's list", () => {
+    for (const bad of ["Total Cost", "Payout Multiplier", "Paytable", "pays 2x", "Cash", "Buy feature", "stake", "credited"])
+      expect(bad).toMatch(SOCIAL_RESTRICTED);
+    for (const ok of ["Play Amount", "Final Multiplier", "Total Win", "Loot", "Paying attention"])
+      expect(ok).not.toMatch(SOCIAL_RESTRICTED);
   });
 
   it("stake.us translation requirements", () => {
@@ -105,7 +128,7 @@ describe("launch parsing", () => {
 
   it("parses replay parameters including mode, amount, currency and language", () => {
     const s = parse(
-      "replay=true&event=52615&mode=super_getaway&amount=2.5&currency=EUR&lang=de&rgs_url=rgs.example.com&sessionID=r1"
+      "replay=true&event=52615&mode=super_getaway&amount=2500000&currency=EUR&lang=de&rgs_url=rgs.example.com&sessionID=r1"
     );
     expect(s.isReplayMode).toBe(true);
     expect(s.replayEvent).toBe("52615");
@@ -113,6 +136,14 @@ describe("launch parsing", () => {
     expect(s.replayAmount).toBe(2.5);
     expect(s.currencyHint).toBe("EUR");
     expect(s.lang).toBe("de");
+  });
+
+  it("reads the replay amount in RGS units (6 implied decimals)", () => {
+    expect(parseReplayAmount("10000")).toBe(0.01); // Engine replay tool, 0.01 min bet
+    expect(parseReplayAmount("1000000")).toBe(1);
+    expect(parseReplayAmount("2.5")).toBe(2.5); // already display units
+    expect(parseReplayAmount(null)).toBe(0);
+    expect(parseReplayAmount("abc")).toBe(0);
   });
 
   it("invalid/unknown language parameters never break parsing", () => {

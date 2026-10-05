@@ -15,8 +15,16 @@ export const TARGET_RTP = 0.96;
 /** Max allowed |RTP - 0.96| and max cross-mode spread, in RTP points. */
 export const RTP_TOLERANCE = 0.005;
 export const MAX_WIN_X = 5000;
-/** Stake books store payout as integer hundredths and require payout % 10 == 0. */
-export const PAYOUT_QUANTUM_X = 0.1;
+/**
+ * Books store payoutMultiplier as integer hundredths (Engine math-file format;
+ * the official math SDK rounds the final win to 2 decimals). Every pay value in
+ * this model — PAYTABLE entries, the integer cascade ladder, gold-bar values —
+ * sits on this 0.01x grid, so a round's total is the EXACT sum of its event
+ * wins and the client can show the paytable value × multiplier with no
+ * rescaling. (An earlier 0.1x grid forced every cluster win to be rescaled,
+ * which Engine review flagged: payouts no longer matched the game info.)
+ */
+export const PAYOUT_QUANTUM_X = 0.01;
 
 export type Criteria = "zero" | "basegame" | "basebig" | "freegame" | "wincap";
 
@@ -199,39 +207,37 @@ export const MODES: Record<BetMode, ModeConfig> = {
   base_tier3: baseTier(3, { basegame: 0.08, basebig: 0.1, freegame: 0.76, wincap: 0.06 })
 };
 
-/** Cluster pays: payout (x of base bet) = clusterPay[symbol] * sizeFactor(size). */
-export const CLUSTER_PAY: Record<SymbolId, number> = {
-  BRASS: 0.12,
-  KNIFE: 0.15,
-  PISTOL: 0.22,
-  AMMO: 0.28,
-  DUFFEL: 0.36,
-  CASH: 0.8,
-  WILD: 0,
-  DIAMOND: 1.5,
-  BIKE: 2.1,
-  CAR_WILD: 0,
-  PHONE_SCATTER: 0,
-  SAFE: 0,
-  MASTER_KEY: 0,
-  EMPTY: 0
-};
+export const MIN_CLUSTER = 5;
+/** The 5x4 grid holds 20 cells, so 20 is the largest possible cluster. */
+export const MAX_CLUSTER = 20;
 
 /**
- * Size scaling — deliberately FLAT. Cluster size barely matters now; the big
- * win is built by chain LENGTH via the cascade multiplier ladder, not by one
- * fat cluster. A 20-cluster pays ~18x the base (was 185x); the difference is
- * carried by the ladder when chains run long.
+ * THE paytable: what one cluster pays, in x of the base bet, for every cluster
+ * size 5..20 (index = size - 5), BEFORE the cascade multiplier. The game info
+ * prints this exact table, and a cluster win in the books is always
+ * `PAYTABLE[symbol][size - 5] × CASCADE_LADDER rung` — nothing else.
+ *
+ * Every value is on the 0.01x grid (PAYOUT_QUANTUM_X). Size scaling is
+ * deliberately FLAT (a 20-cluster pays ~18x a 7-cluster): the big win is built
+ * by chain LENGTH via the cascade multiplier ladder, not by one fat cluster.
+ * Re-run `npm run generate` after changing it — RTP is re-solved from it.
  */
-export function clusterSizeFactor(size: number): number {
-  if (size < 5) return 0;
-  const table = [
-    /* 5 */ 0.4, /* 6 */ 0.7, /* 7 */ 1.0, /* 8 */ 1.4, /* 9 */ 1.9,
-    /* 10 */ 2.5, /* 11 */ 3.2, /* 12 */ 4.0, /* 13 */ 5.0, /* 14 */ 6.2,
-    /* 15 */ 7.6, /* 16 */ 9.2, /* 17 */ 11, /* 18 */ 13, /* 19 */ 15.5,
-    /* 20 */ 18
-  ];
-  return table[Math.min(size, 20) - 5] ?? 0.4;
+export const PAYTABLE: Partial<Record<SymbolId, readonly number[]>> = {
+  //        5     6     7     8     9     10    11    12    13     14     15     16     17     18     19     20
+  BRASS:   [0.05, 0.08, 0.12, 0.17, 0.23, 0.30, 0.38, 0.48, 0.60,  0.74,  0.91,  1.10,  1.32,  1.56,  1.86,  2.16],
+  KNIFE:   [0.06, 0.11, 0.15, 0.21, 0.29, 0.38, 0.48, 0.60, 0.75,  0.93,  1.14,  1.38,  1.65,  1.95,  2.33,  2.70],
+  PISTOL:  [0.09, 0.15, 0.22, 0.31, 0.42, 0.55, 0.70, 0.88, 1.10,  1.36,  1.67,  2.02,  2.42,  2.86,  3.41,  3.96],
+  AMMO:    [0.11, 0.20, 0.28, 0.39, 0.53, 0.70, 0.90, 1.12, 1.40,  1.74,  2.13,  2.58,  3.08,  3.64,  4.34,  5.04],
+  DUFFEL:  [0.14, 0.25, 0.36, 0.50, 0.68, 0.90, 1.15, 1.44, 1.80,  2.23,  2.74,  3.31,  3.96,  4.68,  5.58,  6.48],
+  CASH:    [0.32, 0.56, 0.80, 1.12, 1.52, 2.00, 2.56, 3.20, 4.00,  4.96,  6.08,  7.36,  8.80, 10.40, 12.40, 14.40],
+  DIAMOND: [0.60, 1.05, 1.50, 2.10, 2.85, 3.75, 4.80, 6.00, 7.50,  9.30, 11.40, 13.80, 16.50, 19.50, 23.25, 27.00],
+  BIKE:    [0.84, 1.47, 2.10, 2.94, 3.99, 5.25, 6.72, 8.40, 10.50, 13.02, 15.96, 19.32, 23.10, 27.30, 32.55, 37.80]
+};
+
+/** Pay of one `size`-cluster of `symbol` (x of base bet, before the ladder). */
+export function clusterPay(symbol: SymbolId, size: number): number {
+  if (size < MIN_CLUSTER) return 0;
+  return PAYTABLE[symbol]?.[Math.min(size, MAX_CLUSTER) - MIN_CLUSTER] ?? 0;
 }
 
 export const PAYABLE_SYMBOLS: SymbolId[] = [
@@ -331,6 +337,16 @@ function safeTable(scale: number): { value: number; weight: number }[] {
   // Fat-tailed gold-bar values: most bars are tiny (1–3x) so a short bonus is a
   // real loss, but a rare big bar (250–750x) can make a single spin explode.
   // This skew is what gives the feature a high-variance, exciting payout curve.
+  // Values are snapped to the 0.01x grid (3 × 1.15 is 3.4499… in floating point).
+  return safeTableRaw(scale).map((s) => ({ value: Math.round(s.value * 100) / 100, weight: s.weight }));
+}
+
+/** Gold-bar values for a mode, exactly as the books use them (game info lists these). */
+export function goldBarValues(mode: BetMode): number[] {
+  return MODES[mode].safeValues.map((s) => s.value);
+}
+
+function safeTableRaw(scale: number): { value: number; weight: number }[] {
   return [
     { value: 1 * scale, weight: 420 },
     { value: 2 * scale, weight: 250 },

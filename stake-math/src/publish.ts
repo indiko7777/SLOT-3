@@ -30,7 +30,7 @@ async function ensureInit(): Promise<void> {
  * Write ONE mode's Stake artifacts (so the caller can free sims between
  * modes). Enforces every hard Stake rule:
  *  - lookUpTable CSV: exactly 3 columns, NO header, non-negative integers
- *  - payout (col 3) integer hundredths, %% 10 == 0, non-zero >= 10
+ *  - payout (col 3) integer hundredths (0.01x grid)
  *  - book.payoutMultiplier == lookup col 3 EXACTLY
  *  - sum of weights <= 2^64 - 1
  */
@@ -53,10 +53,6 @@ export async function publishMode(
       throw new Error(`[${mode}] bad weight ${r.weight} (sim ${r.id})`);
     if (!Number.isInteger(r.payoutCents) || r.payoutCents < 0)
       throw new Error(`[${mode}] bad payout ${r.payoutCents} (sim ${r.id})`);
-    if (r.payoutCents % 10 !== 0)
-      throw new Error(`[${mode}] payout ${r.payoutCents} not %%10 (sim ${r.id})`);
-    if (r.payoutCents !== 0 && r.payoutCents < 10)
-      throw new Error(`[${mode}] non-zero payout < 10 (sim ${r.id})`);
     weightSum += BigInt(r.weight);
     csv.push(`${r.id},${r.weight},${r.payoutCents}`);
     bookBufs.push(

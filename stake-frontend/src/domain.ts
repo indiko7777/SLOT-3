@@ -233,32 +233,45 @@ export const BET_MODES: Record<BetMode, { label: string; priceMultiplier: number
 
 /**
  * ── Math mirror ──────────────────────────────────────────────────────────────
- * The values below are DISPLAY copies of the authoritative math model in
- * stake-math/src/model.ts (CLUSTER_PAY / clusterSizeFactor / CASCADE_LADDER).
- * They exist so the in-game paytable shows EXACTLY what the engine pays.
- * tests/mathMirror.test.ts asserts they stay identical — never edit one side
- * without the other.
+ * DISPLAY copies of the authoritative math model in stake-math/src/model.ts
+ * (PAYTABLE / CASCADE_LADDER / gold-bar tables). They exist so the game info
+ * shows EXACTLY what the engine pays: every cluster win in the books is
+ * `PAYTABLE_X[symbol][size - 5] × cascade multiplier`, with no rescaling.
+ * __tests__/mathMirror.test.ts asserts they stay identical — never edit one
+ * side without the other.
  */
-export const CLUSTER_PAY_X: Partial<Record<SymbolId, number>> = {
-  BRASS: 0.12,
-  KNIFE: 0.15,
-  PISTOL: 0.22,
-  AMMO: 0.28,
-  DUFFEL: 0.36,
-  CASH: 0.8,
-  DIAMOND: 1.5,
-  BIKE: 2.1
+export const MIN_CLUSTER = 5;
+export const MAX_CLUSTER = 20;
+
+/** Pay of one cluster (x of the base bet) per cluster size 5..20, before the cascade multiplier. */
+export const PAYTABLE_X: Partial<Record<SymbolId, readonly number[]>> = {
+  //        5     6     7     8     9     10    11    12    13     14     15     16     17     18     19     20
+  BRASS:   [0.05, 0.08, 0.12, 0.17, 0.23, 0.30, 0.38, 0.48, 0.60,  0.74,  0.91,  1.10,  1.32,  1.56,  1.86,  2.16],
+  KNIFE:   [0.06, 0.11, 0.15, 0.21, 0.29, 0.38, 0.48, 0.60, 0.75,  0.93,  1.14,  1.38,  1.65,  1.95,  2.33,  2.70],
+  PISTOL:  [0.09, 0.15, 0.22, 0.31, 0.42, 0.55, 0.70, 0.88, 1.10,  1.36,  1.67,  2.02,  2.42,  2.86,  3.41,  3.96],
+  AMMO:    [0.11, 0.20, 0.28, 0.39, 0.53, 0.70, 0.90, 1.12, 1.40,  1.74,  2.13,  2.58,  3.08,  3.64,  4.34,  5.04],
+  DUFFEL:  [0.14, 0.25, 0.36, 0.50, 0.68, 0.90, 1.15, 1.44, 1.80,  2.23,  2.74,  3.31,  3.96,  4.68,  5.58,  6.48],
+  CASH:    [0.32, 0.56, 0.80, 1.12, 1.52, 2.00, 2.56, 3.20, 4.00,  4.96,  6.08,  7.36,  8.80, 10.40, 12.40, 14.40],
+  DIAMOND: [0.60, 1.05, 1.50, 2.10, 2.85, 3.75, 4.80, 6.00, 7.50,  9.30, 11.40, 13.80, 16.50, 19.50, 23.25, 27.00],
+  BIKE:    [0.84, 1.47, 2.10, 2.94, 3.99, 5.25, 6.72, 8.40, 10.50, 13.02, 15.96, 19.32, 23.10, 27.30, 32.55, 37.80]
 };
 
-/** Size factor per cluster size (index 0 = size 5 … index 15 = size 20). */
-export const CLUSTER_SIZE_FACTORS = [
-  0.4, 0.7, 1.0, 1.4, 1.9, 2.5, 3.2, 4.0, 5.0, 6.2, 7.6, 9.2, 11, 13, 15.5, 18
-] as const;
-
-export function clusterSizeFactor(size: number): number {
-  if (size < 5) return 0;
-  return CLUSTER_SIZE_FACTORS[Math.min(size, 20) - 5] ?? 0.4;
+/** Pay of one `size`-cluster of `symbol` (x of base bet, before the cascade multiplier). */
+export function clusterPay(symbol: SymbolId, size: number): number {
+  if (size < MIN_CLUSTER) return 0;
+  return PAYTABLE_X[symbol]?.[Math.min(size, MAX_CLUSTER) - MIN_CLUSTER] ?? 0;
 }
+
+/** Every Gold Bar value (x of the base bet) each mode can land in The Getaway. */
+export const GOLD_BAR_VALUES: Record<BetMode, readonly number[]> = {
+  base: [1, 2, 3, 5, 10, 25, 75, 250, 750],
+  ante: [1, 2, 3, 5, 10, 25, 75, 250, 750],
+  base_tier1: [1, 2, 3, 5, 10, 25, 75, 250, 750],
+  base_tier2: [1, 2, 3, 5, 10, 25, 75, 250, 750],
+  base_tier3: [1, 2, 3, 5, 10, 25, 75, 250, 750],
+  getaway: [1.15, 2.3, 3.45, 5.75, 11.5, 28.75, 86.25, 287.5, 862.5],
+  super_getaway: [11, 16, 22, 30, 41, 55, 77, 110]
+};
 
 /** Tumble-multiplier ladder: rung = cascade number within one spin. */
 export const CASCADE_LADDER = [1, 2, 4, 7, 12, 20, 32, 50, 80] as const;
@@ -277,13 +290,13 @@ export const BONUS_START_RESPINS = 5;
 export const BONUS_CELLS = 20;
 
 /**
- * Social-casino (Stake.US) terminology. Every player-facing string that may
- * contain a restricted word (bet / buy / pay / cost …) must come from here so
- * the whole game flips with `jurisdiction.socialCasino`.
+ * Social-casino (stake.us) terminology. Every player-facing string that may
+ * contain a restricted word (bet / buy / pay / cost / cash …) must come from
+ * here so the whole game flips with `jurisdiction.socialCasino` / `social=true`.
  */
 export interface UiStrings {
   betLabel: string;         // "Bet"  → "Play"
-  creditLabel: string;      // "CREDIT" → "BALANCE"
+  creditLabel: string;      // "BALANCE" (never "CREDIT")
   idlePrompt: string;       // "PLACE YOUR BET" → social-safe prompt
   featureKicker: string;    // "BUY" panel kicker → "FEATURE"
   costWord: string;         // "COST" → "CAN BE PLAYED FOR"
@@ -295,6 +308,9 @@ export interface UiStrings {
   costMultLabel: string;    // replay: "Cost Multiplier" → "Feature Multiplier"
   finalMultLabel: string;   // replay: "Payout Multiplier" → "Final Multiplier"
   totalCostLabel: string;   // replay: "Total Cost" → "Play Amount"
+  totalWinLabel: string;    // "Total Win" (allowed in both)
+  paytableTab: string;      // game-info tab: "Paytable" → "Symbols"
+  payoutsHeading: string;   // "Symbol Payouts" → "Symbol Wins"
   maxWinLine: string;
 }
 
@@ -314,6 +330,9 @@ export function uiStrings(social: boolean): UiStrings {
         costMultLabel: "Feature Multiplier",
         finalMultLabel: "Final Multiplier",
         totalCostLabel: "Play Amount",
+        totalWinLabel: "Total Win",
+        paytableTab: "Symbols",
+        payoutsHeading: "Symbol Wins",
         maxWinLine: "Win up to 5,000x your play"
       }
     : {
@@ -330,15 +349,36 @@ export function uiStrings(social: boolean): UiStrings {
         costMultLabel: "Cost Multiplier",
         finalMultLabel: "Payout Multiplier",
         totalCostLabel: "Total Cost",
+        totalWinLabel: "Total Win",
+        paytableTab: "Paytable",
+        payoutsHeading: "Symbol Payouts",
         maxWinLine: "Win up to 5,000x your bet"
       };
 }
 
-/** Social currencies arrive as XGC / XSC and must display as GC / SC. */
+/** Player-facing symbol name. "Cash" is a restricted social word → "Loot". */
+export function symbolLabel(id: SymbolId, social: boolean): string {
+  if (social && id === "CASH") return "Loot";
+  return SYMBOLS[id].label;
+}
+
+/**
+ * Engine's stake.us restricted terms (Approval Guidelines → Jurisdiction
+ * Requirements). Social-mode text must never match. Used by the tests and by
+ * the DEV-only on-screen audit.
+ */
+export const SOCIAL_RESTRICTED =
+  /\b(bet|bets|betting|rebet|stake|stakes|cash|pay|pays|paid|payer|payout|payouts|paytable|money|buy|bought|purchase|purchased|cost|costs|credit|credited|gamble|wager|deposit|withdraw|currency|fund|funds)\b|win feature|bonus buy|place your bets/i;
+
+/** Social currencies arrive as XGC / XSC / XEC and display as GC / SC / SC. */
 export function displayCurrency(code: string): string {
   if (code === "XGC") return "GC";
-  if (code === "XSC") return "SC";
+  if (code === "XSC" || code === "XEC") return "SC";
   return code;
+}
+
+export function isSocialCurrency(code: string): boolean {
+  return code === "XGC" || code === "XSC" || code === "XEC";
 }
 
 export function assertBoard(board: Board): void {

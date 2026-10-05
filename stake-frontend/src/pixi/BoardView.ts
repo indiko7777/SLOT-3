@@ -1,4 +1,4 @@
-import { Container, Graphics, Sprite, Text, TextStyle, BlurFilter } from "pixi.js";
+import { Container, FillGradient, Graphics, Sprite, Text, TextStyle, BlurFilter } from "pixi.js";
 import { GRID_COLUMNS, GRID_ROWS, type Board, type Position, type SymbolId } from "../domain";
 import { getSymbolTexture } from "./assets";
 import { SymbolView, WIN_ACCENT, DEFAULT_ACCENT } from "./SymbolView";
@@ -505,7 +505,6 @@ export class BoardView extends Container {
       holder.scale.set(1.55 - 0.55 * easeInCubic(t));
     }, linear);
     holder.scale.set(1);
-    void this.localShake(turbo ? 6 : 12, turbo ? 180 : 320);
     this.blockSlamFx(bcx, bcy, bw, bh, WIN_ACCENT[id] ?? DEFAULT_ACCENT, turbo);
     // Squash on contact, then recover.
     void tween(turbo ? 90 : 200, (t) => {
@@ -1034,25 +1033,33 @@ export class BoardView extends Container {
     const w = this.rect.width;
     const h = this.rect.height;
     this.background.clear();
-
-    // Subtle dark-blue semi-transparent base — lets the bg image show through
-    // while giving the reel area visual depth and contrast.
+    // The dark frosted pane itself lives under the board (cabinet.ts). Here:
+    // reel lanes that catch a little light in the middle, and engraved dividers.
     const colW = w / GRID_COLUMNS;
+    const lane = new FillGradient({
+      type: "linear", start: { x: 0, y: 0 }, end: { x: 1, y: 0 }, textureSpace: "local",
+      colorStops: [
+        { offset: 0, color: "rgba(255,255,255,0)" },
+        { offset: 0.5, color: "rgba(255,236,214,0.04)" },
+        { offset: 1, color: "rgba(255,255,255,0)" },
+      ],
+    });
     for (let col = 0; col < GRID_COLUMNS; col++) {
-      const x = col * colW;
-      const shade = col % 2 === 0 ? 0x000000 : 0x000000;
-      this.background.rect(x, 0, colW, h).fill({ color: shade, alpha: 0.88 });
+      this.background.rect(col * colW, 0, colW, h).fill(lane);
     }
-
-    // Thin neon column separators
+    const divider = (alpha: number): FillGradient => new FillGradient({
+      type: "linear", start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, textureSpace: "local",
+      colorStops: [
+        { offset: 0, color: `rgba(255,232,210,0)` },
+        { offset: 0.5, color: `rgba(255,232,210,${alpha})` },
+        { offset: 1, color: `rgba(255,232,210,0)` },
+      ],
+    });
     for (let col = 1; col < GRID_COLUMNS; col++) {
-      const x = col * colW;
-      this.background.rect(x - 1, 4, 1, h - 8).fill({ color: 0x9ae64e, alpha: 0.14 });
+      const x = Math.round(col * colW);
+      this.background.rect(x - 1, 6, 1, h - 12).fill({ color: 0x000000, alpha: 0.45 });
+      this.background.rect(x, 6, 1, h - 12).fill(divider(0.16));
     }
-
-    // Vignette top/bottom edges
-    this.background.rect(0, 0, w, 6).fill({ color: 0x000000, alpha: 0.3 });
-    this.background.rect(0, h - 6, w, 6).fill({ color: 0x000000, alpha: 0.3 });
   }
 
   private drawMask(): void {
@@ -1061,8 +1068,23 @@ export class BoardView extends Container {
   }
 
   private drawGlassOverlay(): void {
-    // Transparent reel grid — no glass overlay needed
-    this.glassOverlay.clear();
+    // Glass over the reels: the bezel's shadow falling on the top rows, a soft
+    // gloss on the upper pane and a dark lip at the bottom — the reels read as
+    // set INTO the machine rather than printed on it. Kept faint so symbols
+    // stay crisp.
+    const w = this.rect.width;
+    const h = this.rect.height;
+    const g = this.glassOverlay;
+    g.clear();
+    const v = (stops: [number, string][]): FillGradient => new FillGradient({
+      type: "linear", start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, textureSpace: "local",
+      colorStops: stops.map(([offset, color]) => ({ offset, color })),
+    });
+    g.rect(0, 0, w, Math.min(26, h * 0.08)).fill(v([[0, "rgba(4,2,10,0.55)"], [1, "rgba(4,2,10,0)"]]));
+    g.rect(0, h - Math.min(18, h * 0.05), w, Math.min(18, h * 0.05)).fill(v([[0, "rgba(4,2,10,0)"], [1, "rgba(4,2,10,0.45)"]]));
+    g.rect(0, 0, w, h * 0.38).fill(v([[0, "rgba(255,255,255,0.045)"], [1, "rgba(255,255,255,0)"]]));
+    // a single diagonal glint across the pane
+    g.poly([w * 0.58, 0, w * 0.7, 0, w * 0.42, h, w * 0.3, h]).fill({ color: 0xffffff, alpha: 0.018 });
   }
 
   private markPositions(positions: Position[], mode: "highlight" | "transform" | "alert"): void {

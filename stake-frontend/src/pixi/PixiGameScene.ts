@@ -9,7 +9,6 @@ import { BoardView } from "./BoardView";
 import { BonusView } from "./BonusView";
 import { EffectsLayer } from "./EffectsLayer";
 import { HudView } from "./HudView";
-import { PaytableView } from "./PaytableView";
 import { SymbolView, WIN_ACCENT, DEFAULT_ACCENT } from "./SymbolView";
 import { computeLayout, logicalViewport, wantedStarsGeometry } from "./layout";
 import { getExtraTexture, silhouetteOffset } from "./assets";
@@ -18,7 +17,7 @@ import type { LayoutMetrics, SceneRuntime } from "./types";
 import { OutlineFilter } from "pixi-filters";
 import { CardPeekView } from "./CardPeekView";
 import { GalleryView } from "./GalleryView";
-import { formatWin as formatWinClient } from "../rgs/client";
+import { formatAmount } from "../format";
 
 /** Collection voice lines per girl, indexed by GIRLS[] id, in PLAY ORDER.
  *  The file names are inconsistent ("milstone1", "mileston3", and girl 1's set
@@ -40,7 +39,6 @@ export class PixiGameScene {
   private readonly board = new BoardView();
   private readonly bonus = new BonusView();
   private readonly effects: EffectsLayer;
-  private readonly paytable: PaytableView;
   private readonly cardPeek: CardPeekView;
   private readonly gallery: GalleryView;
   private layout: LayoutMetrics;
@@ -62,7 +60,6 @@ export class PixiGameScene {
       bg: this.bgLayer,
       underParticles: this.underParticlesLayer
     });
-    this.paytable = new PaytableView(runtime);
     this.effects = new EffectsLayer(this.particleLayer);
 
     // Authored clip cues (gunshot, casing tink, cartridge rattle…) → audio.
@@ -101,7 +98,6 @@ export class PixiGameScene {
       this.hud,
       this.bonus,
       this.effects,
-      this.paytable,
       this.gallery
     );
     this.app.stage.addChild(this.root);
@@ -268,14 +264,7 @@ export class PixiGameScene {
     }
   }
 
-  togglePaytable(): void {
-    this.paytable.toggle(this.layout.width, this.layout.height);
-  }
-
-  /** Overlay-state helpers — the spacebar must be dead while these are open. */
-  isPaytableOpen(): boolean {
-    return this.paytable.visible;
-  }
+  /** Overlay-state helper — the spacebar must be dead while it is open. */
   isGalleryOpen(): boolean {
     return this.gallery.visible;
   }
@@ -395,7 +384,7 @@ export class PixiGameScene {
           const at = this.clusterAnchor(event.positions);
           const accent = WIN_ACCENT[event.symbol] ?? DEFAULT_ACCENT;
           void wait(turbo ? 40 : 160).then(() =>
-            this.effects.floatValue(at.x, at.y, formatCash(amount), accent, this.layout.board, turbo));
+            this.effects.floatValue(at.x, at.y, formatAmount(amount, true), accent, this.layout.board, turbo));
         }
         await this.board.highlight(event.positions, turbo);
         return;
@@ -580,7 +569,7 @@ export class PixiGameScene {
           // NICE WIN — light, non-blocking celebration with a gold coin burst.
           const currency = this.runtime.getCurrency();
           const winAmount = event.payoutMultiplier * snapshot.betAmount;
-          const amtStr = formatWinClient(winAmount) + " " + currency;
+          const amtStr = formatAmount(winAmount, true) + " " + currency;
           const cx = this.layout.board.x + this.layout.board.width / 2;
           const cy = this.layout.board.y + this.layout.board.height / 2;
           this.hud.setWinAmountDirect(winAmount);
@@ -933,10 +922,6 @@ export class PixiGameScene {
 }
 
 /** Money with two decimals and grouping: "2.40", "1,250.00". */
-function formatCash(amount: number): string {
-  return amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 function previewBoard(runtime: SceneRuntime): Board {
   const settle = runtime.previewRecord.events.find((event): event is Extract<GameEvent, { type: "board_settle" }> => event.type === "board_settle");
   if (!settle) throw new Error("Preview record is missing board_settle");
