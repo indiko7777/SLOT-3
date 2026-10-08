@@ -172,9 +172,12 @@ export class HudView extends Container {
         }
       }
     }
-    // Update balance display (deduct could happen externally)
+    // Update balance display (deduct could happen externally). Replays have
+    // no wallet, so the balance stays hidden there.
     if (this.creditText) {
-      this.creditText.text = `${this.t().creditLabel} ${this.fmtMoney(this.runtime.getCredit())} ${this.runtime.getCurrency()}`;
+      this.creditText.text = this.runtime.isReplayActive?.()
+        ? ""
+        : `${this.t().creditLabel} ${this.fmtMoney(this.runtime.getCredit())} ${this.runtime.getCurrency()}`;
     }
   }
 

@@ -384,7 +384,9 @@ async function boot(): Promise<void> {
     getBetLevel: () => betLevels[betIndex] ?? 0,
     getCredit: () => balance,
     getCurrency: () => displayCur(),
-    getCostMultiplier: (mode) => betModes[mode]?.costMultiplier ?? 1,
+    // Replays carry only the replayed mode's cost, so the feature panel falls
+    // back to the bundle's fixed costs instead of showing a wrong "1x".
+    getCostMultiplier: (mode) => betModes[mode]?.costMultiplier ?? FEATURE_MODE_COSTS[mode] ?? 1,
     isSocial: () => isSocial(),
     getUiStrings: () => ui(),
     getBetModes: () => betModes,
