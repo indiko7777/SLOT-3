@@ -12,30 +12,25 @@ import { SymbolFlow, isSemantic, type ClipPlan, type LandSource } from "./symbol
  *  idle on its own (a win that no removal followed). ms at 1x time scale. */
 const HOLD_SAFETY_MS = 2600;
 
+/** Win light per symbol. One warm sunset gold for every paying symbol (the
+ *  old blue / gold / magenta / green tiers made each win a different-coloured
+ *  box), Vice pink for the wilds, so a win reads as one consistent language. */
+const WIN_GOLD = 0xffd27a;
+const WIN_PINK = 0xff7eb6;
 export const WIN_ACCENT: Record<SymbolId, number> = {
-  // Low Tier: Steel Blue
-  BRASS: 0x74b9ff,
-  KNIFE: 0x74b9ff,
-  
-  // Mid Tier: Golden Orange
-  PISTOL: 0xfdcb6e,
-  AMMO: 0xfdcb6e,
-  DUFFEL: 0xfdcb6e,
-  
-  // Premium Tier: Magenta / Purple
-  CASH: 0xe056fd,
-  DIAMOND: 0xe056fd,
-  BIKE: 0xe056fd,
-  
-  // Specials (Wilds): Electric Green
-  WILD: 0x9ae64e,
-  CAR_WILD: 0x9ae64e,
-  
-  // Scatters / Bonus: Neon Red & Pure Gold
-  PHONE_SCATTER: 0xff4757,
+  BRASS: WIN_GOLD,
+  KNIFE: WIN_GOLD,
+  PISTOL: WIN_GOLD,
+  AMMO: WIN_GOLD,
+  DUFFEL: WIN_GOLD,
+  CASH: WIN_GOLD,
+  DIAMOND: WIN_GOLD,
+  BIKE: WIN_GOLD,
+  WILD: WIN_PINK,
+  CAR_WILD: WIN_PINK,
+  PHONE_SCATTER: WIN_GOLD,
   SAFE: 0xffd700,
   MASTER_KEY: 0xffd700,
-  
   EMPTY: 0x000000
 };
 const HERO_SYMBOLS = new Set<SymbolId>(["CAR_WILD", "SAFE", "MASTER_KEY"]);
@@ -56,6 +51,8 @@ export class SymbolView extends Container {
   private readonly labelText: Text;
   private readonly corner: Text;
   private readonly winGlow = new Graphics();
+  private glowLevel = 0;
+  private glowToken = 0;
   private readonly shimmer = new Graphics();
   private readonly shimmerMask = new Graphics();
   private readonly topSheen = new Graphics();
@@ -123,6 +120,9 @@ export class SymbolView extends Container {
       // runs on the shared ambient ticker for the lifetime of this view.
       if (this.sprite) this.sprite.visible = false;
       this.addChild(this.skel);
+      // The rig's baked halo is a WIN cue only — at rest it read as a cheap
+      // coloured glow round every symbol on the reels.
+      this.skel.setSlotAlpha("glow", 0);
       this.skel.play("idle", { loop: true });
       this.skelCb = (dt: number) => this.skel!.update(dt);
       ambientTicker.add(this.skelCb);
@@ -154,28 +154,14 @@ export class SymbolView extends Container {
     // No idle cell box or white frame — symbols sit directly on the reel.
     // A border is only drawn to signal win / alert / transform states.
     if (highlighted) {
-      const accent = WIN_ACCENT[this.id] ?? DEFAULT_ACCENT;
-      // A lit cell, not a wireframe box: soft accent halo + one crisp inner edge.
-      this.background.roundRect(1, 1, w - 2, h - 2, 12)
-        .fill({ color: accent, alpha: 0.10 })
-        .stroke({ color: accent, width: 6, alpha: 0.16 });
-      this.background.roundRect(3, 3, w - 6, h - 6, 10)
-        .stroke({ color: accent, width: 2, alpha: 0.85 });
-      this.background.roundRect(4.5, 4.5, w - 9, h - 9, 9)
-        .stroke({ color: 0xffffff, width: 1, alpha: 0.22 });
+      // No per-cell box: BoardView traces one outline round the whole cluster,
+      // and the cell keeps only its soft under-light (showPlate below).
     } else if (alert) {
-      // Glossy transparent green background fill inside the cell
-      this.background.roundRect(0, 0, w, h, 10)
-        .fill({ color: 0x9ae64e, alpha: 0.28 });
-      // Glossy top reflection sheen
-      this.background.roundRect(0, 0, w, h / 2, 10)
-        .fill({ color: 0xffffff, alpha: 0.15 });
-      // Neon green outer glowing border
-      this.background.roundRect(-2, -2, w + 4, h + 4, 12)
-        .stroke({ color: 0x9ae64e, width: 3.5, alpha: 0.95 });
-      // Subtler inner border for extra depth
-      this.background.roundRect(0, 0, w, h, 10)
-        .stroke({ color: 0x9ae64e, width: 1.5, alpha: 0.60 });
+      // A flagged scatter: a soft Vice-pink wash and one clean keyline.
+      this.background.roundRect(2, 2, w - 4, h - 4, 12)
+        .fill({ color: 0xff4f8b, alpha: 0.16 });
+      this.background.roundRect(2, 2, w - 4, h - 4, 12)
+        .stroke({ color: 0xff8fbf, width: 2, alpha: 0.9 });
     } else if (transformed) {
       this.background.roundRect(-1, -1, w + 2, h + 2, 11)
         .stroke({ color: 0x62ffa7, width: 3, alpha: 0.7 });
@@ -238,7 +224,7 @@ export class SymbolView extends Container {
       t += dt;
       const fadeIn = Math.min(1, t / 0.16);
       const breathe = 0.5 + 0.5 * Math.sin(t * 6.2);
-      plate.alpha = fadeIn * (0.38 + 0.22 * breathe);
+      plate.alpha = fadeIn * (0.26 + 0.14 * breathe);
       const k = 1 + 0.05 * breathe;
       plate.scale.set(baseX * k, baseY * k);
     };
@@ -499,6 +485,7 @@ export class SymbolView extends Container {
 
     // Lift toward the player with a small overshoot, then hold slightly raised.
     this.setLift(1.06, turbo ? 140 : 360, popShape(2.15));
+    this.fadeGlow(0.85, turbo ? 80 : 180);
     const plan = flow.win(turbo, getTimeScale());
     if (!plan) return;
     await new Promise<void>((resolve) => this.runPlan(plan, turbo, resolve));
@@ -513,6 +500,19 @@ export class SymbolView extends Container {
     }
   }
 
+  /** Fade the rig's silhouette halo (0 at rest, up while the symbol pays). */
+  private fadeGlow(to: number, ms: number): void {
+    const skel = this.skel;
+    if (!skel) return;
+    const token = ++this.glowToken;
+    const from = this.glowLevel;
+    void tween(ms, (p) => {
+      if (this.destroyed || skel.destroyed || token !== this.glowToken) return;
+      this.glowLevel = from + (to - from) * p;
+      skel.setSlotAlpha("glow", this.glowLevel);
+    }, easeOutQuad);
+  }
+
   /** A held winner that is NOT being removed goes back to idle (called by the
    *  board when a cascade moves on, and by the hold safety timer). */
   releaseHold(): void {
@@ -524,6 +524,7 @@ export class SymbolView extends Container {
       if (this.highlighted) this.redraw(false, false, false);
     }
     if (this.lift !== 1) this.setLift(1, 160);
+    this.fadeGlow(0, 220);
   }
 
   /** Legacy skeletal win (WILD, CAR_WILD, truck): play the authored `win`
@@ -539,6 +540,7 @@ export class SymbolView extends Container {
     this.winGlow.clear();
     this.winGlow.alpha = 0;
     if (w > 0 && h > 0) this.setLift(1.07, turbo ? 140 : 340, popShape(1.7));
+    this.fadeGlow(0.85, turbo ? 80 : 180);
 
     const sweep = this.sweepShimmer(turbo, accent);
     const glowIn = Promise.resolve();
@@ -552,6 +554,7 @@ export class SymbolView extends Container {
     this.winGlow.alpha = 0;
     this.shimmer.alpha = 0;
     this.setLift(1, turbo ? 90 : 220);
+    this.fadeGlow(0, turbo ? 90 : 240);
     const next = this.flow?.winEnded(getTimeScale());
     if (next) this.runPlan(next, turbo);
   }

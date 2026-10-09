@@ -2,7 +2,8 @@ import { Container, FillGradient, Graphics, Sprite, Text, TextStyle, BlurFilter 
 import { GRID_COLUMNS, GRID_ROWS, type Board, type Position, type SymbolId } from "../domain";
 import { getSymbolTexture } from "./assets";
 import { SymbolView, WIN_ACCENT, DEFAULT_ACCENT } from "./SymbolView";
-import { tween, wait, easeOutBack, easeOutCubic, easeInCubic, linear, ambientTicker, simulate } from "./tween";
+import { tween, wait, easeOutBack, easeOutCubic, easeInCubic, easeInOutCubic, linear, ambientTicker, simulate } from "./tween";
+import { clusterContours, loopPoint, loopPrefix } from "./clusterOutline";
 import { softGlowTexture, streakTexture } from "./fxTextures";
 import { planColumn, gravityEase, TUMBLE_TIMING, type FallSpec } from "./tumblePlan";
 import type { Rect } from "./types";
@@ -57,6 +58,9 @@ export class BoardView extends Container {
   private readonly anticipationOverlay = new Graphics();
   /** Unmasked layer above the reels for bursts that may spill past the frame. */
   private readonly fxLayer = new Container();
+  /** Win outlines (one contour per paying cluster), above the reels. */
+  private readonly outlineLayer = new Container();
+  private outlineTicks: Array<(dt: number, t: number) => void> = [];
   private rect: Rect = { x: 0, y: 0, width: 100, height: 100 };
   private cellWidth = 0;
   private cellHeight = 0;
@@ -89,6 +93,7 @@ export class BoardView extends Container {
     this.addChild(this.glassOverlay);
     this.fxLayer.eventMode = "none";
     this.addChild(this.fxLayer);
+    this.fxLayer.addChild(this.outlineLayer);
 
     this.counterText = new Text({
       text: "",
@@ -104,6 +109,9 @@ export class BoardView extends Container {
     });
     this.counterText.anchor.set(1, 0.5);
     this.addChild(this.counterText);
+    // The collection count now lives in the crew panel / collection bar; a
+    // second "[n/8]" beside the Wanted stars read as part of the meter.
+    this.counterText.visible = false;
   }
 
   layout(rect: Rect): void {
@@ -141,8 +149,79 @@ export class BoardView extends Container {
     this.startAmbient();
   }
 
+  /**
+   * One rounded gold contour round the whole cluster: it draws itself on from
+   * the first cell, a spark runs the loop once, then it breathes until the
+   * cluster is cleared. Replaces per-cell boxes and the link lines between them.
+   */
+  private traceCluster(positions: Position[], turbo: boolean): void {
+    if (!positions.length || this.cellWidth <= 0) return;
+    const corner = (i: number, j: number) => ({
+      x: this.gap / 2 + i * (this.cellWidth + this.gap),
+      y: this.gap / 2 + j * (this.cellHeight + this.gap),
+    });
+    const loops = clusterContours(positions, corner, 2.5, Math.min(this.cellWidth, this.cellHeight) * 0.18);
+    const holder = new Container();
+    const glow = new Graphics();
+    glow.blendMode = "add";
+    const line = new Graphics();
+    holder.addChild(glow, line);
+    this.outlineLayer.addChild(holder);
+    const paint = (frac: number): void => {
+      if (glow.destroyed) return;
+      glow.clear(); line.clear();
+      for (const L of loops) {
+        const closed = frac >= 1;
+        const pts = closed ? L : loopPrefix(L, frac);
+        if (pts.length < 4) continue;
+        glow.poly(pts, closed).stroke({ width: 9, color: 0xffb547, alpha: 0.22, join: "round", cap: "round" });
+        line.poly(pts, closed).stroke({ width: 2.4, color: 0xfff0c4, alpha: 1, join: "round", cap: "round" });
+      }
+    };
+    if (turbo) paint(1);
+    else {
+      paint(0);
+      void tween(260, (p) => paint(p), easeOutCubic).then(() => paint(1));
+      // a spark runs the loop once
+      const spark = new Sprite(softGlowTexture());
+      spark.anchor.set(0.5);
+      spark.blendMode = "add";
+      spark.tint = 0xfff3cf;
+      spark.width = spark.height = Math.min(this.cellWidth, this.cellHeight) * 0.42;
+      holder.addChild(spark);
+      const L0 = loops[0]!;
+      void tween(720, (p) => {
+        if (spark.destroyed) return;
+        const at = loopPoint(L0, p);
+        spark.position.set(at.x, at.y);
+        spark.alpha = Math.sin(p * Math.PI);
+      }, easeInOutCubic).then(() => { if (!spark.destroyed) spark.destroy(); });
+    }
+    let t = 0;
+    const tick = (dt: number): void => {
+      if (holder.destroyed) return;
+      t += dt;
+      holder.alpha = 0.86 + 0.14 * Math.sin(t * 5);
+    };
+    this.outlineTicks.push(tick);
+    ambientTicker.add(tick);
+  }
+
+  /** Fade out every cluster outline (cleared with the cluster / a new board). */
+  clearOutlines(turbo = false): void {
+    for (const tick of this.outlineTicks) ambientTicker.remove(tick);
+    this.outlineTicks = [];
+    for (const holder of [...this.outlineLayer.children]) {
+      const h = holder as Container;
+      const a0 = h.alpha;
+      void tween(turbo ? 60 : 140, (p) => { if (!h.destroyed) h.alpha = a0 * (1 - p); }, linear)
+        .then(() => { if (!h.destroyed) h.destroy({ children: true }); });
+    }
+  }
+
   async highlight(positions: Position[], turbo: boolean): Promise<void> {
     this.markPositions(positions, "highlight");
+    this.traceCluster(positions, turbo);
     // Everything that did NOT win steps back, so the cluster reads instantly.
     const active = new Set(positions.map(keyOf));
     for (const [key, view] of this.symbols) if (!active.has(key)) view.setDimmed(true, turbo);
@@ -170,6 +249,7 @@ export class BoardView extends Container {
 
   /** Drop every win / alert / transform frame on the board. */
   clearMarks(): void {
+    this.clearOutlines();
     for (const view of this.symbols.values()) view.redraw(false, false, false);
   }
 
@@ -272,6 +352,7 @@ export class BoardView extends Container {
   // Used by the real cascade (tumble_remove): the holes are filled afterwards by
   // tumbleTo() using the authoritative RGS board, so we must NOT refill here.
   async clearWins(positions: Position[], turbo: boolean): Promise<void> {
+    this.clearOutlines(turbo);
     const gone: Promise<void>[] = [];
     for (const p of positions) {
       const key = keyOf(p);

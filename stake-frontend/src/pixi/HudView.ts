@@ -1,19 +1,23 @@
 import { FillGradient, Container, Graphics, Sprite, Text, TextStyle } from "pixi.js";
-import { TEXT, type Position } from "../domain";
+import { CASCADE_LADDER, TEXT, type Position } from "../domain";
 import type { PlaybackSnapshot } from "../playback";
-import { winCountFormatter } from "./winCount";
+import { winCountMoney } from "./winCount";
 import { getExtraTexture, silhouetteOffset } from "./assets";
 import { drawCabinetBack, drawCabinetFront } from "./cabinet";
 import { buildLivingBackground, BASE_STREET } from "./livingBackground";
-import { pieceBounds } from "./girlReveal";
+import { GIRL_ACCENT, pieceBounds } from "./girlReveal";
+import { wantedStarsGeometry } from "./layout";
 import { makeText } from "./text";
 import { ambientTicker, tween, wait, easeOutBack, easeOutCubic, easeInCubic, linear } from "./tween";
 import { softGlowTexture } from "./fxTextures";
 import type { LayoutMetrics, Rect, SceneRuntime } from "./types";
-import { formatAmount, formatBalance, formatMultiplier } from "../format";
+import { formatMultiplier } from "../format";
+import { money, moneyBalance } from "../currency";
+import { buildControlBar, fitWidth } from "./controlBar";
+import { anteCard, featureCard } from "./featureCards";
 import { OutlineFilter, DropShadowFilter } from "pixi-filters";
 import { getPrestigeTitle } from "../meta/collection";
-import { UI_FONT } from "../typography";
+import { DISPLAY_FONT, UI_FONT } from "../typography";
 
 const IDLE_MESSAGES = [
   "PRESS SPACE TO SPIN!",
@@ -51,28 +55,7 @@ const TUMBLE_MESSAGES = [
   "READY FOR ESCAPE!"
 ];
 
-/** Control-bar neon palette. The bet bar used off-palette lime green
- *  (0x9ae64e) + OS emoji icons, which read as cheap and clashed with the
- *  game's gold/amber/cyan signage — the "poor bet UI bar" note. These unify
- *  the spin / stepper / utility controls with the rest of the HUD. */
-const BAR = {
-  gold: 0xffdf65,
-  amber: 0xffb000,
-  amberDim: 0x6b4a12,
-  icon: 0xffe6a3,
-  glass: 0x0a0e18,
-  hot: 0xff7676,
-} as const;
-
 export class HudView extends Container {
-  private get palette(): { gold: number; amber: number; amberDim: number; icon: number; glass: number; hot: number } {
-    switch (this.runtime.getCosmeticTheme?.()) {
-      case "neon": return { ...BAR, gold: 0x75e3dc, amber: 0xdca0cb, icon: 0xabefeb, glass: 0x101d27 };
-      case "gold": return { ...BAR, gold: 0xffd894, amber: 0xc98b4c, icon: 0xffe3b5, glass: 0x241c17 };
-      case "diamond": return { ...BAR, gold: 0xd1edff, amber: 0x87adcd, icon: 0xe7f5ff, glass: 0x152330 };
-      default: return { ...BAR, gold: 0xf5c8a9, amber: 0xd39574, icon: 0xffe8d7, glass: 0x111c23 };
-    }
-  }
   private ambientCbs: Array<(dt: number, elapsed: number) => void> = [];
   /** The living street survives HUD redraws (rebuilt only when the size changes). */
   private living: { key: string; world: Container; tick: (dt: number, t: number) => void } | null = null;
@@ -81,6 +64,7 @@ export class HudView extends Container {
   private winText: Text | null = null;
   private creditText: Text | null = null;
   private betText: Text | null = null;
+  private winLabel: Text | null = null;
 
   /** Win counter animation state */
   private displayedWin = 0;
@@ -89,6 +73,8 @@ export class HudView extends Container {
 
   /** Star position cache — set by drawWantedStars, read by animateStarFill */
   private starDrawRect: Rect | null = null;
+  private wantedLabel: Text | null = null;
+  private starFlash: { text: string; until: number } | null = null;
   private starRadius = 0;
 
   private lastState = "idle";
@@ -135,9 +121,10 @@ export class HudView extends Container {
     this.starDrawRect = null;
     this.statusText = null;
     this.winText = null;
+    this.winLabel = null;
     this.updateStateMessages(snapshot.state);
     this.drawBackground(layout, snapshot);
-    if (layout.leftPanel) this.drawBuyPanel(layout.leftPanel);
+    if (layout.leftPanel) this.drawBuyPanel(layout.leftPanel, layout);
     if (layout.artPanel) this.drawArt(layout.artPanel, snapshot);
     // Portrait: draw the 5 wanted stars in the dedicated strip above the board.
     if (layout.starsBar) this.drawWantedStars(layout.starsBar);
@@ -154,41 +141,20 @@ export class HudView extends Container {
 
     this.updateStateMessages(snapshot.state);
 
-    if (this.statusText) {
-      if (roundWinAmount > 0) {
-        this.animateWinTo(roundWinAmount);
-      } else {
-        this.cancelWinAnim();
-        this.displayedWin = 0;
-        this.targetWin = 0;
-        
-        if (snapshot.state !== "idle") {
-          this.statusText.text = this.getStatusMessage(snapshot.state);
-          this.statusText.style.fill = 0xffffff;
-        } else {
-          // Returning to idle with 0 win: show the social-aware default prompt.
-          this.statusText.text = this.t().idlePrompt;
-          this.statusText.style.fill = 0xffffff;
-        }
-      }
+    if (roundWinAmount > 0) {
+      this.animateWinTo(roundWinAmount);
+    } else {
+      this.cancelWinAnim();
+      this.displayedWin = 0;
+      this.targetWin = 0;
+      this.showMessage(snapshot.state !== "idle" ? this.getStatusMessage(snapshot.state) : this.t().idlePrompt);
     }
     // Update balance display (deduct could happen externally). Replays have
     // no wallet, so the balance stays hidden there.
     if (this.creditText) {
-      this.creditText.text = this.runtime.isReplayActive?.()
-        ? ""
-        : `${this.t().creditLabel} ${this.fmtMoney(this.runtime.getCredit())} ${this.runtime.getCurrency()}`;
+      this.creditText.text = this.runtime.isReplayActive?.() ? "—" : moneyBalance(this.runtime.getCredit());
+      fitWidth(this.creditText, (this.creditText as Text & { maxW?: number }).maxW ?? 180);
     }
-  }
-
-  /** The balance — the only figure rounded to 2 decimals. */
-  private fmtMoney(amount: number): string {
-    return formatBalance(amount);
-  }
-
-  /** Wins and the bet: exact, with every decimal they need (0.0005). */
-  private fmtWinMoney(amount: number): string {
-    return formatAmount(amount);
   }
 
   /** Animate the win counter (in real money) from the current value to target. */
@@ -199,7 +165,6 @@ export class HudView extends Container {
 
     const startVal = this.displayedWin;
     const startTime = performance.now();
-    const currency = this.runtime.getCurrency();
     const duration = Math.min(900, 250 + Math.abs(target - startVal) * 6);
 
     const tick = (now: number) => {
@@ -207,24 +172,16 @@ export class HudView extends Container {
       const t = 1 - (1 - raw) * (1 - raw);
       const current = startVal + (this.targetWin - startVal) * t;
       this.displayedWin = current;
-        if (this.winText) {
-          // Count at the payout's own precision — interpolated floats used to
-          // flicker through four-decimal values ("WIN 2.4087 USD").
-          this.winText.text = `WIN ${winCountFormatter(this.targetWin)(current)} ${currency}`;
-          this.winText.style.fill = 0xffdf65;
-          const pulse = 1 + Math.sin(raw * Math.PI) * 0.15;
-          this.winText.scale.set(pulse);
-        }
-        if (raw < 1) {
-          this.winAnimFrame = requestAnimationFrame(tick);
-        } else {
-          this.winAnimFrame = 0;
-          this.displayedWin = this.targetWin;
-          if (this.winText) {
-            this.winText.text = `WIN ${this.fmtWinMoney(this.targetWin)} ${currency}`;
-            this.winText.scale.set(1);
-          }
-        }
+      // Count at the payout's own precision — interpolated floats used to
+      // flicker through four-decimal values.
+      this.showWin(winCountMoney(this.targetWin)(current), 1 + Math.sin(raw * Math.PI) * 0.12);
+      if (raw < 1) {
+        this.winAnimFrame = requestAnimationFrame(tick);
+      } else {
+        this.winAnimFrame = 0;
+        this.displayedWin = this.targetWin;
+        this.showWin(money(this.targetWin));
+      }
     };
     this.winAnimFrame = requestAnimationFrame(tick);
   }
@@ -268,12 +225,8 @@ export class HudView extends Container {
     this.cancelWinAnim();
     this.displayedWin = amount;
     this.targetWin = amount;
-    if (this.winText) {
-      const currency = this.runtime.getCurrency();
-      this.winText.text = amount > 0 ? `WIN ${this.fmtWinMoney(amount)} ${currency}` : "";
-      this.winText.style.fill = 0xffdf65;
-      this.winText.scale.set(1);
-    }
+    if (amount > 0) this.showWin(money(amount));
+    else if (this.winText) { this.winText.text = ""; this.winText.visible = false; }
   }
 
   private cleanupAmbient(): void {
@@ -336,247 +289,78 @@ export class HudView extends Container {
     }
   }
 
-  private drawBuyPanel(rect: Rect): void {
-    const panelWidth = rect.width;
-    const kicker = this.t().featureKicker;
+  private drawBuyPanel(rect: Rect, layout: LayoutMetrics): void {
+    const t = this.t();
+    const social = this.runtime.isSocial();
+    const bet = this.runtime.getBetLevel();
     const buyX = this.costX("getaway");
     const superX = this.costX("super_getaway");
-    const antePct = `+${Math.round((this.costX("ante") - 1) * 100)}%`;
-    const anteVal = this.runtime.isAnteEnabled() ? "ON" : "OFF";
-    const anteSub = this.runtime.isAnteEnabled() ? "ACTIVE" : antePct;
-
-    if (rect.height < 60) {
-      const gap = 8;
-      const slot = (rect.width - gap * 2) / 3;
-      this.panelButton(rect.x, rect.y, slot, rect.height, kicker, "GETAWAY", `${buyX}x`, "getaway");
-      this.panelButton(rect.x + slot + gap, rect.y, slot, rect.height, kicker, "SUPER", `${superX}x`, "super_getaway");
-      this.panelButton(rect.x + (slot + gap) * 2, rect.y, slot, rect.height, "ANTE", anteSub, anteVal, "ante");
-      return;
-    }
+    const anteX = this.costX("ante");
+    const anteOn = this.runtime.isAnteEnabled();
+    const locked = this.controlsLocked();
+    const unit = social ? "PLAY" : "BET";
+    const kicker = social ? "FEATURE" : "BONUS BUY";
+    const tap = (a: string) => () => { if (!this.controlsLocked()) void this.runtime.onAction(a); };
+    const anteTitle = social ? "Ante" : "Ante Bet";
+    const anteCost = `+${Math.round((anteX - 1) * 100)}% ${unit} · ${anteOn ? "ON" : "OFF"}`;
 
     if (rect.height < 130) {
-      const slot = (rect.width - 16) / 3;
-      this.panelButton(rect.x, rect.y, slot, rect.height, kicker, "GETAWAY", `${buyX}x`, "getaway");
-      this.panelButton(rect.x + slot + 8, rect.y, slot, rect.height, kicker, "SUPER", `${superX}x`, "super_getaway");
-      this.panelButton(rect.x + (slot + 8) * 2, rect.y, slot, rect.height, "ANTE", anteSub, anteVal, "ante");
+      // Portrait / compact: three cards in a row.
+      const gap = 8;
+      const w = (rect.width - gap * 2) / 3;
+      const h = rect.height;
+      this.addChild(featureCard({
+        x: rect.x, y: rect.y, w, h, compact: true, art: getExtraTexture("card_getaway"), focus: { x: 0.55, y: 0.3 },
+        theme: "getaway", kicker, title: "Getaway", price: money(bet * buyX), priceNote: "", disabled: locked, onTap: tap("getaway"),
+      }));
+      this.addChild(featureCard({
+        x: rect.x + w + gap, y: rect.y, w, h, compact: true, art: getExtraTexture("card_super"), focus: { x: 0.5, y: 0.35 },
+        theme: "super", kicker, title: "Super", price: money(bet * superX), priceNote: "", disabled: locked, onTap: tap("super_getaway"),
+      }));
+      this.addChild(anteCard({
+        x: rect.x + (w + gap) * 2, y: rect.y, w, h, compact: true, on: anteOn, title: "Ante",
+        detail: "", cost: `+${Math.round((anteX - 1) * 100)}%`, disabled: locked, onTap: tap("ante"),
+      }));
       return;
     }
 
-    const anteH = 86; // Reduced height for Ante button in landscape mode
-    this.panelButton(rect.x, rect.y, panelWidth, 112, kicker, TEXT.buy, `${formatMultiplier(buyX)}x`, "getaway");
-    this.panelButton(rect.x, rect.y + 124, panelWidth, 124, kicker, TEXT.superBuy, `${formatMultiplier(superX)}x`, "super_getaway");
-    this.panelButton(rect.x, rect.y + 260, panelWidth, anteH, TEXT.ante, anteSub, anteVal, "ante");
+    // Landscape: two slim art cards and the ante switch, the logo under them.
+    const x0 = 14;
+    const x1 = Math.max(x0 + 150, layout.boardFrame.x - 54);
+    const w = Math.min(214, x1 - x0);
+    const left = (x0 + x1) / 2 - w / 2;
+    let y = rect.y;
+    const cardH = 104;
+    this.addChild(featureCard({
+      x: left, y, w, h: cardH, compact: false, art: getExtraTexture("card_getaway"), focus: { x: 0.56, y: 0.3 },
+      theme: "getaway", kicker, title: TEXT.buy, price: money(bet * buyX), priceNote: `${formatMultiplier(buyX)}× ${unit}`,
+      disabled: locked, onTap: tap("getaway"),
+    }));
+    y += cardH + 10;
+    this.addChild(featureCard({
+      x: left, y, w, h: cardH, compact: false, art: getExtraTexture("card_super"), focus: { x: 0.52, y: 0.34 },
+      theme: "super", kicker, title: TEXT.superBuy, price: money(bet * superX), priceNote: `${formatMultiplier(superX)}× ${unit}`,
+      disabled: locked, onTap: tap("super_getaway"),
+    }));
+    y += cardH + 10;
+    this.addChild(anteCard({
+      x: left, y, w, h: 56, compact: false, on: anteOn, title: anteTitle,
+      detail: "", cost: anteCost, disabled: locked, onTap: tap("ante"),
+    }));
+    y += 56;
 
     const logoTex = getExtraTexture("heat_chase_logo");
     if (logoTex && logoTex.width > 0 && logoTex.height > 0) {
-      const center = rect.x + panelWidth / 2;
-      const buttonsBottom = rect.y + 260 + anteH;
-      const spaceBelow = (rect.y + rect.height) - buttonsBottom;
-      const gap = Math.min(24, Math.max(8, spaceBelow * 0.12));
-      const regionTop = buttonsBottom + gap;
-      const regionBottom = rect.y + rect.height - 4;
+      const regionTop = y + 18, regionBottom = rect.y + rect.height - 4;
       const availH = regionBottom - regionTop;
-      const boxW = Math.max(0, panelWidth * .96);
-      if (availH > 20 && boxW > 20) {
+      if (availH > 30) {
         const logo = new Sprite(logoTex);
-        logo.anchor.set(0.5, 0.5);
-        const baseScale = Math.min(boxW / logoTex.width, availH * .88 / logoTex.height);
-        logo.scale.set(baseScale);
-        logo.position.set(center, (regionTop + regionBottom) / 2);
-        logo.filters = [new DropShadowFilter({ color: 0x000000, alpha: 0.9, blur: 8, offset: { x: 0, y: 5 } })];
-        this.addAmbient((_dt, elapsed) => {
-          logo.scale.set(baseScale * (1 + 0.03 * Math.sin(elapsed * 2)));
-        });
+        logo.anchor.set(0.5);
+        logo.scale.set(Math.min(w * 0.96 / logoTex.width, availH * 0.85 / logoTex.height));
+        logo.position.set(left + w / 2, (regionTop + regionBottom) / 2);
         this.addChild(logo);
       }
     }
-  }
-
-  /** Shrink a text object uniformly so it never spills past maxWidth (never enlarges). */
-  private fitText(text: Text, maxWidth: number): void {
-    if (text.width > maxWidth) {
-      text.scale.set(maxWidth / text.width);
-    }
-  }
-
-  private panelButton(x: number, y: number, width: number, height: number, kicker: string, title: string, value: string, action: string): void {
-    const panel = new Container();
-
-    // Vice-neon buy panels. The old look was a flat black box with a 3.5px
-    // pure-red outline (0xe30000) — cheap, and off-palette for a game whose
-    // signage is magenta/cyan/gold. Each action now gets its own neon tube,
-    // on a chamfered "cyberpunk plate" silhouette. Geometry and contents are
-    // untouched: same x/y/width/height, same text, same hit area.
-    const accent = action === "super_getaway" ? 0xff2fa0   // premium buy — hot magenta
-                 : action === "ante" ? 0x3ad4ff            // modifier — cyan
-                 : 0xffb000;                               // standard buy — amber
-    const glowColor = accent;
-    // Corner cut, clamped so the short Ante/compact panels stay sane.
-    const notch = Math.max(6, Math.min(16, height * 0.26, width * 0.14));
-    /** Chamfered plate outline, inflated by `pad` on every side. */
-    const plateAt = (pad: number): number[] => [
-      -pad, -pad,
-      width + pad - notch, -pad,
-      width + pad, notch,
-      width + pad, height + pad,
-      notch, height + pad,
-      -pad, height + pad - notch,
-    ];
-    const plate = plateAt(0);
-
-    // Outer neon bloom — the ambient tween below breathes this.
-    const glow = new Graphics();
-    glow.poly(plateAt(5)).fill({ color: accent, alpha: 0.20 });
-    glow.alpha = 0.8;
-    panel.addChild(glow);
-
-    const bg = new Graphics();
-    // Dark smoked plate — kept translucent so the city art still reads through.
-    bg.poly(plate).fill({ color: 0x080a12, alpha: 0.62 });
-    // Accent wash, strongest at the top, faked with stacked bands (no gradient
-    // fill needed, so this stays cheap to redraw on every hud.draw).
-    const bands = 4;
-    for (let i = 0; i < bands; i++) {
-      bg.rect(1, (height / bands) * i, width - 2, height / bands)
-        .fill({ color: accent, alpha: 0.11 - i * 0.026 });
-    }
-    // Specular sheen along the top edge — sells it as glass, not a flat box.
-    bg.rect(2, 1, width - notch - 4, 1.4).fill({ color: 0xffffff, alpha: 0.24 });
-    // Neon tube: soft wide pass under a bright hairline.
-    bg.poly(plate).stroke({ color: accent, width: 3.4, alpha: 0.32 });
-    bg.poly(plate).stroke({ color: accent, width: 1.4, alpha: 0.95 });
-    // HUD corner brackets — the small targeting ticks that read as GTA UI.
-    const tick = Math.max(7, Math.min(15, width * 0.16));
-    bg.moveTo(0, tick).lineTo(0, 0).lineTo(tick, 0)
-      .stroke({ color: 0xffffff, width: 1.6, alpha: 0.5 });
-    bg.moveTo(width, height - tick).lineTo(width, height).lineTo(width - tick, height)
-      .stroke({ color: 0xffffff, width: 1.6, alpha: 0.5 });
-    // The chamfer itself, lit brighter than the rest of the outline.
-    bg.moveTo(width - notch, 0).lineTo(width, notch)
-      .stroke({ color: 0xffffff, width: 1.5, alpha: 0.55 });
-    panel.addChild(bg);
-
-    const textMaxWidth = width - 12;
-
-    if (height < 60) {
-      const kickerSize = Math.min(10, Math.max(8, width / 10));
-      const kickerText = makeText(kicker, kickerSize, 0xffd1d1, width / 2, 3, "center");
-      this.fitText(kickerText, textMaxWidth);
-      panel.addChild(kickerText);
-
-      const tSize = Math.min(13, Math.max(10, width / 7));
-      const titleText = new Text({
-        text: title,
-        style: new TextStyle({
-          fill: 0xffffff,
-          fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
-          fontSize: tSize,
-          fontWeight: "900",
-          letterSpacing: 0.5,
-          align: "center",
-          dropShadow: { color: 0x000000, alpha: 0.6, blur: 3, distance: 0 }
-        })
-      });
-      titleText.anchor.set(0.5, 0);
-      titleText.position.set(width / 2, 15);
-      this.fitText(titleText, textMaxWidth);
-      panel.addChild(titleText);
-
-      const vSize = Math.min(14, Math.max(11, width / 6));
-      const valText = new Text({
-        text: value,
-        style: new TextStyle({
-          fill: action === "ante" && this.runtime.isAnteEnabled() ? 0xff3333 : 0xffdf65,
-          fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
-          fontSize: vSize,
-          fontWeight: "900",
-          letterSpacing: 0.5,
-          align: "center"
-        })
-      });
-      valText.anchor.set(0.5, 0);
-      valText.position.set(width / 2, 29);
-      this.fitText(valText, textMaxWidth);
-      panel.addChild(valText);
-    } else {
-      const kickerSize = Math.min(13, Math.max(10, width / 12));
-      const kickerText = makeText(kicker, kickerSize, 0xffd1d1, width / 2, 10, "center");
-      this.fitText(kickerText, textMaxWidth);
-      panel.addChild(kickerText);
-
-      const tSize = Math.min(22, Math.max(13, width / 8));
-      const titleText = new Text({
-        text: title,
-        style: new TextStyle({
-          fill: 0xffffff,
-          fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
-          fontSize: tSize,
-          fontWeight: "900",
-          letterSpacing: 1,
-          align: "center",
-          dropShadow: { color: 0x000000, alpha: 0.6, blur: 4, distance: 0 }
-        })
-      });
-      titleText.anchor.set(0.5, 0);
-      titleText.position.set(width / 2, height * 0.34);
-      this.fitText(titleText, textMaxWidth);
-      panel.addChild(titleText);
-
-      const vSize = Math.min(26, Math.max(16, width / 6));
-      const valText = new Text({
-        text: value,
-        style: new TextStyle({
-          fill: action === "ante" && this.runtime.isAnteEnabled() ? 0xff3333 : 0xffdf65,
-          fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
-          fontSize: vSize,
-          fontWeight: "900",
-          letterSpacing: 1,
-          align: "center",
-          dropShadow: { color: action === "super_getaway" ? 0xff6a00 : 0x000000, alpha: 0.5, blur: 6, distance: 0 }
-        })
-      });
-      valText.anchor.set(0.5, 0);
-      valText.position.set(width / 2, height * 0.65);
-      this.fitText(valText, textMaxWidth);
-      panel.addChild(valText);
-    }
-
-    panel.position.set(x, y);
-    panel.eventMode = "static";
-
-    const disabled = this.controlsLocked();
-    panel.cursor = disabled ? "default" : "pointer";
-    if (disabled) {
-       panel.alpha = 0.5;
-    }
-
-    this.addAmbient((_dt, elapsed) => {
-      const breath = 0.6 + Math.sin(elapsed * 2.2 + (action === "super_getaway" ? 1 : action === "ante" ? 2 : 0)) * 0.4;
-      glow.alpha = 0.08 + breath * 0.14;
-    });
-
-    const scaleTarget = (s: number) => { glow.scale.set(s); bg.scale.set(s); };
-
-    panel.on("pointerover", () => {
-      if (!this.controlsLocked()) {
-        scaleTarget(1.04);
-        glow.alpha = 0.4;
-      }
-    });
-    panel.on("pointerout", () => {
-      scaleTarget(1);
-    });
-    panel.on("pointerdown", () => {
-      if (!this.controlsLocked()) scaleTarget(0.96);
-    });
-    panel.on("pointerup", () => {
-      scaleTarget(1);
-      if (!this.controlsLocked()) void this.runtime.onAction(action);
-    });
-    panel.on("pointerupoutside", () => {
-      scaleTarget(1);
-    });
-    this.addChild(panel);
   }
 
   /** The reel cabinet: glass + bezel under the reels, neon + deco over the edge. */
@@ -587,223 +371,61 @@ export class HudView extends Container {
   }
 
   private drawControls(rect: Rect, snapshot: PlaybackSnapshot): void {
-    // Bar background
-    // Dark smoked glass with a neon edge (matches the reel cabinet).
-    const bar = new Graphics();
-    bar.rect(rect.x, rect.y, rect.width, rect.height).fill(new FillGradient({
-      type: "linear", start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, textureSpace: "local",
-      colorStops: [
-        { offset: 0, color: "rgba(14,22,30,0.78)" },
-        { offset: 0.35, color: "rgba(9,12,18,0.86)" },
-        { offset: 1, color: "rgba(5,6,10,0.94)" },
-      ],
-    }));
-    const edge = new FillGradient({
-      type: "linear", start: { x: 0, y: 0 }, end: { x: 1, y: 0 }, textureSpace: "local",
-      colorStops: [
-        { offset: 0, color: "rgba(255,111,150,0)" },
-        { offset: 0.22, color: "rgba(255,111,150,0.85)" },
-        { offset: 0.5, color: "rgba(255,240,222,0.8)" },
-        { offset: 0.78, color: "rgba(47,183,173,0.85)" },
-        { offset: 1, color: "rgba(47,183,173,0)" },
-      ],
-    });
-    bar.rect(rect.x, rect.y, rect.width, 1.5).fill(edge);
-    bar.rect(rect.x, rect.y + 1.5, rect.width, 10).fill(new FillGradient({
-      type: "linear", start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, textureSpace: "local",
-      colorStops: [{ offset: 0, color: "rgba(255,170,140,0.08)" }, { offset: 1, color: "rgba(255,170,140,0)" }],
-    }));
-    this.addChild(bar);
+    const rt = this.runtime;
+    const anteMult = rt.isAnteEnabled() ? this.costX("ante") : 1;
+    const isReplay = rt.isReplayActive?.() ?? false;
+    const t = this.t();
+    const bar = buildControlBar(rect, {
+      muted: rt.isMuted(),
+      playing: rt.isPlaying(),
+      locked: this.controlsLocked(),
+      replay: isReplay,
+      autoRemaining: rt.getAutoplayRemaining?.() ?? 0,
+      turbo: rt.getTurboMode?.() ?? (rt.isTurbo() ? "turbo" : "off"),
+      canMinus: rt.canBetDown?.() ?? true,
+      canPlus: rt.canBetUp?.() ?? true,
+      labels: { balance: t.creditLabel, bet: t.betLabel, win: "Win" },
+      balance: moneyBalance(rt.getCredit()),
+      bet: money(rt.getBetLevel() * anteMult),
+    }, (action) => void rt.onAction(action));
+    this.addChild(bar.root);
+    this.addAmbient(bar.tick);
+    this.creditText = bar.balance;
+    this.betText = bar.bet;
+    this.winText = bar.win;
+    this.winLabel = bar.winLabel;
+    this.statusText = bar.message;
 
-    const credit = this.runtime.getCredit();
-    const betLevel = this.runtime.getBetLevel();
-    const currency = this.runtime.getCurrency();
-    const anteMult = this.runtime.isAnteEnabled() ? this.costX("ante") : 1;
-    const effectiveBet = betLevel * anteMult;
-    const isReplay = this.runtime.isReplayActive && this.runtime.isReplayActive();
-
-    const isPortrait = rect.height > 110;
-
-    if (isPortrait) {
-      // ── PORTRAIT MODE: Prominent Header & Level-Aligned Controls ───────
-
-      const cx = rect.x + rect.width / 2;
-
-      // 1) Prominent Centered Header (Bigger 22px Font)
-      this.statusText = new Text({
-        text: "",
-        style: new TextStyle({
-          fill: 0xffffff,
-          fontFamily: UI_FONT,
-          fontSize: 22,
-          fontWeight: "900",
-          letterSpacing: 2,
-          align: "center",
-          dropShadow: { color: 0x000000, alpha: 0.8, blur: 6, distance: 0 }
-        })
-      });
-      this.statusText.anchor.set(0.5, 0);
-      this.statusText.position.set(cx, rect.y + 10);
-      this.addChild(this.statusText);
-      this.winText = this.statusText;
-
-      // 2) Single Main Horizontal Level (Level Y)
-      const compact = rect.width < 560;
-      const levelY = rect.y + (compact ? 82 : 68);
-
-      // Left: Stacked Balances (Credit & Bet)
-      this.creditText = new Text({
-        text: isReplay ? "" : `${this.t().creditLabel} ${this.fmtMoney(credit)} ${currency}`,
-        style: new TextStyle({
-          fill: 0xffffff,
-          fontFamily: UI_FONT,
-          fontSize: 13,
-          fontWeight: "900",
-          letterSpacing: 0.5
-        })
-      });
-      this.creditText.anchor.set(0, 0);
-      this.creditText.position.set(rect.x + 14, rect.y + 43);
-      this.fitText(this.creditText, rect.width * 0.58 - 24);
-      this.addChild(this.creditText);
-
-      this.betText = new Text({
-        text: `${this.t().betLabel} ${this.fmtWinMoney(effectiveBet)} ${currency}`,
-        style: new TextStyle({
-          fill: 0xffdf65,
-          fontFamily: UI_FONT,
-          fontSize: 13,
-          fontWeight: "900",
-          letterSpacing: 0.5,
-          dropShadow: { color: 0xff6a00, alpha: 0.3, blur: 4, distance: 0 }
-        })
-      });
-      this.betText.anchor.set(1, 0);
-      this.betText.position.set(rect.x + rect.width - 14, rect.y + 43);
-      this.fitText(this.betText, rect.width * 0.4 - 20);
-      this.addChild(this.betText);
-
-      // Center: Spin Button & Minus / Plus Controls
-      this.betButton(cx - 94, levelY + 24, 44, "−", "minus");
-      this.spinButton(cx - 44, levelY); // 88px diameter spin button
-      this.betButton(cx + 50, levelY + 24, 44, "+", "plus");
-
-      // Right: Utility Buttons (Menu, Radio, Info)
-      const btnSize = 36;
-      const rightX = rect.x + rect.width;
-      this.smallButton(rect.x + 8, levelY + 26, btnSize, "☰", "menu");
-      this.smallButton(rightX - 44, levelY + 2, btnSize, this.runtime.isMuted() ? "🔇" : "📻", "mute");
-      this.smallButton(rightX - 44, levelY + 48, btnSize, "i", "info");
-
-      const initBet = snapshot.betAmount || betLevel;
-      const initWin = snapshot.roundWin > 0 ? snapshot.roundWin * initBet : 0;
-      if (snapshot.state === "idle") {
-        if (initWin > 0) {
-          this.statusText.text = `WIN ${this.fmtWinMoney(initWin)} ${currency}`;
-          this.statusText.style.fill = 0xffdf65;
-        } else {
-          this.statusText.text = this.currentIdleMessage;
-          this.statusText.style.fill = 0xffffff;
-        }
-      } else {
-        if (initWin > 0) {
-          this.statusText.text = `WIN ${this.fmtWinMoney(initWin)} ${currency}`;
-          this.statusText.style.fill = 0xffdf65;
-        } else {
-          this.statusText.text = this.getStatusMessage(snapshot.state);
-          this.statusText.style.fill = 0xffffff;
-        }
-      }
-      this.displayedWin = initWin;
-      this.targetWin = initWin;
-      this.cancelWinAnim();
-      return;
-    }
-
-    // ── LANDSCAPE MODE: Standard Wide Bar ──────────────────────────────
-    this.smallButton(rect.x + 18, rect.y + rect.height / 2 - 20, 40, "☰", "menu");
-    this.smallButton(rect.x + 66, rect.y + rect.height / 2 - 20, 40, this.runtime.isMuted() ? "🔇" : "📻", "mute");
-    this.smallButton(rect.x + 114, rect.y + rect.height / 2 - 20, 40, "i", "info");
-
-    this.creditText = new Text({
-      text: isReplay ? "" : `${this.t().creditLabel} ${this.fmtMoney(credit)} ${currency}`,
-      style: new TextStyle({
-        fill: 0xffffff,
-        fontFamily: UI_FONT,
-        fontSize: 20,
-        fontWeight: "900",
-        letterSpacing: 1
-      })
-    });
-    this.creditText.anchor.set(0, 0);
-    this.creditText.position.set(rect.x + 180, rect.y + 16);
-    this.addChild(this.creditText);
-
-    this.betText = new Text({
-      text: `${this.t().betLabel} ${this.fmtWinMoney(effectiveBet)} ${currency}`,
-      style: new TextStyle({
-        fill: 0xffdf65,
-        fontFamily: UI_FONT,
-        fontSize: 18,
-        fontWeight: "900",
-        letterSpacing: 1,
-        dropShadow: { color: 0xff6a00, alpha: 0.3, blur: 4, distance: 0 }
-      })
-    });
-    this.betText.anchor.set(0, 0);
-    this.betText.position.set(rect.x + 180, rect.y + 44);
-    this.addChild(this.betText);
-
-    const cx = rect.x + rect.width / 2;
-    const cy = rect.y + rect.height / 2;
-
-    this.statusText = new Text({
-      text: "",
-      style: new TextStyle({
-        fill: 0xffffff,
-        fontFamily: UI_FONT,
-        fontSize: 24,
-        fontWeight: "900",
-        letterSpacing: 2,
-        align: "center",
-        dropShadow: { color: 0x000000, alpha: 0.8, blur: 6, distance: 0 }
-      })
-    });
-    this.statusText.anchor.set(0.5, 0.5);
-    this.statusText.position.set(cx, cy);
-    this.addChild(this.statusText);
-
-    this.winText = this.statusText;
-
-    const initBet = snapshot.betAmount || betLevel;
+    const initBet = snapshot.betAmount || rt.getBetLevel();
     const initWin = snapshot.roundWin > 0 ? snapshot.roundWin * initBet : 0;
-
-    if (snapshot.state === "idle") {
-      if (initWin > 0) {
-        this.statusText.text = `WIN ${this.fmtWinMoney(initWin)} ${currency}`;
-        this.statusText.style.fill = 0xffdf65;
-      } else {
-        this.statusText.text = this.currentIdleMessage;
-        this.statusText.style.fill = 0xffffff;
-      }
-    } else {
-      if (initWin > 0) {
-        this.statusText.text = `WIN ${this.fmtWinMoney(initWin)} ${currency}`;
-        this.statusText.style.fill = 0xffdf65;
-      } else {
-        this.statusText.text = this.getStatusMessage(snapshot.state);
-        this.statusText.style.fill = 0xffffff;
-      }
-    }
-
     this.displayedWin = initWin;
     this.targetWin = initWin;
     this.cancelWinAnim();
+    if (initWin > 0) this.showWin(money(initWin));
+    else this.showMessage(snapshot.state === "idle" ? this.currentIdleMessage || t.idlePrompt : this.getStatusMessage(snapshot.state));
+  }
 
-    const right = rect.x + rect.width - 220;
-    this.betButton(right, rect.y + rect.height / 2 - 20, 42, "−", "minus");
-    this.spinButton(right + 64, rect.y + rect.height / 2 - 44);
-    this.betButton(right + 160, rect.y + rect.height / 2 - 20, 42, "+", "plus");
+  /** WIN read-out on, message off. */
+  private showWin(text: string, pulse = 1): void {
+    if (!this.winText) return;
+    this.winText.text = text;
+    const maxW = (this.winText as Text & { maxW?: number }).maxW ?? 400;
+    fitWidth(this.winText, maxW);
+    if (pulse !== 1) this.winText.scale.set(this.winText.scale.x * pulse);
+    this.winText.visible = true;
+    if (this.winLabel) this.winLabel.visible = true;
+    if (this.statusText) this.statusText.visible = false;
+  }
+
+  /** No win: the WIN slot carries the round's status line instead. */
+  private showMessage(text: string): void {
+    if (this.winText) this.winText.visible = false;
+    if (this.winLabel) this.winLabel.visible = false;
+    if (!this.statusText) return;
+    this.statusText.text = text;
+    const maxW = (this.statusText as Text & { maxW?: number }).maxW ?? (this.winText as Text & { maxW?: number } | null)?.maxW ?? 400;
+    fitWidth(this.statusText, maxW);
+    this.statusText.visible = text.length > 0;
   }
 
   private updateStateMessages(state: string): void {
@@ -865,17 +487,36 @@ export class HudView extends Container {
     this.drawCharacter(rect, _snapshot.collectionCount);
   }
 
+  /** The character fits above the crew tag that CardPeekView draws at the
+   *  bottom of the art panel. */
+  private crewBounds(rect: Rect): { top: number; bottom: number } {
+    return { top: rect.y + 8, bottom: rect.y + rect.height - 44 };
+  }
+
   async animateStarFill(starIndex: number): Promise<void> {
     const rect = this.starDrawRect;
     if (!rect || starIndex < 0 || starIndex >= 5) return;
 
-    const starR = this.starRadius;
-    const gap = starR * 0.55;
-    const totalW = starR * 2 * 5 + gap * 4;
-    const startX = rect.x + (rect.width - totalW) / 2 + starR;
-    const labelSize = Math.min(13, rect.width * 0.04);
-    const starCY = rect.y + rect.height / 2 + labelSize * 0.5 + 2;
-    const sx = startX + starIndex * (starR * 2 + gap);
+    const geo = wantedStarsGeometry(rect);
+    const starR = geo.starR;
+    const starCY = geo.centers[starIndex]!.y;
+    const sx = geo.centers[starIndex]!.x;
+
+    // Name what this star just bought, in the label above the meter.
+    const feature = ["", "STASH BUST", "MEGA WILD", "MEGA WILD", "THE GETAWAY"][starIndex] ?? "";
+    const mult = starIndex < 4 ? `×${CASCADE_LADDER[starIndex + 1]} WINS` : "";
+    const text = [mult, feature].filter(Boolean).join(" · ");
+    this.starFlash = { text, until: performance.now() + 1600 };
+    const label = this.wantedLabel;
+    if (label && !label.destroyed) {
+      label.text = text;
+      label.style.fill = 0xffd75e;
+      window.setTimeout(() => {
+        if (label.destroyed || this.wantedLabel !== label) return;
+        label.text = "WANTED LEVEL";
+        label.style.fill = 0xffffff;
+      }, 1600);
+    }
 
     const starGfx = new Graphics();
     const pts = this.starPoints(0, 0, starR, starR * 0.42);
@@ -912,13 +553,10 @@ export class HudView extends Container {
     const rect = this.starDrawRect;
     if (!rect) { await wait(turbo ? 120 : 300); return; }
 
-    const starR = this.starRadius;
+    const geo = wantedStarsGeometry(rect);
+    const starR = geo.starR;
     const starIR = starR * 0.42;
-    const gap = starR * 0.55;
-    const totalW = starR * 2 * 5 + gap * 4;
-    const startX = rect.x + (rect.width - totalW) / 2 + starR;
-    const labelSize = Math.min(13, rect.width * 0.04);
-    const cy = rect.y + rect.height / 2 + labelSize * 0.5 + 2;
+    const cy = geo.centers[0]!.y;
     const centerX = rect.x + rect.width / 2;
 
     const fx = new Container();
@@ -926,7 +564,7 @@ export class HudView extends Container {
 
     const stars: Graphics[] = [];
     for (let i = 0; i < 5; i++) {
-      const cx = startX + i * (starR * 2 + gap);
+      const cx = geo.centers[i]!.x;
       const g = new Graphics();
       const pts = this.starPoints(0, 0, starR, starIR);
       g.poly(pts).fill(0xffe07a);
@@ -1012,35 +650,38 @@ export class HudView extends Container {
 
   private drawWantedStars(rect: Rect): void {
     this.starDrawRect = rect;
-    const starR = Math.min(22, rect.width / 11);
+    const geo = wantedStarsGeometry(rect);
+    const starR = geo.starR;
     this.starRadius = starR;
     const starIR = starR * 0.42;
-    const gap = starR * 0.55;
-    const totalW = starR * 2 * 5 + gap * 4;
-    const startX = rect.x + (rect.width - totalW) / 2 + starR;
-    const labelSize = Math.min(13, rect.width * 0.04);
-    const starCY = rect.y + rect.height / 2 + labelSize * 0.5 + 2;
+    const labelSize = geo.labelSize;
+    const starCY = geo.centers[0]!.y;
 
     const meter = Math.max(0, Math.min(5, this.runtime.getWantedLevel()));
     const filledStars: Graphics[] = [];
     const headStart = Math.max(0, Math.min(5, this.runtime.getHeadStartStars?.() ?? 0));
     const activeTier = Math.max(0, Math.min(5, this.runtime.getActiveTier?.() ?? 0));
 
+    // Right after a star fills, the label briefly names what it bought (the
+    // tumble multiplier, and the feature at 2★ / 3★ / 4★) — otherwise the meter
+    // stays the plain GTA "WANTED LEVEL".
+    const flash = this.starFlash && performance.now() < this.starFlash.until ? this.starFlash.text : null;
     const wantedLabel = makeText(
-      headStart > 0 ? `WANTED LEVEL · ${headStart} STAR MODE` : "WANTED LEVEL",
+      flash ?? (headStart > 0 ? `WANTED LEVEL · ${headStart} STAR MODE` : "WANTED LEVEL"),
       labelSize,
-      0xffffff,
+      flash ? 0xffd75e : 0xffffff,
       rect.x + rect.width / 2,
       starCY - starR - labelSize - 2,
       "center"
     );
+    this.wantedLabel = wantedLabel;
     // readable over the bright sunset sky: white with a soft dark shadow
     wantedLabel.style.letterSpacing = 1.5;
     wantedLabel.style.dropShadow = { color: 0x1a0c14, alpha: 0.75, blur: 4, distance: 1, angle: Math.PI / 2 };
     this.underParticlesContainer.addChild(wantedLabel);
 
     for (let i = 0; i < 5; i++) {
-      const sx = startX + i * (starR * 2 + gap);
+      const sx = geo.centers[i]!.x;
       const pts = this.starPoints(sx, starCY, starR, starIR);
 
       const base = new Graphics();
@@ -1107,8 +748,11 @@ export class HudView extends Container {
     const silOff = silhouetteOffset(prog.artPrefix, silTex);
     silSprite.x = silOff.x;
     silSprite.y = silOff.y;
-    silSprite.tint = 0x000000;
-    const outline = new OutlineFilter({ thickness: 2, color: 0xffffff, quality: 1.0 });
+    // Unrevealed = a dark slate figure with a cream keyline, not a pure-black
+    // cut-out (that read as a missing image).
+    silSprite.tint = 0x1a2331;
+    silSprite.alpha = 0.92;
+    const outline = new OutlineFilter({ thickness: 1.6, color: 0xf3e6d4, alpha: 0.75, quality: 1.0 });
     outline.resolution = window.devicePixelRatio || 1;
     silSprite.filters = [outline];
     assembly.addChild(silSprite);
@@ -1131,12 +775,16 @@ export class HudView extends Container {
       }
     }
 
+    // Fit the FIGURE (its alpha box), not the padded canvas, between the crew
+    // header and the crew strip.
+    const { top, bottom } = this.crewBounds(rect);
+    const fig = pieceBounds(silTex);
     const boxW = rect.width - 24;
-    const boxH = rect.height - 84;
-    const scale = Math.min(boxW / silTex.width, boxH / silTex.height);
-    const multiplier = prog.artPrefix !== "char" ? 1.25 : 1.0;
+    const boxH = Math.max(80, bottom - top);
+    const scale = Math.min(boxW / fig.w, boxH / fig.h);
+    const multiplier = 1.0;
     assembly.scale.set(scale * multiplier);
-    assembly.position.set(rect.x + rect.width / 2, rect.y + 60 + (rect.height - 60) / 2);
+    assembly.position.set(rect.x + rect.width / 2 - (fig.ox + silOff.x) * scale, top + boxH / 2 - (fig.oy + silOff.y) * scale);
     // Contact shadow: she stands ON the street, not pasted over it.
     const fb = pieceBounds(silTex);
     const k = scale * multiplier;
@@ -1175,204 +823,5 @@ export class HudView extends Container {
     const rg = Math.round(ag + (bg - ag) * t);
     const rb = Math.round(ab + (bb - ab) * t);
     return (rr << 16) | (rg << 8) | rb;
-  }
-
-  /** Points along an arc for an OPEN polyline (`poly(pts, false)`). ALWAYS use
-   *  this for curved strokes on the control bar — never `g.arc()`, which appends
-   *  to the running path and trails a stray line from the shape drawn before it
-   *  (that was the "weird lines" on the buttons). */
-  private arcPts(cx: number, cy: number, radius: number, a0: number, a1: number, steps = 10): number[] {
-    const pts: number[] = [];
-    for (let i = 0; i <= steps; i++) {
-      const a = a0 + (a1 - a0) * (i / steps);
-      pts.push(cx + radius * Math.cos(a), cy + radius * Math.sin(a));
-    }
-    return pts;
-  }
-
-  /** Crisp vector icons for the utility buttons, replacing the old OS emoji
-   *  (☰ 📻 ⓘ) that rendered differently on every platform and read as cheap.
-   *  Sized to the button radius so they stay sharp at any DPI. */
-  private drawUtilityIcon(g: Graphics, action: string, r: number): void {
-    const c = this.palette.icon;
-    const s = r / 19; // icons authored for r≈19, scaled to the actual button
-    const cx = r, cy = r;
-    if (action === "menu") {
-      for (let i = -1; i <= 1; i++) {
-        g.roundRect(cx - 8 * s, cy + i * 6 * s - 1.4 * s, 16 * s, 2.8 * s, 1.4 * s).fill(c);
-      }
-    } else if (action === "info") {
-      g.circle(cx, cy, 12 * s).stroke({ color: c, width: 1.6 * s, alpha: 0.85 });
-      g.circle(cx, cy - 5 * s, 1.9 * s).fill(c);
-      g.roundRect(cx - 1.6 * s, cy - 1.5 * s, 3.2 * s, 8.5 * s, 1.6 * s).fill(c);
-    } else {
-      // radio / sound — a speaker cone; waves when on, an X when muted. Every
-      // stroke below is an OPEN polyline (poly(pts,false)); we must NOT use
-      // g.arc() or bare moveTo/lineTo here — those append to the running path and
-      // trailed a stray diagonal line from the cone across the button.
-      const muted = this.runtime.isMuted();
-      g.poly([
-        cx - 9 * s, cy - 3.4 * s, cx - 4.5 * s, cy - 3.4 * s, cx - 0.5 * s, cy - 7.5 * s,
-        cx - 0.5 * s, cy + 7.5 * s, cx - 4.5 * s, cy + 3.4 * s, cx - 9 * s, cy + 3.4 * s,
-      ]).fill(c);
-      if (muted) {
-        g.poly([cx + 2.5 * s, cy - 4.5 * s, cx + 8.5 * s, cy + 4.5 * s], false).stroke({ color: c, width: 2 * s });
-        g.poly([cx + 8.5 * s, cy - 4.5 * s, cx + 2.5 * s, cy + 4.5 * s], false).stroke({ color: c, width: 2 * s });
-      } else {
-        const wave = (radius: number): number[] => {
-          const pts: number[] = [];
-          for (let a = -Math.PI / 3; a <= Math.PI / 3 + 1e-3; a += Math.PI / 14) {
-            pts.push(cx - 1 * s + radius * Math.cos(a), cy + radius * Math.sin(a));
-          }
-          return pts;
-        };
-        g.poly(wave(5.5 * s), false).stroke({ color: c, width: 1.8 * s });
-        g.poly(wave(9 * s), false).stroke({ color: c, width: 1.8 * s });
-      }
-    }
-  }
-
-  private smallButton(x: number, y: number, size: number, _label: string, action: string): void {
-    const button = new Container();
-    const r = size / 2;
-    const accent = this.palette.amber;
-    const disc = new Graphics();
-    disc.circle(r, r, r).fill({ color: this.palette.glass, alpha: 0.55 });
-    disc.circle(r, r, r).stroke({ color: accent, width: 2.6, alpha: 0.24 });
-    disc.circle(r, r, r - 0.5).stroke({ color: accent, width: 1.2, alpha: 0.82 });
-    // top specular highlight — an OPEN polyline (never g.arc(); see arcPts()).
-    disc.poly(this.arcPts(r, r, r - 1.6, Math.PI * 1.15, Math.PI * 1.85), false).stroke({ color: 0xffffff, width: 1.1, alpha: 0.28 });
-    button.addChild(disc);
-
-    const icon = new Graphics();
-    this.drawUtilityIcon(icon, action, r);
-    button.addChild(icon);
-
-    button.position.set(x, y);
-    button.eventMode = "static";
-    button.cursor = "pointer";
-    button.on("pointerover", () => { button.scale.set(1.1); disc.tint = 0xfff0c8; });
-    button.on("pointerout", () => { button.scale.set(1); disc.tint = 0xffffff; });
-    button.on("pointertap", () => void this.runtime.onAction(action));
-    this.addChild(button);
-  }
-
-  private betButton(x: number, y: number, size: number, _label: string, action: string): void {
-    const button = new Container();
-    const r = size / 2;
-    const accent = this.palette.amber;
-    const g = new Graphics();
-    g.circle(r, r, r).fill({ color: this.palette.glass, alpha: 0.55 });
-    g.circle(r, r, r).stroke({ color: accent, width: 2.8, alpha: 0.3 });
-    g.circle(r, r, r - 0.5).stroke({ color: accent, width: 1.3, alpha: 0.9 });
-    g.poly(this.arcPts(r, r, r - 1.8, Math.PI * 1.15, Math.PI * 1.85), false).stroke({ color: 0xffffff, width: 1.1, alpha: 0.3 });
-    button.addChild(g);
-
-    // Crisp drawn +/- glyph (was chunky Impact text). Horizontal bar for both;
-    // the vertical bar is added for "plus".
-    const sym = new Graphics();
-    const barW = r * 0.66;
-    const th = Math.max(2.8, r * 0.17);
-    sym.roundRect(r - barW / 2, r - th / 2, barW, th, th / 2).fill(this.palette.gold);
-    if (action === "plus") sym.roundRect(r - th / 2, r - barW / 2, th, barW, th / 2).fill(this.palette.gold);
-    button.addChild(sym);
-
-    button.position.set(x, y);
-    button.eventMode = "static";
-
-    const disabled = this.controlsLocked();
-    button.cursor = disabled ? "default" : "pointer";
-    if (disabled) button.alpha = 0.5;
-
-    button.on("pointerover", () => { if (!disabled) { button.scale.set(1.12); g.tint = 0xfff0c8; } });
-    button.on("pointerout", () => { if (!disabled) { button.scale.set(1); g.tint = 0xffffff; } });
-    button.on("pointertap", () => { if (!this.controlsLocked()) void this.runtime.onAction(action); });
-    this.addChild(button);
-  }
-
-  private spinButton(x: number, y: number): void {
-    const isPlaying = this.runtime.isPlaying();
-    const autoRemaining = this.runtime.getAutoplayRemaining?.() ?? 0;
-    const isAuto = autoRemaining > 0;
-    const button = new Container();
-    const R = 44;
-
-    const visual = new Container();
-
-    const ring = isPlaying ? this.palette.amberDim : this.palette.gold;
-
-    const halo = new Graphics();
-    halo.circle(R, R, R + 10).fill({ color: this.palette.amber, alpha: isPlaying ? 0 : 0.09 });
-    visual.addChild(halo);
-
-    const outer = new Graphics();
-    outer.circle(R, R, R).fill({ color: this.palette.glass, alpha: 0.55 });
-    // Neon tube: soft wide pass under a bright hairline, like the buy panels.
-    outer.circle(R, R, R).stroke({ color: ring, width: 4.2, alpha: 0.32 });
-    outer.circle(R, R, R).stroke({ color: ring, width: 2, alpha: 0.95 });
-    visual.addChild(outer);
-
-    const inner = new Graphics();
-    inner.circle(R, R, R - 8).fill({ color: this.palette.glass, alpha: 0.5 });
-    inner.circle(R, R, R - 8).stroke({ color: ring, width: 1.5, alpha: 0.4 });
-    visual.addChild(inner);
-
-    const spinLabel = isAuto
-      ? `STOP\n${Number.isFinite(autoRemaining) ? autoRemaining : "∞"}`
-      : "SPIN";
-    const spinText = new Text({
-      text: spinLabel,
-      style: new TextStyle({
-        fill: isAuto ? 0xff7676 : isPlaying ? 0x5a6a7c : 0xffffff,
-        fontFamily: UI_FONT,
-        fontSize: isAuto ? 18 : 22,
-        fontWeight: "900",
-        letterSpacing: 1,
-        padding: 12,
-        align: "center",
-        dropShadow: isPlaying && !isAuto ? undefined : { color: isAuto ? 0xff5555 : this.palette.amber, alpha: 0.45, blur: 7, distance: 0 }
-      })
-    });
-    spinText.anchor.set(0.5, 0.5);
-    spinText.position.set(R, R);
-    visual.addChild(spinText);
-
-    button.addChild(visual);
-    button.position.set(x, y);
-    button.eventMode = "static";
-
-    const disabled = (isPlaying && !isAuto) || (this.runtime.isReplayActive && this.runtime.isReplayActive());
-    button.cursor = disabled ? "default" : "pointer";
-    if (this.runtime.isReplayActive && this.runtime.isReplayActive()) {
-        button.alpha = 0.5;
-    }
-
-    if (!disabled) {
-      this.addAmbient((_dt, elapsed) => {
-        const pulse = 0.7 + Math.sin(elapsed * 3) * 0.3;
-        halo.alpha = pulse * 0.10;
-        outer.alpha = 0.7 + pulse * 0.3;
-      });
-
-      button.on("pointerover", () => {
-        visual.scale.set(1.08);
-        halo.alpha = 0.20;
-      });
-      button.on("pointerout", () => {
-        visual.scale.set(1);
-      });
-      button.on("pointerdown", () => {
-        visual.scale.set(0.94);
-      });
-      button.on("pointerup", () => {
-        visual.scale.set(1);
-        void this.runtime.onAction("spin");
-      });
-      button.on("pointerupoutside", () => {
-        visual.scale.set(1);
-      });
-    }
-
-    this.addChild(button);
   }
 }

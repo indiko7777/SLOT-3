@@ -51,6 +51,11 @@ export interface SceneRuntime {
   isAnteEnabled(): boolean;
   isMuted(): boolean;
   isTurbo(): boolean;
+  /** Persistent spin-speed setting shown on the bar's TURBO key. */
+  getTurboMode?(): "off" | "turbo" | "super";
+  /** Whether the bet can step down / up from the current level (RGS bet levels). */
+  canBetDown?(): boolean;
+  canBetUp?(): boolean;
   isPlaying(): boolean;
   isReplayActive?(): boolean;
   getBetLevel(): number;

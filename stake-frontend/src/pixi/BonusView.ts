@@ -1,4 +1,5 @@
 import { formatMultiplier } from "../format";
+import { money as fmtMoney } from "../currency";
 import { MiamiStreet } from "./MiamiStreet";
 import { BlurFilter, ColorMatrixFilter, Container, FillGradient, Graphics, PerspectiveMesh, Sprite, Text, TextStyle, Texture } from "pixi.js";
 import { BONUS_START_RESPINS, GRID_COLUMNS, GRID_ROWS, MAX_WIN_MULTIPLIER, type BonusCell, type Position } from "../domain";
@@ -131,11 +132,6 @@ function fmtX(v: number): string {
   return `${formatMultiplier(v, true)}x`;
 }
 
-/** Compact but EXACT money: "4", "1.5", "0.0115", "1,250" — no trailing zeros,
- *  never rounded (a 1.15x bar on a 0.01 bet is 0.0115). */
-function fmtMoneyNum(amount: number): string {
-  return formatMultiplier(amount, true);
-}
 
 export class BonusView extends Container {
   private readonly bgLayer = new Container();
@@ -231,7 +227,7 @@ export class BonusView extends Container {
   /** Money string with the currency, for result pop-ups and the small USD total.
    *  Gold bars themselves keep their multiplier numbers (fmtX). */
   private fmtTotal(v: number): string {
-    return this.betAmount > 0 ? `${fmtMoneyNum(v * this.betAmount)} ${this.currency}` : fmtX(v);
+    return this.betAmount > 0 ? fmtMoney(v * this.betAmount) : fmtX(v);
   }
 
   constructor() {
@@ -1184,7 +1180,7 @@ export class BonusView extends Container {
     c.position.set(x, y);
     const cell = this.cellRect(0, 0);
 
-    const moneyStr = this.betAmount > 0 ? `+${fmtMoneyNum(gainedX * this.betAmount)}` : `+${fmtX(gainedX)}`;
+    const moneyStr = this.betAmount > 0 ? `+${fmtMoney(gainedX * this.betAmount)}` : `+${fmtX(gainedX)}`;
     const money = new Text({
       text: moneyStr,
       style: new TextStyle({

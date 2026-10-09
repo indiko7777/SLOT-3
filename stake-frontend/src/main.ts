@@ -4,7 +4,7 @@ import { EventAudioBus } from "./audio";
 import { SoundToggle } from "./audio/SoundToggle";
 import { MAX_WIN_MULTIPLIER, displayCurrency, isSocialCurrency, uiStrings, type BonusCell, type Board, type GameEvent, type Position, type RoundRecord, type SymbolId } from "./domain";
 import { isModalOpen, showChoiceModal, showToast } from "./modals";
-import { formatAmount, formatMultiplier } from "./format";
+import { formatMultiplier } from "./format";
 import { hideLoader, showLoader, updateLoader } from "./loader";
 import { showIntro } from "./intro";
 import { applyEvent, INITIAL_SNAPSHOT, type PlaybackSnapshot } from "./playback";
@@ -27,6 +27,7 @@ import { readSession } from "./rgs/session";
 import type { BetModeObject, Jurisdiction } from "./rgs/types";
 import { showConfirmPopup, prewarmConfirmPopups } from "./confirmPopup";
 import { SettingsMenu, type TurboMode } from "./settingsMenu";
+import { setActiveCurrency, money } from "./currency";
 import { selectSpinMode, starsForMode } from "./meta/starModes";
 import { cosmeticThemeFor } from "./meta/rewards";
 import { countRoundWilds, receiptKey, sanitizeReceipts, type CollectionReceipts } from "./meta/roundCollection";
@@ -285,6 +286,7 @@ async function boot(): Promise<void> {
     if (session.isReplayMode) {
       isReplayActive = true;
       currency = session.currencyHint || "USD";
+      setActiveCurrency(currency);
       balance = 0; // Balance hidden in replay
       jurisdiction = null;
       betLevels = [session.replayAmount > 0 ? session.replayAmount : 1];
@@ -315,6 +317,7 @@ async function boot(): Promise<void> {
     } else {
       const auth = await client.authenticate();
       currency = auth.balance.currency;
+      setActiveCurrency(currency);
       balance = toDisplay(auth.balance.amount);
       betModes = auth.config.betModes ?? {};
       // ROBUSTNESS — the BUY GETAWAY / SUPER / ANTE buttons are drawn
@@ -382,6 +385,9 @@ async function boot(): Promise<void> {
     isPlaying: () => isPlaying,
     isReplayActive: () => isReplayActive,
     getBetLevel: () => betLevels[betIndex] ?? 0,
+    getTurboMode: () => turboMode,
+    canBetDown: () => betIndex > 0,
+    canBetUp: () => betIndex < betLevels.length - 1,
     getCredit: () => balance,
     getCurrency: () => displayCur(),
     // Replays carry only the replayed mode's cost, so the feature panel falls
@@ -775,13 +781,12 @@ async function boot(): Promise<void> {
  */
 async function resumeInterruptedRound(record: RoundRecord): Promise<void> {
   const s = ui();
-  const cur = displayCur();
   const betAmount = currentBet();
   const choice = await showChoiceModal(
     {
       title: "Unfinished Round",
       lines: [
-        { label: s.baseBetLabel, value: `${formatAmount(betAmount)} ${cur}` },
+        { label: s.baseBetLabel, value: money(betAmount) },
         { label: s.finalMultLabel, value: `${formatMultiplier(record.payoutMultiplier)}x` }
       ],
       text: "Your last round was interrupted. Watch it play out, or skip straight to the result — the outcome is already decided and is added to your balance either way.",
@@ -819,7 +824,7 @@ async function resumeInterruptedRound(record: RoundRecord): Promise<void> {
         {
           title: "Round Result",
           lines: [
-            { label: s.totalWinLabel, value: `${formatAmount(total)} ${cur}` },
+            { label: s.totalWinLabel, value: money(total) },
             { label: s.finalMultLabel, value: `${formatMultiplier(record.payoutMultiplier)}x` }
           ],
           buttons: [{ key: "ok", label: "Continue", primary: true }]
@@ -843,14 +848,13 @@ async function resumeInterruptedRound(record: RoundRecord): Promise<void> {
  */
 async function runReplayFlow(record: RoundRecord): Promise<void> {
   const s = ui();
-  const cur = displayCur();
   const betAmount = currentBet();
   const costMult = betModes[activeModeKey]?.costMultiplier ?? 1;
   const totalCost = betAmount * costMult;
   const totalWin = record.payoutMultiplier * betAmount;
   const modeLabel = activeModeKey.replaceAll("_", " ").toUpperCase();
   const resultLines = [
-    { label: s.totalWinLabel, value: `${formatAmount(totalWin)} ${cur}` },
+    { label: s.totalWinLabel, value: money(totalWin) },
     { label: s.finalMultLabel, value: `${formatMultiplier(record.payoutMultiplier)}x` }
   ];
 
@@ -860,9 +864,9 @@ async function runReplayFlow(record: RoundRecord): Promise<void> {
         title: "Replay",
         lines: [
           { label: "Mode", value: modeLabel },
-          { label: s.baseBetLabel, value: `${formatAmount(betAmount)} ${cur}` },
+          { label: s.baseBetLabel, value: money(betAmount) },
           { label: s.costMultLabel, value: `${formatMultiplier(costMult)}x` },
-          { label: s.totalCostLabel, value: `${formatAmount(totalCost)} ${cur}` },
+          { label: s.totalCostLabel, value: money(totalCost) },
           ...resultLines
         ],
         buttons: [{ key: "start", label: "Start Replay", primary: true }]
@@ -878,7 +882,7 @@ async function runReplayFlow(record: RoundRecord): Promise<void> {
       {
         title: "Replay Finished",
         lines: [
-          { label: s.totalCostLabel, value: `${formatAmount(totalCost)} ${cur}` },
+          { label: s.totalCostLabel, value: money(totalCost) },
           ...resultLines
         ],
         buttons: [
@@ -894,7 +898,7 @@ async function runReplayFlow(record: RoundRecord): Promise<void> {
 
 async function handleAction(action: string): Promise<void> {
   // Replay disables wagering; sound, rules and playback speed remain available.
-  if (isReplayActive && !["mute", "menu", "info"].includes(action)) return;
+  if (isReplayActive && !["mute", "menu", "info", "turbo"].includes(action)) return;
   // Stopping autoplay must work at ANY moment — including mid-round — so it
   // is handled before every playing/lock gate below.
   if (action === "spin" && autoplayRemaining > 0) {
@@ -915,6 +919,25 @@ async function handleAction(action: string): Promise<void> {
     case "menu": // ☰ — open the game menu (spin speed + autoplay)
       settingsMenu.toggle();
       return;
+    case "autoplay":
+      // A running session stops from here too; otherwise open the autoplay
+      // settings — one press never starts auto-betting (Engine #104).
+      if (autoplayRemaining > 0) { stopAutoplay(); return; }
+      settingsMenu.toggle("game");
+      return;
+    case "turbo": {
+      // Cycle the persistent spin speed, skipping whatever the jurisdiction disables.
+      const order: TurboMode[] = ["off", "turbo", "super"];
+      const allowed = order.filter((m) =>
+        m === "off" || (m === "turbo" && !jurisdiction?.disabledTurbo) || (m === "super" && !jurisdiction?.disabledSuperTurbo));
+      if (allowed.length < 2) return;
+      turboMode = allowed[(allowed.indexOf(turboMode) + 1) % allowed.length]!;
+      applyTurboMode();
+      showToast(turboMode === "off" ? "TURBO OFF" : turboMode === "turbo" ? "TURBO SPIN ON" : "EXTRA TURBO ON", 1400);
+      if (!muted) audioBus.playUI("click", false);
+      scene.renderSnapshot(snapshot);
+      return;
+    }
     case "mute": // repurposed: open the GTA-style radio wheel
       await audioBus.unlock();
       radioWheel.setCurrent(muted ? "off" : audioBus.getStation());

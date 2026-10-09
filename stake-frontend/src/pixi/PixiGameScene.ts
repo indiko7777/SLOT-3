@@ -17,7 +17,7 @@ import type { LayoutMetrics, SceneRuntime } from "./types";
 import { OutlineFilter } from "pixi-filters";
 import { CardPeekView } from "./CardPeekView";
 import { GalleryView } from "./GalleryView";
-import { formatAmount } from "../format";
+import { money } from "../currency";
 
 /** Collection voice lines per girl, indexed by GIRLS[] id, in PLAY ORDER.
  *  The file names are inconsistent ("milstone1", "mileston3", and girl 1's set
@@ -376,7 +376,8 @@ export class PixiGameScene {
         await this.effects.banner(snapshot.lastMessage, "", this.layout.board, turbo);
         return;
       case "cluster_win": {
-        void this.playCombinationAnimation(event.symbol, event.positions, turbo);
+        // The board traces one outline round the cluster (BoardView.highlight);
+        // the old cell-to-cell link lines are gone.
         // The cluster's own payout pops up ON the cluster (round total still
         // counts in the bar) — the player sees what each combination was worth.
         const amount = event.payout * (snapshot.betAmount || 0);
@@ -384,7 +385,7 @@ export class PixiGameScene {
           const at = this.clusterAnchor(event.positions);
           const accent = WIN_ACCENT[event.symbol] ?? DEFAULT_ACCENT;
           void wait(turbo ? 40 : 160).then(() =>
-            this.effects.floatValue(at.x, at.y, formatAmount(amount, true), accent, this.layout.board, turbo));
+            this.effects.floatValue(at.x, at.y, money(amount), accent, this.layout.board, turbo));
         }
         await this.board.highlight(event.positions, turbo);
         return;
@@ -567,9 +568,8 @@ export class PixiGameScene {
           );
         } else if (event.payoutMultiplier >= 5) {
           // NICE WIN — light, non-blocking celebration with a gold coin burst.
-          const currency = this.runtime.getCurrency();
           const winAmount = event.payoutMultiplier * snapshot.betAmount;
-          const amtStr = formatAmount(winAmount, true) + " " + currency;
+          const amtStr = money(winAmount);
           const cx = this.layout.board.x + this.layout.board.width / 2;
           const cy = this.layout.board.y + this.layout.board.height / 2;
           this.hud.setWinAmountDirect(winAmount);

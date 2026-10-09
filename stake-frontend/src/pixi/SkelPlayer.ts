@@ -173,6 +173,9 @@ export class SkelPlayer extends Container {
   private _byName: Record<string, Bone> = {};
   private _slots: Slot[] = [];
   private _slotByName: Record<string, Slot> = {};
+  /** Game-side opacity on top of the clip's own slot colour (e.g. the baked
+   *  "glow" halo, which the game keeps off at rest and raises on a win). */
+  private _slotMul: Record<string, number> = {};
   private _cur: string | null = null;
   private _t = 0;
   private _loop = false;
@@ -247,6 +250,14 @@ export class SkelPlayer extends Container {
   }
 
   get animations(): string[] { return Object.keys(this._anims); }
+
+  /** Scale a slot's opacity (0..1) independently of whatever clip is playing. */
+  setSlotAlpha(name: string, k: number): void {
+    if (!this._slotByName[name]) return;
+    this._slotMul[name] = Math.max(0, Math.min(1, k));
+    const sp = this._slotByName[name]!.sprite;
+    if (sp.visible) sp.alpha = Math.min(sp.alpha, this._slotMul[name]!);
+  }
 
   /** True if the bundle ships a clip with this name. */
   has(name: string): boolean { return Boolean(this._anims[name]); }
@@ -409,7 +420,7 @@ export class SkelPlayer extends Container {
       const sp = s.sprite;
       const attName = s.att, att = attName ? s.atts[attName] : null;
       const reg = att ? this._regions[(att.path || attName)!] : null;
-      const alpha = parseInt((s.color || "ffffffff").slice(6, 8), 16) / 255;
+      const alpha = (parseInt((s.color || "ffffffff").slice(6, 8), 16) / 255) * (this._slotMul[s.name] ?? 1);
       if (!att || !reg || alpha <= 0) { sp.visible = false; continue; }
       sp.visible = true;
       const tex = this._texture((att.path || attName)!);

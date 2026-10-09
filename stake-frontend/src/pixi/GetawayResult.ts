@@ -1,4 +1,5 @@
-import { amountDecimals, formatAmount, formatMultiplier } from "../format";
+import { formatAmount, formatMultiplier } from "../format";
+import { exactDecimals, money as currencyMoney } from "../currency";
 import { MAX_WIN_MULTIPLIER } from "../domain";
 import { createWinCount } from "./winCount";
 import { getTimeScale } from "./tween";
@@ -43,7 +44,7 @@ const tierFor = (multiplier: number): number => {
 /** The win is MONEY: thousands separators and at least two decimals, but never
  *  rounded — a 0.0115 win shows 0.0115. `decimals` pins the precision for the
  *  whole count-up so the digits don't flicker between 2 and 4 places. */
-const money = (amount: number, decimals = amountDecimals(amount)): string =>
+const money = (amount: number, decimals = exactDecimals(amount, 2)): string =>
   formatAmount(amount, true, decimals);
 
 /** Getaway-only payout and exit surface. It stays mounted until the regular game
@@ -178,7 +179,7 @@ export class GetawayResult {
     /** The heist readout: bars locked, blasts, spins played. */
     stats?: { bars: number; blasts: number; spins: number };
   }): Promise<void> {
-    const { totalX, filled, bet, currency, turbo, autoDismiss, audio, stats } = options;
+    const { totalX, filled, bet, turbo, autoDismiss, audio, stats } = options;
     if (stats) {
       for (const [key, v] of Object.entries(stats)) {
         const el = this.root.querySelector<HTMLElement>(`[data-stat="${key}"]`);
@@ -196,9 +197,12 @@ export class GetawayResult {
     // A zero bet means the screen is showing bare multipliers (replay/preview).
     const asMoney = bet > 0;
     const amount = totalX * (asMoney ? bet : 1);
-    const decimals = amountDecimals(amount);
-    const finalText = money(amount, decimals);
-    this.find("currency").textContent = asMoney ? currency : "×";
+    // Money carries its own symbol in the active currency's format ("$46.00",
+    // "¥4,600", "46.00 SC"); bare multipliers keep the small "×" mark.
+    const decimals = asMoney ? exactDecimals(amount) : exactDecimals(amount, 2);
+    const fmt = (v: number): string => (asMoney ? currencyMoney(v, decimals) : money(v, decimals));
+    const finalText = fmt(amount);
+    this.find("currency").textContent = asMoney ? "" : "×";
     this.promote(tierFor(0), audio);
 
     let counter: ReturnType<typeof createWinCount> | undefined;
@@ -263,7 +267,7 @@ export class GetawayResult {
         duration: instant ? 0 : Math.min(4600, 2000 + Math.log10(Math.max(1, totalX)) * 620) / getTimeScale(),
         update: (p) => {
           const shownX = totalX * p;
-          value.textContent = money(amount * p, decimals);
+          value.textContent = fmt(amount * p);
           chip.textContent = `${formatMultiplier(Math.round(shownX * 100) / 100, true)}×`;
           // Set on the bar itself: a custom property changed on the ROOT every
           // frame re-styled (and re-rasterised) the whole full-screen backdrop.
@@ -293,8 +297,8 @@ export class GetawayResult {
       this.root.dataset.phase = "settled";
       this.burst();
       cta.innerHTML = "<span>COLLECT</span>";
-      cta.setAttribute("aria-label", `Total win ${finalText} ${asMoney ? currency : "times"}. Collect and return to the game`);
-      amountEl.setAttribute("aria-label", `${finalText} ${asMoney ? currency : "times"}`);
+      cta.setAttribute("aria-label", `Total win ${finalText}${asMoney ? "" : " times"}. Collect and return to the game`);
+      amountEl.setAttribute("aria-label", `${finalText}${asMoney ? "" : " times"}`);
       if (autoDismiss && !dismissed) timer = window.setTimeout(dismiss, turbo ? 1400 : 2600);
       await done;
     } finally {

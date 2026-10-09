@@ -171,6 +171,9 @@ const OPTIONAL_ASSETS: Record<string, string> = {
   "gold_bar": "gold_bar.webp",
   "dynamite": "dynamite.webp",
   "heat_chase_logo": "Heat Chase Logo.webp",
+  // Buy-column cards: crops of the confirmation popups' key art.
+  "card_getaway": "popup/card_getaway.webp",
+  "card_super": "popup/card_super.webp",
   // Symbol-sized, pre-shaded variant used as the Getaway bonus reel watermark.
   // Separate file (not just a tinted copy) so the big corner logo stays vivid.
   "heat_chase_logo_symbol": "heat_chase_logo_symbol.webp",
@@ -220,7 +223,8 @@ export async function loadSymbolTextures(): Promise<void> {
   loaded = true;
 
   // Backgrounds + optional bonus art — failures are silently ignored.
-  for (const [key, file] of [...Object.entries(BG_ASSETS), ...Object.entries(OPTIONAL_ASSETS)]) {
+  // (In parallel: one at a time, these ~20 files serialised the boot.)
+  await Promise.all([...Object.entries(BG_ASSETS), ...Object.entries(OPTIONAL_ASSETS)].map(async ([key, file]) => {
     try {
       const url = BASE_PATH + file + CACHE_BUST;
       const tex = await Assets.load<Texture>(url);
@@ -228,7 +232,7 @@ export async function loadSymbolTextures(): Promise<void> {
     } catch {
       // Missing file — procedural fallback will be used
     }
-  }
+  }));
 
   // Skeletal animation bundles — a missing one falls back to the static sprite.
   await Promise.all(

@@ -8,7 +8,7 @@ import { makeText } from "./text";
 import { tween, wait, easeOutBack, easeOutCubic, easeInOutCubic, easeOutElastic, linear, ambientTicker, getTimeScale, simulate } from "./tween";
 import { getExtraTexture } from "./assets";
 import { raysTexture, softGlowTexture } from "./fxTextures";
-import { winCountFormatter } from "./winCount";
+import { winCountFormatter, winCountMoney } from "./winCount";
 
 export class EffectsLayer extends Container {
   public readonly particles = new Container();
@@ -779,7 +779,7 @@ export class EffectsLayer extends Container {
     betAmount: number,
     rect: Rect,
     turbo: boolean,
-    currency: string,
+    _currency: string,
     onUpdate: (amount: number) => void,
     /** Autoplay/replay: the max-win hold must dismiss itself — no tap is coming. */
     autoDismiss = false
@@ -876,10 +876,11 @@ export class EffectsLayer extends Container {
     // Keep precision stable throughout the roll, including fractional wagers.
     const finalAmount = targetMultiplier * betAmount;
     const formatCount = winCountFormatter(finalAmount);
+    const moneyCount = winCountMoney(finalAmount);
     // --- Win amount text --- (hard shadow, no blur: it re-rasterises as it
     // counts, and a 12px canvas blur on every digit change was a frame-time hog)
     const amtText = new Text({
-      text: formatCount(0) + " " + currency,
+      text: moneyCount(0),
       style: new TextStyle({
         fill: 0xffdf65,
         fontFamily: DISPLAY_FONT,
@@ -1028,7 +1029,7 @@ export class EffectsLayer extends Container {
         const currentAmount = currentMult * betAmount;
         const p = currentMult / targetMultiplier;
 
-        const shown = formatCount(currentAmount) + " " + currency;
+        const shown = moneyCount(currentAmount);
         if (shown !== lastShown) {
           lastShown = shown;
           amtText.text = shown;
@@ -1063,7 +1064,7 @@ export class EffectsLayer extends Container {
     });
 
     // Final confirmations
-    amtText.text = formatCount(finalAmount) + " " + currency;
+    amtText.text = moneyCount(finalAmount);
     amtText.scale.set(1);
     amtText.scale.set(Math.min(1, stripW * .65 / Math.max(1, amtText.width)));
     onUpdate(finalAmount);

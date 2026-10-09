@@ -1,38 +1,125 @@
-import { Container, Graphics, Sprite, Text, TextStyle } from "pixi.js";
-import { getExtraTexture, silhouetteOffset } from "./assets";
-import { tween } from "./tween";
+import { Container, FillGradient, Graphics, Sprite, Text, TextStyle, Texture } from "pixi.js";
+import { getExtraTexture } from "./assets";
+import { pieceBounds } from "./girlReveal";
+import { ambientTicker, tween, easeOutCubic, easeInOutCubic } from "./tween";
 import { getPrestigeTitle } from "../meta/collection";
+import { DISPLAY_FONT, UI_FONT } from "../typography";
 
-// ── Theme palette ────────────────────────────────────────────────────────────
-const WHITE  = 0xffffff;
-const BLACK  = 0x000000;
-const PINK   = 0xff00b8;
-const GOLD   = 0xffdf65;
-const CYAN   = 0x00ffff;
-const GREEN  = 0x4ee06a;
+/**
+ * The Beach Girl Deck as a character-select screen (GTA VI site language):
+ * the girl full height on one side, her name huge in a sunset gradient on the
+ * other, one thin progress line, one line of rules, the reward — and three
+ * portrait tabs to switch between the crew. Her unrevealed parts are a dark
+ * ghost of her real art (not a flat black cut-out); collected pieces sit on
+ * top in full colour.
+ *
+ * Motion: she rises in, the name reveals letter by letter, the info lines
+ * slide up in sequence, the bar fills; switching girls is a parallax
+ * cross-slide; at rest she breathes. No masks anywhere.
+ */
 
-const IMPACT = "Impact,'Arial Black',sans-serif";
-const FONT   = "'Archivo Narrow','Arial Narrow','Helvetica Neue',Helvetica,Arial,sans-serif";
+const WHITE = 0xfff4f8;
+const LAVENDER = 0xb9acd9;
+const DIM = 0x6f6488;
 
-const THEME   = [PINK, GOLD, CYAN];
-const NAMES   = ["SAPPHIRE", "ROXY", "VEGA"];
+const NAMES = ["SAPPHIRE", "ROXY", "VEGA"];
 const REWARDS = ["NEON NIGHTS SKIN", "GOLD RUSH SKIN", "DIAMOND ELITE SKIN"];
-const PIECES  = [8, 7, 8];
-const PREFIX  = ["char", "char2", "char3"];
+const PIECES = [8, 7, 8];
+const PREFIX = ["char", "char2", "char3"];
+/** Per-girl sunset pair (name gradient, bar, ambient glow). */
+const NEON: Array<[string, string]> = [["#3fd4ff", "#7a7dff"], ["#ff3d8b", "#ffa14a"], ["#a35bff", "#ff4fa8"]];
+const GLOW = [0x3f8dff, 0xff4f7a, 0x9a4dff];
+
+function grad(stops: Array<[number, string]>, dir: "h" | "v" | "d" = "h"): FillGradient {
+  return new FillGradient({
+    type: "linear",
+    start: { x: 0, y: 0 },
+    end: dir === "h" ? { x: 1, y: 0 } : dir === "v" ? { x: 0, y: 1 } : { x: 1, y: 1 },
+    textureSpace: "local",
+    colorStops: stops.map(([offset, color]) => ({ offset, color })),
+  });
+}
+
+function txt(text: string, size: number, fill: number | FillGradient, font = UI_FONT, weight: TextStyle["fontWeight"] = "700", spacing = 0): Text {
+  return new Text({ text, style: new TextStyle({ fill, fontFamily: font, fontSize: size, fontWeight: weight, letterSpacing: spacing, padding: 6 }) });
+}
+
+const blurCache = new Map<string, Texture>();
+
+/** Heavily blurred copy of an art texture — the coloured ambience behind her. */
+function blurred(tex: Texture, key: string): Texture | null {
+  const hit = blurCache.get(key);
+  if (hit) return hit;
+  const src = (tex.source as unknown as { resource?: CanvasImageSource }).resource;
+  if (!src || typeof document === "undefined") return null;
+  const small = document.createElement("canvas");
+  small.width = 48; small.height = Math.round(48 * tex.height / tex.width);
+  const s = small.getContext("2d")!;
+  s.imageSmoothingQuality = "high";
+  s.drawImage(src, 0, 0, small.width, small.height);
+  const out = document.createElement("canvas");
+  out.width = 256; out.height = Math.round(256 * tex.height / tex.width);
+  const o = out.getContext("2d")!;
+  o.imageSmoothingQuality = "high";
+  o.filter = "blur(10px) saturate(1.6)";
+  o.drawImage(small, 0, 0, out.width, out.height);
+  const t = Texture.from(out);
+  blurCache.set(key, t);
+  return t;
+}
+
+const thumbCache = new Map<string, Texture>();
+
+/** Head-and-shoulders portrait from a full-body art (rounded, canvas-cached). */
+function portrait(tex: Texture, w: number, h: number, key: string, dark: boolean): Texture | null {
+  const k = `${key}:${Math.round(w)}x${Math.round(h)}:${dark}`;
+  const hit = thumbCache.get(k);
+  if (hit) return hit;
+  const src = (tex.source as unknown as { resource?: CanvasImageSource }).resource;
+  if (!src || typeof document === "undefined") return null;
+  const res = 2;
+  const W = Math.round(w * res), H = Math.round(h * res), r = 12 * res;
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const g = c.getContext("2d")!;
+  g.imageSmoothingQuality = "high";
+  g.beginPath();
+  g.moveTo(r, 0); g.arcTo(W, 0, W, H, r); g.arcTo(W, H, 0, H, r); g.arcTo(0, H, 0, 0, r); g.arcTo(0, 0, W, 0, r);
+  g.closePath(); g.clip();
+  const bg = g.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, "#2a1342"); bg.addColorStop(1, "#120a22");
+  g.fillStyle = bg; g.fillRect(0, 0, W, H);
+  const b = pieceBounds(tex);
+  const bx = tex.width / 2 + b.ox - b.w / 2, by = tex.height / 2 + b.oy - b.h / 2;
+  const cw = b.w * 0.86, ch = cw * (H / W);
+  if (dark) g.filter = "brightness(0.18) saturate(0.4)";
+  g.drawImage(src, bx + (b.w - cw) / 2, by - ch * 0.02, cw, ch, 0, 0, W, H);
+  g.filter = "none";
+  const shade = g.createLinearGradient(0, H * 0.55, 0, H);
+  shade.addColorStop(0, "rgba(10,6,20,0)"); shade.addColorStop(1, "rgba(10,6,20,0.85)");
+  g.fillStyle = shade; g.fillRect(0, 0, W, H);
+  const t = Texture.from(c);
+  thumbCache.set(k, t);
+  return t;
+}
+
+interface GirlState { done: boolean; active: boolean; locked: boolean; have: number; total: number }
 
 export class GalleryView extends Container {
   private bg = new Graphics();
   private ct = new Container();
-  private deckContainer = new Container();
+  private ambient = new Container();
+  private heroLayer = new Container();
+  private info = new Container();
+  private tabs = new Container();
   private isVisible = false;
   private screenW = 0;
   private screenH = 0;
-
   private activeIndex = 0;
-  private cards: Container[] = [];
-  private isAnimating = false;
+  private token = 0;
+  private hero: Container | null = null;
+  private breathe: ((dt: number, t: number) => void) | null = null;
 
-  // Drag / Swipe tracking
   private isDragging = false;
   private dragStartX = 0;
   private dragCurrentX = 0;
@@ -42,29 +129,33 @@ export class GalleryView extends Container {
     this.visible = false;
     this.eventMode = "static";
     this.interactiveChildren = true;
-    this.addChild(this.bg);
-    this.addChild(this.ct);
+    this.addChild(this.bg, this.ambient, this.ct);
     this.bg.eventMode = "static";
     this.bg.on("pointertap", (e) => e.stopPropagation());
+    this.setupSwipe();
   }
 
   show(screenWidth: number, screenHeight: number): void {
+    const opening = !this.isVisible;
     this.screenW = screenWidth;
     this.screenH = screenHeight;
     const prog = this.runtime.getGalleryProgress();
-    this.activeIndex = Math.min(2, Math.max(0, prog.completedGirls));
-
-    this.rebuild();
+    if (opening) this.activeIndex = Math.min(2, Math.max(0, prog.mastered ? 0 : prog.completedGirls));
     this.visible = true;
     this.isVisible = true;
-    this.alpha = 0;
-    void tween(220, (p) => { this.alpha = p; });
+    this.rebuild(opening);
+    if (opening) {
+      this.alpha = 0;
+      void tween(260, (p) => { this.alpha = p; }, easeOutCubic);
+    }
   }
 
   hide(): void {
-    void tween(150, (p) => { this.alpha = 1 - p; }).then(() => {
+    this.isVisible = false;
+    void tween(180, (p) => { this.alpha = 1 - p; }, easeOutCubic).then(() => {
+      if (this.isVisible) return;
       this.visible = false;
-      this.isVisible = false;
+      if (this.breathe) { ambientTicker.remove(this.breathe); this.breathe = null; }
     });
   }
 
@@ -75,571 +166,370 @@ export class GalleryView extends Container {
 
   isOpen(): boolean { return this.isVisible; }
 
-  // ════════════════════════════════════════════════════════════════════════
-  private rebuild(): void {
-    const W = this.screenW;
-    const H = this.screenH;
-    const isP = W < 700 || H > W * 1.15;
-    this.ct.removeChildren();
-    this.deckContainer.removeChildren();
-    this.cards = [];
-
-    // ── Pure Fullscreen Transparent Dark Backdrop (No Outer Panel/Borders!) ──
-    this.bg.clear();
-    this.bg.rect(0, 0, W, H).fill({ color: BLACK, alpha: 0.88 });
-
-    // ── Standard Playing Card Aspect Ratio (1 : 1.4) ──────────────────────
-    const maxW = isP ? Math.min(W * 0.82, 300) : Math.min(W * 0.38, 300);
-    const maxH = Math.min(H * 0.72, maxW * 1.4);
-    const cardW = Math.min(maxW, maxH / 1.4);
-    const cardH = cardW * 1.4;
-
-    const deckCenterX = W / 2;
-    const deckCenterY = H / 2 - 10;
-
-    // ── Floating Close Button (Top-Right ✕) ──────────────────────────────
-    const closeBtn = new Container();
-    const cSize = 40;
-    const cG = new Graphics();
-    cG.circle(0, 0, cSize / 2).fill({ color: 0x111111, alpha: 0.9 }).stroke({ color: WHITE, width: 1.5, alpha: 0.6 });
-    closeBtn.addChild(cG);
-
-    const cTxt = this.txt("✕", 18, WHITE, FONT, 0);
-    cTxt.anchor.set(0.5, 0.5);
-    closeBtn.addChild(cTxt);
-
-    closeBtn.position.set(W - 30, 30);
-    closeBtn.eventMode = "static";
-    closeBtn.cursor = "pointer";
-    closeBtn.on("pointerover", () => { cG.tint = GOLD; cTxt.style.fill = BLACK; });
-    closeBtn.on("pointerout", () => { cG.tint = WHITE; cTxt.style.fill = WHITE; });
-    closeBtn.on("pointertap", (e) => { e.stopPropagation(); this.hide(); });
-    this.ct.addChild(closeBtn);
-
+  // ── state ────────────────────────────────────────────────────────────────
+  private state(i: number): GirlState {
     const prog = this.runtime.getGalleryProgress();
-
-    // ── Header Prompt & Prestige Rank Badge ──────────────────────────────
-    const headerY = deckCenterY - cardH / 2 - (isP ? 34 : 44);
-    const headerText = this.txt("BEACH GIRL DECK", isP ? 20 : 26, WHITE, IMPACT, 3);
-    headerText.anchor.set(0.5, 0.5);
-    headerText.position.set(W / 2, headerY);
-    this.ct.addChild(headerText);
-
-    // Glowing Prestige Badge if prestige > 0
-    if (prog.prestige > 0) {
-      const pTitle = getPrestigeTitle(prog.prestige);
-      const badge = new Container();
-      const bW = isP ? 140 : 170;
-      const bH = isP ? 24 : 28;
-      const bGfx = new Graphics();
-      bGfx.roundRect(-bW / 2 - 2, -bH / 2 - 2, bW + 4, bH + 4, 8).stroke({ color: GOLD, width: 1, alpha: 0.35 });
-      bGfx.roundRect(-bW / 2, -bH / 2, bW, bH, 6)
-        .fill({ color: 0x181203, alpha: 0.95 })
-        .stroke({ color: GOLD, width: 2, alpha: 0.9 });
-      badge.addChild(bGfx);
-
-      const pTxt = this.txt(`★  ${pTitle}  ★`, isP ? 11 : 13, GOLD, IMPACT, 1.5);
-      pTxt.anchor.set(0.5, 0.5);
-      badge.addChild(pTxt);
-
-      badge.position.set(W / 2, headerY - (isP ? 26 : 32));
-      this.ct.addChild(badge);
-    }
-
-    // ── Create 3 Stacked Cards (Exact Same Size & 1:1.4 Ratio) ────────────
-    const curGirl = prog.completedGirls;
-
-    for (let i = 0; i < 3; i++) {
-      const done = i < curGirl;
-      const active = i === curGirl && !prog.mastered;
-      const locked = i > curGirl || (prog.mastered && i >= 3);
-      // Locked cards take a muted BRONZE-GOLD accent (not dead grey) so the frame
-      // reads as an exclusive, still-premium item behind glass.
-      const theme = locked ? 0x7a6636 : THEME[i]!;
-
-      const card = this.buildCard(cardW, cardH, i, done, active, locked, theme, prog);
-      this.cards.push(card);
-      this.deckContainer.addChild(card);
-    }
-
-    this.deckContainer.eventMode = "static";
-    this.deckContainer.cursor = "grab";
-
-    this.setupSwipeHandlers(this.deckContainer);
-    this.ct.addChild(this.deckContainer);
-
-    // Initial Stack Arrangement
-    this.updateStackPositions(false, deckCenterX, deckCenterY);
-
-    // ── Side Navigation Chevrons ────────────────────────────────────────
-    const arrowDist = cardW / 2 + (isP ? 28 : 42);
-    const btnLeft = this.buildArrow(deckCenterX - arrowDist, deckCenterY, "◄", () => this.prevCard(deckCenterX, deckCenterY));
-    this.ct.addChild(btnLeft);
-
-    const btnRight = this.buildArrow(deckCenterX + arrowDist, deckCenterY, "►", () => this.nextCard(deckCenterX, deckCenterY));
-    this.ct.addChild(btnRight);
-
-    // ── Pagination Dots & Status Hint ────────────────────────────────────
-    const paginationY = deckCenterY + cardH / 2 + 24;
-    this.renderPagination(deckCenterX, paginationY);
-
-    if (prog.prestige > 0) {
-      const pTitle = getPrestigeTitle(prog.prestige);
-      const nName = NAMES[prog.girlId] ?? "SAPPHIRE";
-      const rem = (PIECES[prog.girlId] ?? 8) - prog.pieces;
-      const hint = this.txt(`${pTitle} · NEXT: ${nName} (${rem} WILDS NEEDED)`, isP ? 11 : 12, GOLD, IMPACT, 1);
-      hint.anchor.set(0.5, 0.5);
-      hint.position.set(deckCenterX, paginationY + 22);
-      this.ct.addChild(hint);
-    } else if (prog.mastered) {
-      const masterLabel = this.txt("★  GALLERY MASTERED  ★", isP ? 11 : 13, GREEN, IMPACT, 1.5);
-      masterLabel.anchor.set(0.5, 0.5);
-      masterLabel.position.set(deckCenterX, paginationY + 22);
-      this.ct.addChild(masterLabel);
-    } else {
-      const nName = NAMES[curGirl] ?? "VEGA";
-      const rem = (PIECES[curGirl] ?? 8) - prog.pieces;
-      const hint = this.txt(`NEXT: ${nName} THEME · ${rem} WILDS NEEDED`, isP ? 11 : 12, GOLD, FONT, 1);
-      hint.anchor.set(0.5, 0.5);
-      hint.position.set(deckCenterX, paginationY + 22);
-      this.ct.addChild(hint);
-    }
+    const total = PIECES[i]!;
+    const done = prog.mastered || i < prog.completedGirls;
+    const active = !done && i === prog.completedGirls;
+    return { done, active, locked: !done && !active, have: done ? total : active ? Math.min(total, prog.pieces) : 0, total };
   }
 
-  // ════════════════════════════════════════════════════════════════════════
-  //  STACK PHYSICS & LAYERING
-  // ════════════════════════════════════════════════════════════════════════
-  private updateStackPositions(animate = true, cx = this.screenW / 2, cy = this.screenH / 2): void {
-    const offsets = [
-      { dx: 0,   dy: 0,   scale: 1.0,  alpha: 1.0,  rotation: 0,      zIndex: 10 },
-      { dx: 18,  dy: 14,  scale: 0.93, alpha: 0.85, rotation: 0.04,   zIndex: 5 },
-      { dx: 36,  dy: 28,  scale: 0.86, alpha: 0.65, rotation: -0.04,  zIndex: 1 }
-    ];
+  private get portraitMode(): boolean {
+    return this.screenW < 760 || this.screenH > this.screenW;
+  }
 
-    this.cards.forEach((card, idx) => {
-      const stackPos = (idx - this.activeIndex + 3) % 3;
-      const target = offsets[stackPos]!;
+  // ── build ────────────────────────────────────────────────────────────────
+  private rebuild(intro: boolean): void {
+    const W = this.screenW, H = this.screenH;
+    for (const c of this.ct.removeChildren()) c.destroy({ children: true });
+    this.heroLayer = new Container();
+    this.info = new Container();
+    this.tabs = new Container();
+    this.hero = null;
 
-      const targetX = cx + target.dx - 18;
-      const targetY = cy + target.dy - 14;
+    this.bg.clear();
+    this.bg.rect(0, 0, W, H).fill(grad([[0, "#0e071a"], [1, "#05030a"]], "v"));
 
-      card.zIndex = target.zIndex;
+    this.ct.addChild(this.heroLayer, this.info, this.tabs);
 
-      if (!animate) {
-        card.position.set(targetX, targetY);
-        card.scale.set(target.scale);
-        card.alpha = target.alpha;
-        card.rotation = target.rotation;
-      } else {
-        const startX = card.x;
-        const startY = card.y;
-        const startScale = card.scale.x;
-        const startAlpha = card.alpha;
-        const startRot = card.rotation;
+    // header (top-left) + close (top-right)
+    const prog = this.runtime.getGalleryProgress();
+    const pad = this.portraitMode ? 18 : 40;
+    const head = txt("BEACH GIRL DECK", 13, WHITE, UI_FONT, "700", 4);
+    head.position.set(pad, pad - 6);
+    this.ct.addChild(head);
+    if (prog.prestige > 0) {
+      const p = txt(getPrestigeTitle(prog.prestige), 11, grad([[0, "#ff6fae"], [1, "#ffb15c"]]), UI_FONT, "700", 3);
+      p.position.set(pad + head.width + 14, pad - 4);
+      this.ct.addChild(p);
+    }
+    const close = this.closeButton();
+    close.position.set(W - pad - 4, pad + 3);
+    this.ct.addChild(close);
 
-        this.isAnimating = true;
-        void tween(250, (p) => {
-          const ep = 1 - Math.pow(1 - p, 3);
-          card.position.set(
-            startX + (targetX - startX) * ep,
-            startY + (targetY - startY) * ep
-          );
-          card.scale.set(startScale + (target.scale - startScale) * ep);
-          card.alpha = startAlpha + (target.alpha - startAlpha) * ep;
-          card.rotation = startRot + (target.rotation - startRot) * ep;
-        }).then(() => {
-          this.isAnimating = false;
-        });
+    this.buildTabs();
+    this.present(this.activeIndex, intro ? 0 : 0, intro);
+  }
+
+  /** Put girl `i` on stage. `dir` = -1/1 slides from that side; 0 = rise in. */
+  private present(i: number, dir: number, intro: boolean): void {
+    const token = ++this.token;
+    const W = this.screenW, H = this.screenH;
+    const P = this.portraitMode;
+    const st = this.state(i);
+    const prefix = PREFIX[i]!;
+    const fullTex = getExtraTexture(`${prefix}_full`);
+
+    // ambient: her own colours, blurred huge behind everything
+    for (const c of this.ambient.removeChildren()) c.destroy();
+    if (fullTex) {
+      const b = blurred(fullTex, prefix);
+      if (b) {
+        const amb = new Sprite(b);
+        amb.anchor.set(0.5);
+        const s = Math.max(W / b.width, H / b.height) * 1.25;
+        amb.scale.set(s);
+        amb.position.set(P ? W / 2 : W * 0.34, H * 0.5);
+        amb.alpha = 0;
+        amb.tint = st.locked ? 0x3a2a4a : 0xffffff;
+        this.ambient.addChild(amb);
+        void tween(500, (p) => { if (!amb.destroyed) amb.alpha = (st.locked ? 0.18 : 0.38) * p; }, easeOutCubic);
       }
-    });
+    }
+    // a vignette so the ambience never fights the text
+    const vig = new Graphics();
+    vig.rect(0, 0, W, H).fill(grad(P
+      ? [[0, "rgba(8,4,16,0.25)"], [0.55, "rgba(8,4,16,0.55)"], [1, "rgba(8,4,16,0.92)"]]
+      : [[0, "rgba(8,4,16,0.1)"], [0.5, "rgba(8,4,16,0.55)"], [1, "rgba(8,4,16,0.9)"]], P ? "v" : "h"));
+    this.ambient.addChild(vig);
 
-    this.deckContainer.sortChildren();
+    // hero
+    const old = this.hero;
+    if (old) {
+      const x0 = old.x;
+      void tween(260, (p) => {
+        if (old.destroyed) return;
+        old.alpha = 1 - p;
+        old.x = x0 - dir * 70 * p;
+      }, easeInOutCubic).then(() => old.destroy({ children: true }));
+    }
+    const hero = new Container();
+    const heroH = P ? H * 0.42 : H * 0.9;
+    const heroCX = P ? W / 2 : W * 0.32;
+    const heroBottom = P ? H * 0.5 : H * 0.98;
+    if (fullTex) {
+      const b = pieceBounds(fullTex);
+      const s = heroH / b.h;
+      const fig = new Container();
+      const base = new Sprite(fullTex);
+      base.anchor.set(0.5);
+      if (st.done) {
+        fig.addChild(base);
+      } else {
+        // the unrevealed girl: a near-black figure with a neon rim in her
+        // colour (her own alpha stamped 8 ways under the fill — no filters)
+        const b0 = pieceBounds(fullTex);
+        const t = 2.2 / (heroH / b0.h);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]]) {
+          const rimS = new Sprite(fullTex);
+          rimS.anchor.set(0.5);
+          rimS.tint = st.locked ? 0x3a2f55 : GLOW[i]!;
+          rimS.alpha = st.locked ? 0.55 : 0.95;
+          rimS.position.set(dx! * t, dy! * t);
+          fig.addChild(rimS);
+        }
+        base.tint = st.locked ? 0x0b0814 : 0x0f0a1c;
+        fig.addChild(base);
+        if (st.active) {
+          for (let p = 1; p <= st.have; p++) {
+            const pt = getExtraTexture(`${prefix}_piece_${p}`);
+            if (pt) { const ps = new Sprite(pt); ps.anchor.set(0.5); fig.addChild(ps); }
+          }
+        }
+      }
+      fig.scale.set(s);
+      fig.position.set(-b.ox * s, -(b.oy + b.h / 2) * s);
+      hero.addChild(fig);
+      // floor light
+      const floor = new Graphics();
+      for (let k = 6; k >= 1; k--) floor.ellipse(0, -2, b.w * s * (0.18 + k * 0.05), 3 + k * 2.2).fill({ color: GLOW[i]!, alpha: st.locked ? 0.02 : 0.05 });
+      hero.addChildAt(floor, 0);
+    }
+    const hx = heroCX, hy = heroBottom;
+    hero.position.set(hx + dir * 90, hy + (dir === 0 ? 40 : 0));
+    hero.alpha = 0;
+    this.heroLayer.addChild(hero);
+    this.hero = hero;
+    void tween(intro ? 700 : 480, (p) => {
+      if (hero.destroyed) return;
+      hero.alpha = Math.min(1, p * 1.4);
+      hero.x = hx + dir * 90 * (1 - p);
+      hero.y = hy + (dir === 0 ? 40 : 0) * (1 - p);
+    }, easeOutCubic);
+    if (this.breathe) ambientTicker.remove(this.breathe);
+    let t = 0;
+    this.breathe = (dt) => {
+      if (hero.destroyed) return;
+      t += dt;
+      const k = 1 + 0.006 * Math.sin(t * 1.6);
+      hero.scale.set(k, k);
+    };
+    ambientTicker.add(this.breathe);
+
+    this.buildInfo(i, st, token);
+    this.refreshTabs();
   }
 
-  private nextCard(cx?: number, cy?: number): void {
-    if (this.isAnimating) return;
-    this.activeIndex = (this.activeIndex + 1) % 3;
-    this.rebuildPagination();
-    this.updateStackPositions(true, cx, cy);
+  private buildInfo(i: number, st: GirlState, token: number): void {
+    for (const c of this.info.removeChildren()) c.destroy({ children: true });
+    const W = this.screenW, H = this.screenH;
+    const P = this.portraitMode;
+    const neon = NEON[i]!;
+    const x = P ? 22 : W * 0.56;
+    const maxW = P ? W - 44 : Math.min(470, W * 0.38);
+    let y = P ? H * 0.525 : H * 0.2;
+
+    const lines: Array<{ node: Container; delay: number }> = [];
+    const add = (node: Container, delay: number): void => { this.info.addChild(node); lines.push({ node, delay }); };
+
+    const kicker = txt(`CREW MEMBER 0${i + 1}  /  03`, P ? 11 : 12, st.locked ? DIM : LAVENDER, UI_FONT, "700", 4);
+    kicker.position.set(x, y);
+    add(kicker, 0);
+    y += P ? 18 : 24;
+
+    // the name, letter by letter, in her sunset gradient
+    const nameSize = P ? Math.min(64, W * 0.15) : Math.min(118, W * 0.09);
+    const name = new Container();
+    name.position.set(x - 3, y);
+    let lx = 0;
+    const letters: Text[] = [];
+    for (const ch of NAMES[i]!) {
+      const l = txt(ch, nameSize, st.locked ? DIM : grad([[0, neon[0]], [1, neon[1]]], "d"), DISPLAY_FONT, "400", 0);
+      l.position.set(lx, 0);
+      lx += l.width - nameSize * 0.06 + nameSize * 0.04;
+      name.addChild(l);
+      letters.push(l);
+    }
+    if (name.width > maxW) name.scale.set(maxW / name.width);
+    // Anton's em box carries ~18% empty descender below the caps
+    const nameH = name.height * 0.84;
+    this.info.addChild(name);
+    letters.forEach((l, k) => {
+      const y0 = l.y;
+      l.alpha = 0;
+      l.y = y0 + nameSize * 0.35;
+      window.setTimeout(() => {
+        if (l.destroyed || token !== this.token) return;
+        void tween(560, (p) => {
+          if (l.destroyed) return;
+          l.alpha = Math.min(1, p * 1.6);
+          l.y = y0 + nameSize * 0.35 * (1 - p);
+        }, easeOutCubic);
+      }, 60 + k * 50);
+    });
+    y += nameH + (P ? 6 : 12);
+
+    // progress: thin line with a tick per piece
+    const status = st.done ? "COMPLETE" : st.locked ? "LOCKED" : `${st.have} OF ${st.total} PIECES`;
+    const statusT = txt(status, P ? 14 : 16, st.done ? 0xffd166 : st.locked ? DIM : WHITE, UI_FONT, "700", 3);
+    statusT.position.set(x, y);
+    add(statusT, 120);
+    y += P ? 24 : 30;
+    const barW = maxW;
+    const bar = new Graphics();
+    bar.roundRect(0, 0, barW, 4, 2).fill({ color: 0xffffff, alpha: 0.12 });
+    for (let k = 1; k < st.total; k++) bar.rect((barW / st.total) * k - 1, -3, 2, 10).fill({ color: 0x0b0716, alpha: 0.9 });
+    const fill = new Graphics();
+    const target = st.have / st.total;
+    const drawFill = (f: number): void => {
+      fill.clear();
+      if (f > 0) fill.roundRect(0, 0, Math.max(4, barW * f), 4, 2).fill(grad([[0, neon[0]], [1, neon[1]]]));
+    };
+    drawFill(0);
+    const barC = new Container();
+    barC.position.set(x, y);
+    barC.addChild(bar, fill);
+    add(barC, 160);
+    window.setTimeout(() => {
+      if (token !== this.token) return;
+      void tween(900, (p) => { if (!fill.destroyed) drawFill(target * p); }, easeOutCubic);
+    }, 260);
+    y += P ? 22 : 30;
+
+    const rule = st.done
+      ? `${this.title(i)} is complete — her gold Wanted star and reward are yours.`
+      : st.locked
+        ? `Complete ${this.title(i - 1)} to unlock her.`
+        : `Every Wild that lands reveals one piece. ${st.total - st.have} more to complete ${this.title(i)} and earn a gold Wanted star.`;
+    const body = new Text({
+      text: rule,
+      style: new TextStyle({ fill: st.locked ? DIM : LAVENDER, fontFamily: UI_FONT, fontSize: P ? 14 : 17, fontWeight: "600", wordWrap: true, wordWrapWidth: maxW, lineHeight: P ? 19 : 24, padding: 4 }),
+    });
+    body.position.set(x, y);
+    add(body, 200);
+    y += body.height + (P ? 10 : 22);
+
+    const rl = txt("REWARD", 11, DIM, UI_FONT, "700", 4);
+    rl.position.set(x, y);
+    add(rl, 240);
+    const rv = txt(REWARDS[i]!, P ? 16 : 20, st.locked ? DIM : WHITE, UI_FONT, "700", 2);
+    rv.position.set(x, y + 16);
+    add(rv, 260);
+
+    for (const { node, delay } of lines) {
+      const y0 = node.y;
+      node.alpha = 0;
+      node.y = y0 + 14;
+      window.setTimeout(() => {
+        if (node.destroyed || token !== this.token) return;
+        void tween(420, (p) => { if (!node.destroyed) { node.alpha = p; node.y = y0 + 14 * (1 - p); } }, easeOutCubic);
+      }, 120 + delay);
+    }
   }
 
-  private prevCard(cx?: number, cy?: number): void {
-    if (this.isAnimating) return;
-    this.activeIndex = (this.activeIndex + 2) % 3;
-    this.rebuildPagination();
-    this.updateStackPositions(true, cx, cy);
+  private title(i: number): string {
+    const n = NAMES[i] ?? "the previous girl";
+    return n.charAt(0) + n.slice(1).toLowerCase();
   }
 
-  // ════════════════════════════════════════════════════════════════════════
-  //  SWIPE & DRAG HANDLERS
-  // ════════════════════════════════════════════════════════════════════════
-  private setupSwipeHandlers(target: Container): void {
-    target.on("pointerdown", (e) => {
-      this.isDragging = true;
-      this.dragStartX = e.global.x;
-      this.dragCurrentX = e.global.x;
-    });
+  // ── selector tabs ────────────────────────────────────────────────────────
+  private buildTabs(): void {
+    const W = this.screenW, H = this.screenH;
+    const P = this.portraitMode;
+    const tw = P ? 64 : 86, th = P ? 78 : 108, gap = P ? 12 : 16;
+    const total = tw * 3 + gap * 2;
+    const x0 = P ? (W - total) / 2 : W * 0.56;
+    const y0 = H - th - (P ? 18 : 40);
+    for (let i = 0; i < 3; i++) {
+      const st = this.state(i);
+      const tab = new Container();
+      tab.position.set(x0 + i * (tw + gap) + tw / 2, y0 + th / 2);
+      tab.pivot.set(tw / 2, th / 2);
+      const tex = getExtraTexture(`${PREFIX[i]!}_full`);
+      const pt = tex ? portrait(tex, tw, th, PREFIX[i]!, st.locked) : null;
+      if (pt) { const sp = new Sprite(pt); sp.width = tw; sp.height = th; tab.addChild(sp); }
+      const rim = new Graphics();
+      rim.label = "rim";
+      tab.addChild(rim);
+      const name = txt(NAMES[i]!, 10, st.locked ? DIM : WHITE, UI_FONT, "700", 2);
+      name.anchor.set(0.5, 1);
+      name.position.set(tw / 2, th - 7);
+      tab.addChild(name);
+      const badge = txt(st.done ? "★" : st.locked ? "" : `${st.have}/${st.total}`, st.done ? 14 : 10, st.done ? 0xffd166 : WHITE, UI_FONT, "700", 0.5);
+      badge.anchor.set(1, 0);
+      badge.position.set(tw - 7, 5);
+      tab.addChild(badge);
+      tab.eventMode = "static";
+      tab.cursor = "pointer";
+      tab.on("pointertap", (e) => { e.stopPropagation(); this.select(i); });
+      tab.on("pointerover", () => { if (i !== this.activeIndex) tab.scale.set(1.04); });
+      tab.on("pointerout", () => { if (i !== this.activeIndex) tab.scale.set(1); });
+      this.tabs.addChild(tab);
+    }
+  }
 
-    target.on("pointermove", (e) => {
-      if (!this.isDragging) return;
-      this.dragCurrentX = e.global.x;
+  private refreshTabs(): void {
+    this.tabs.children.forEach((tab, i) => {
+      const c = tab as Container;
+      const on = i === this.activeIndex;
+      const rim = c.children.find((k) => k.label === "rim") as Graphics | undefined;
+      const tw = (c.pivot.x * 2), th = (c.pivot.y * 2);
+      if (rim) {
+        rim.clear();
+        if (on) rim.roundRect(1, 1, tw - 2, th - 2, 12).stroke({ width: 2, fill: grad([[0, NEON[i]![0]], [1, NEON[i]![1]]], "d") });
+        else rim.roundRect(0.5, 0.5, tw - 1, th - 1, 12).stroke({ color: 0xffffff, width: 1, alpha: 0.14 });
+      }
+      const s0 = c.scale.x, a0 = c.alpha;
+      const s1 = on ? 1.08 : 1, a1 = on ? 1 : 0.62;
+      void tween(260, (p) => { if (!c.destroyed) { c.scale.set(s0 + (s1 - s0) * p); c.alpha = a0 + (a1 - a0) * p; } }, easeOutCubic);
     });
+  }
 
-    const endDrag = () => {
+  private select(i: number): void {
+    if (i === this.activeIndex) return;
+    const dir = i > this.activeIndex ? 1 : -1;
+    this.activeIndex = i;
+    this.present(i, dir, false);
+  }
+
+  nextCard(): void { this.select((this.activeIndex + 1) % 3); }
+  prevCard(): void { this.select((this.activeIndex + 2) % 3); }
+
+  private setupSwipe(): void {
+    this.bg.on("pointerdown", (e) => { this.isDragging = true; this.dragStartX = this.dragCurrentX = e.global.x; });
+    this.bg.on("pointermove", (e) => { if (this.isDragging) this.dragCurrentX = e.global.x; });
+    const end = (): void => {
       if (!this.isDragging) return;
       this.isDragging = false;
       const dx = this.dragCurrentX - this.dragStartX;
-      if (dx < -30) {
-        this.nextCard();
-      } else if (dx > 30) {
-        this.prevCard();
-      }
+      if (dx < -40) this.nextCard();
+      else if (dx > 40) this.prevCard();
     };
-
-    target.on("pointerup", endDrag);
-    target.on("pointerupoutside", endDrag);
+    this.bg.on("pointerup", end);
+    this.bg.on("pointerupoutside", end);
   }
 
-  // ════════════════════════════════════════════════════════════════════════
-  //  BUILD INDIVIDUAL PLAYING CARD
-  // ════════════════════════════════════════════════════════════════════════
-  private buildCard(
-    w: number, h: number, idx: number,
-    done: boolean, active: boolean, locked: boolean,
-    theme: number, prog: any
-  ): Container {
-    const card = new Container();
-    card.pivot.set(w / 2, h / 2);
-
-    // Chamfered "collectible plate" silhouette — the same language as the buy
-    // panels, so the deck reads as part of the same HUD instead of a generic
-    // rounded rectangle.
-    const notch = Math.round(Math.min(22, w * 0.09));
-    const plateAt = (pad: number): number[] => [
-      -pad, -pad,
-      w + pad - notch, -pad,
-      w + pad, notch,
-      w + pad, h + pad,
-      notch, h + pad,
-      -pad, h + pad - notch,
-    ];
-    const dim = locked ? 0.42 : 1;
-
-    // ── Outer neon bloom ─────────────────────────────────────────────────
-    const glow = new Graphics();
-    glow.poly(plateAt(4)).fill({ color: theme, alpha: 0.26 * dim });
-    card.addChild(glow);
-
-    // ── Body: smoked plate + accent wash falling off toward the base ─────
-    const body = new Graphics();
-    body.poly(plateAt(0)).fill({ color: 0x07080d, alpha: 0.96 });
-    const bands = 6;
-    for (let i = 0; i < bands; i++) {
-      body.rect(1, (h / bands) * i, w - 2, h / bands)
-        .fill({ color: theme, alpha: (0.13 - i * 0.021) * dim });
-    }
-    // Neon tube: soft wide pass under a bright hairline.
-    body.poly(plateAt(0)).stroke({ color: theme, width: 3.2, alpha: 0.3 * dim });
-    body.poly(plateAt(0)).stroke({ color: theme, width: 1.3, alpha: 0.95 * dim });
-    // Lit chamfer + specular top edge.
-    body.moveTo(w - notch, 0).lineTo(w, notch).stroke({ color: WHITE, width: 1.4, alpha: 0.5 * dim });
-    body.rect(2, 1, w - notch - 4, 1.3).fill({ color: WHITE, alpha: 0.22 * dim });
-    card.addChild(body);
-
-    // ── Header: a rule + letterspaced name, not a filled bar ─────────────
-    const nameH = 34;
-    const nameText = this.txt(NAMES[idx]!, 19, locked ? 0x9a865a : WHITE, IMPACT, 3);
-    nameText.anchor.set(0.5, 0.5);
-    nameText.position.set(w / 2, 4 + nameH / 2 - 2);
-    card.addChild(nameText);
-
-    const rule = new Graphics();
-    // hairline that fades out toward both ends
-    for (let i = 0; i < 3; i++) {
-      const inset = 14 + i * 26;
-      rule.rect(inset, 4 + nameH - 4, w - inset * 2, 1)
-        .fill({ color: theme, alpha: (0.5 - i * 0.14) * dim });
-    }
-    card.addChild(rule);
-
-    // ── Character Art Viewport (CONTAIN FIT — ZERO CLIPPING!) ───────────
-    const artPad = 10;
-    // segments + status + how-to + "1 WILD = 1 PART" + reward label/value
-    const progressZoneH = 96;
-    const artX = artPad;
-    const artY = 4 + nameH + 6;
-    const artW = w - artPad * 2;
-    const artH = h - (4 + nameH + 6) - progressZoneH - 8;
-
-    const artContainer = new Container();
-    artContainer.position.set(artX, artY);
-
-    const artMask = new Graphics();
-    artMask.roundRect(0, 0, artW, artH, 8).fill({ color: WHITE });
-    artContainer.addChild(artMask);
-    artContainer.mask = artMask;
-
-    const artBg = new Graphics();
-    artBg.roundRect(0, 0, artW, artH, 8).fill({ color: 0x040404 });
-    artContainer.addChild(artBg);
-
-    if (locked) {
-      // ── Premium "sealed vault" ──────────────────────────────────────────
-      // A faint teaser of the girl behind frosted glass, a soft diagonal sheen,
-      // and a gold lock medallion — reads as an exclusive item to be unlocked,
-      // not a flat grey box with a stray-lined padlock.
-      const prefix = PREFIX[idx]!;
-      const teaseTex = getExtraTexture(`${prefix}_silhouette`);
-      if (teaseTex) {
-        const tIn = 34;
-        const tScale = Math.min((artW - tIn) / teaseTex.width, (artH - tIn) / teaseTex.height);
-        const ghost = new Sprite(teaseTex);
-        ghost.anchor.set(0.5);
-        ghost.tint = 0x11131b;               // barely-there dark ghost
-        ghost.scale.set(tScale);
-        ghost.position.set(artW / 2, artH / 2);
-        artContainer.addChild(ghost);
-      }
-
-      // Frosted glass — a soft vertical gradient sealing the teaser away.
-      const frost = new Graphics();
-      const bands = 8;
-      for (let b = 0; b < bands; b++) {
-        frost.rect(0, (artH / bands) * b, artW, artH / bands + 1)
-          .fill({ color: 0x060810, alpha: 0.6 + (b / bands) * 0.16 });
-      }
-      artContainer.addChild(frost);
-
-      // A single clean diagonal glass sheen (replaces the old stray line).
-      const sheen = new Graphics();
-      sheen.poly([artW * 0.16, 0, artW * 0.34, 0, artW * 0.04, artH, -artW * 0.14, artH])
-        .fill({ color: 0xffffff, alpha: 0.05 });
-      artContainer.addChild(sheen);
-
-      // Gold lock medallion, centred.
-      const mx = artW / 2, my = artH / 2 - 2;
-      const R = Math.min(artW, artH) * 0.16;
-      const med = new Graphics();
-      med.circle(mx, my, R * 1.55).fill({ color: GOLD, alpha: 0.05 });                 // soft glow halo
-      med.circle(mx, my, R).fill({ color: 0x0a0c12, alpha: 0.98 })
-         .stroke({ color: GOLD, width: 1.5, alpha: 0.5 });
-      med.circle(mx, my, R * 0.84).stroke({ color: GOLD, width: 0.75, alpha: 0.22 });   // inner ring
-      artContainer.addChild(med);
-
-      // Clean gold padlock glyph. The shackle path STARTS with moveTo so no stray
-      // connecting line is drawn from the body (the old bug).
-      const lock = new Graphics();
-      const bw = R * 0.86, bh = R * 0.6;
-      const bx = mx - bw / 2, by = my - bh * 0.06;
-      const sr = bw * 0.3, arcY = by - bh * 0.5;
-      lock.moveTo(mx - sr, by);
-      lock.lineTo(mx - sr, arcY);
-      lock.arc(mx, arcY, sr, Math.PI, 0);   // top semicircle of the shackle
-      lock.lineTo(mx + sr, by);
-      lock.stroke({ color: GOLD, width: Math.max(1.5, R * 0.1), alpha: 0.85 });
-      lock.roundRect(bx, by, bw, bh, R * 0.16).fill({ color: GOLD, alpha: 0.9 });
-      lock.roundRect(bx, by, bw, bh, R * 0.16).stroke({ color: 0xfff1c4, width: 1, alpha: 0.45 });
-      lock.circle(mx, by + bh * 0.5, R * 0.11).fill({ color: 0x0a0c12 });               // keyhole
-      lock.rect(mx - R * 0.05, by + bh * 0.5, R * 0.1, R * 0.24).fill({ color: 0x0a0c12 });
-      artContainer.addChild(lock);
-
-      const lockText = this.txt("LOCKED", 10, 0xcbb26a, IMPACT, 5);
-      lockText.anchor.set(0.5, 0.5);
-      lockText.position.set(mx, my + R + 18);
-      artContainer.addChild(lockText);
-
-    } else if (done) {
-      // Completed Girl Art — CONTAIN FIT (Math.min) so NO part of girl is cut off!
-      const texKey = `${PREFIX[idx]!}_full`;
-      const tex = getExtraTexture(texKey);
-      if (tex) {
-        const spr = new Sprite(tex);
-        spr.anchor.set(0.5, 0.5);
-        // Contain fit scaling so full body image fits inside viewport with ZERO clipping!
-        const scale = Math.min((artW - 6) / tex.width, (artH - 6) / tex.height);
-        spr.scale.set(scale);
-        spr.position.set(artW / 2, artH / 2);
-        artContainer.addChild(spr);
-      }
-
-    } else if (active) {
-      // Active girl: a crisp WHITE-OUTLINED black silhouette (fully visible, never
-      // cropped) with the collected body parts overlaid.
-      const prefix = PREFIX[idx]!;
-      const silTex = getExtraTexture(`${prefix}_silhouette`);
-      if (silTex) {
-        const assembly = new Container();
-
-        // Generous inset so the whole silhouette AND its outline clear the mask.
-        const inset = 26;
-        const scale = Math.min((artW - inset) / silTex.width, (artH - inset) / silTex.height);
-        const t = 2.5 / scale;   // outline thickness in local px → ~2.5px on screen
-
-        // White outline = the silhouette stamped in white at 8 offsets UNDER the
-        // black fill. A pure-sprite outline (no filter) — safe inside the masked
-        // container, and it can never blank the canvas the way a filter+mask can.
-        // Per-character registration offset so the collected pieces (real art at
-        // 0,0) sit inside the outline — girl 1's silhouette is off-centre from
-        // her pieces. Applied to the black silhouette AND its white halo copies.
-        const silOff = silhouetteOffset(prefix, silTex);
-        const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]];
-        for (const [dx, dy] of dirs) {
-          const o = new Sprite(silTex);
-          o.anchor.set(0.5);
-          o.tint = 0xffffff;
-          o.position.set(silOff.x + dx! * t, silOff.y + dy! * t);
-          assembly.addChild(o);
-        }
-
-        // Solid black silhouette on top of the white halo.
-        const sil = new Sprite(silTex);
-        sil.anchor.set(0.5);
-        sil.position.set(silOff.x, silOff.y);
-        sil.tint = 0x000000;
-        assembly.addChild(sil);
-
-        // Collected parts (same canvas as the silhouette → perfect registration).
-        const collected = prog.pieces;
-        const maxP = PIECES[idx]!;
-        for (let p = 1; p <= Math.min(maxP, collected); p++) {
-          const pTex = getExtraTexture(`${prefix}_piece_${p}`);
-          if (pTex) { const piece = new Sprite(pTex); piece.anchor.set(0.5); assembly.addChild(piece); }
-        }
-
-        assembly.scale.set(scale);
-        assembly.position.set(artW / 2, artH / 2);
-        artContainer.addChild(assembly);
-      }
-    }
-
-    // Inner Border Frame around Art Viewport
-    const artFrame = new Graphics();
-    artFrame.roundRect(0, 0, artW, artH, 8).stroke({ color: theme, width: 1, alpha: locked ? 0.1 : 0.3 });
-    artContainer.addChild(artFrame);
-
-    card.addChild(artContainer);
-
-    // ── Segmented progress: one cell PER PART ────────────────────────────
-    // A continuous bar hid the one number that matters — how many WILDs are
-    // still needed. Discrete cells can be counted at a glance.
-    const total = PIECES[idx]!;
-    const curPieces = done ? total : active ? Math.min(total, prog.pieces) : 0;
-
-    const pY = artY + artH + 10;
-    const barX = 14;
-    const barW = w - 28;
-    const segGap = 3;
-    const segW = (barW - segGap * (total - 1)) / total;
-    const segH = 7;
-
-    const segs = new Graphics();
-    for (let s = 0; s < total; s++) {
-      const sx = barX + s * (segW + segGap);
-      const litSeg = s < curPieces;
-      segs.roundRect(sx, pY, segW, segH, 2)
-        .fill({ color: litSeg ? (done ? GREEN : theme) : WHITE, alpha: litSeg ? 0.95 : 0.09 });
-      if (litSeg) {
-        // bloom under the lit cell
-        segs.roundRect(sx - 1, pY - 1, segW + 2, segH + 2, 3)
-          .fill({ color: done ? GREEN : theme, alpha: 0.22 });
-      }
-    }
-    card.addChild(segs);
-
-    // ── Status ───────────────────────────────────────────────────────────
-    const statusStr = done ? "★ COMPLETE" : locked ? "LOCKED" : `${curPieces} / ${total} PARTS`;
-    const statusCol = done ? GREEN : locked ? 0x5a5a62 : WHITE;
-    const statusBadge = this.txt(statusStr, 13, statusCol, IMPACT, 2);
-    statusBadge.anchor.set(0.5, 0);
-    statusBadge.position.set(w / 2, pY + 15);
-    card.addChild(statusBadge);
-
-    // ── What the player actually has to DO ───────────────────────────────
-    // The deck previously showed only a bar and a reward name, never explaining
-    // where parts come from or what completing her grants.
-    const howStr = done ? "REWARD UNLOCKED — KEPT FOREVER"
-                 : locked ? `COMPLETE ${NAMES[idx - 1] ?? "THE PREVIOUS GIRL"} TO UNLOCK`
-                 : `LAND ${total - curPieces} MORE WILD${total - curPieces === 1 ? "" : "S"} TO COMPLETE`;
-    const how = this.txt(howStr, 10, locked ? 0x4a4a52 : 0xc9d3e4, FONT, 0.8);
-    how.anchor.set(0.5, 0);
-    how.position.set(w / 2, pY + 34);
-    card.addChild(how);
-
-    const sub = this.txt(done ? "" : "1 WILD = 1 PART", 9, locked ? 0x3c3c44 : 0x7d8798, FONT, 1.4);
-    sub.anchor.set(0.5, 0);
-    sub.position.set(w / 2, pY + 48);
-    card.addChild(sub);
-
-    // ── Reward, presented as a prize line ────────────────────────────────
-    const rewardLabel = this.txt("REWARD", 8, locked ? 0x3c3c44 : 0x6f7889, FONT, 2);
-    rewardLabel.anchor.set(0.5, 0);
-    rewardLabel.position.set(w / 2, pY + 63);
-    card.addChild(rewardLabel);
-
-    const rewardText = this.txt(REWARDS[idx]!, 11, locked ? 0x44444c : theme, IMPACT, 1);
-    rewardText.anchor.set(0.5, 0);
-    rewardText.position.set(w / 2, pY + 74);
-    card.addChild(rewardText);
-
-    return card;
-  }
-
-  // ════════════════════════════════════════════════════════════════════════
-  //  ARROWS & PAGINATION
-  // ════════════════════════════════════════════════════════════════════════
-  private buildArrow(x: number, y: number, label: string, onClick: () => void): Container {
-    const btn = new Container();
-    const size = 36;
-    const g = new Graphics();
-    g.circle(0, 0, size / 2).fill({ color: 0x111111, alpha: 0.9 }).stroke({ color: WHITE, width: 1.5, alpha: 0.6 });
-    btn.addChild(g);
-
-    const txt = this.txt(label, 16, WHITE, IMPACT, 0);
-    txt.anchor.set(0.5, 0.5);
-    btn.addChild(txt);
-
-    btn.position.set(x, y);
-    btn.eventMode = "static";
-    btn.cursor = "pointer";
-
-    btn.on("pointerover", () => { g.tint = GOLD; txt.style.fill = BLACK; });
-    btn.on("pointerout", () => { g.tint = WHITE; txt.style.fill = WHITE; });
-    btn.on("pointertap", (e) => { e.stopPropagation(); onClick(); });
-
-    return btn;
-  }
-
-  private paginationContainer = new Container();
-
-  private renderPagination(x: number, y: number): void {
-    this.ct.addChild(this.paginationContainer);
-    this.paginationContainer.position.set(x, y);
-    this.rebuildPagination();
-  }
-
-  private rebuildPagination(): void {
-    this.paginationContainer.removeChildren();
-    const dotCount = 3;
-    const gap = 14;
-    const startX = -((dotCount - 1) * gap) / 2;
-
-    for (let i = 0; i < dotCount; i++) {
-      const active = i === this.activeIndex;
-      const dot = new Graphics();
-      if (active) {
-        dot.circle(startX + i * gap, 0, 5).fill({ color: GOLD });
-        dot.circle(startX + i * gap, 0, 7).stroke({ color: GOLD, width: 1, alpha: 0.5 });
-      } else {
-        dot.circle(startX + i * gap, 0, 4).fill({ color: WHITE, alpha: 0.3 });
-      }
-      this.paginationContainer.addChild(dot);
-    }
-  }
-
-  private txt(s: string, sz: number, col: number, fam: string, ls: number): Text {
-    return new Text({
-      text: s,
-      style: new TextStyle({ fill: col, fontFamily: fam, fontSize: sz, fontWeight: "700", letterSpacing: ls })
-    });
+  private closeButton(): Container {
+    const c = new Container();
+    const r = 20;
+    const disc = new Graphics();
+    const paint = (hover: boolean): void => {
+      disc.clear();
+      disc.circle(0, 0, r).fill({ color: 0xffffff, alpha: hover ? 0.16 : 0.07 });
+      disc.circle(0, 0, r - 0.5).stroke({ color: 0xffffff, width: 1, alpha: hover ? 0.5 : 0.22 });
+    };
+    paint(false);
+    const x = new Graphics();
+    const s = 6;
+    x.poly([-s, -s, s, s], false).stroke({ color: WHITE, width: 2, cap: "round" });
+    x.poly([s, -s, -s, s], false).stroke({ color: WHITE, width: 2, cap: "round" });
+    c.addChild(disc, x);
+    c.eventMode = "static";
+    c.cursor = "pointer";
+    c.on("pointerover", () => paint(true));
+    c.on("pointerout", () => paint(false));
+    c.on("pointertap", (e) => { e.stopPropagation(); this.hide(); });
+    return c;
   }
 }

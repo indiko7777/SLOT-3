@@ -2,7 +2,7 @@
 import { trackModalClosed, trackModalOpen } from "./modals";
 import { attachDialog } from "./dialog";
 import { BET_MODES, BONUS_START_RESPINS, MAX_WIN_MULTIPLIER } from "./domain";
-import { formatAmount } from "./format";
+import { money } from "./currency";
 import "./confirmPopup.css";
 
 type FeatureAction = "getaway" | "super_getaway";
@@ -91,7 +91,7 @@ function popupMarkup(c: PopupCopy): string {
       <div class="hc-pop-foot">
         <div class="hc-pop-cost">
           <span class="lbl">${c.social ? "PLAY AMOUNT" : "TOTAL COST"}</span>
-          <span class="val">${c.formattedCost}<small>${c.currency}</small></span>
+          <span class="val">${c.formattedCost}</span>
           <span class="sub">${c.multiplier.toLocaleString("en-US")}× BASE ${unitWord}</span>
         </div>
         <div class="hc-pop-stats">
@@ -124,7 +124,7 @@ function copyFor(action: FeatureAction, betAmount: number, currency: string, cos
   return {
     isSuper: action === "super_getaway",
     // Exact: a 0.01 base at 1.5x is 0.015, never "0.02".
-    formattedCost: formatAmount(betAmount * multiplier, true),
+    formattedCost: money(betAmount * multiplier),
     currency,
     multiplier,
     social,

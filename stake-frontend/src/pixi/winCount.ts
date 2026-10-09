@@ -1,10 +1,17 @@
-import { amountDecimals } from "../format";
+import { exactDecimals, money } from "../currency";
 
-/** Use the final win's EXACT precision (2–6 decimals, never rounded) for the
- * entire roll instead of flickering as intermediate values change. */
+/** Use the final win's EXACT precision (the currency's decimals up to 6, never
+ * rounded) for the entire roll instead of flickering as intermediate values
+ * change. Plain digits — `Number()`-safe. */
 export function winCountFormatter(finalAmount: number): (amount: number) => string {
-  const precision = amountDecimals(finalAmount);
+  const precision = exactDecimals(finalAmount);
   return amount => Math.min(finalAmount, Math.max(0, amount)).toFixed(precision);
+}
+
+/** Same roll, shown as money in the active currency ("$1,250.40", "¥1,250"). */
+export function winCountMoney(finalAmount: number): (amount: number) => string {
+  const precision = exactDecimals(finalAmount);
+  return amount => money(Math.min(finalAmount, Math.max(0, amount)), precision);
 }
 
 /** One clock owns the displayed amount and its audio. Skipping commits both

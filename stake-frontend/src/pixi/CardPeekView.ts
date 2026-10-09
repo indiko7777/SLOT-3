@@ -1,9 +1,41 @@
-import { Container, Graphics, Sprite, Text, TextStyle } from "pixi.js";
+import { Container, Graphics, Sprite, Text, TextStyle, Texture } from "pixi.js";
 import type { LayoutMetrics, Rect } from "./types";
 import { getExtraTexture, silhouetteOffset } from "./assets";
+import { pieceBounds } from "./girlReveal";
 import { makeText } from "./text";
 import { ambientTicker } from "./tween";
-import { toRomanNumeral } from "../meta/collection";
+import { GIRLS, toRomanNumeral } from "../meta/collection";
+import { GIRL_ACCENT } from "./girlReveal";
+
+const portraitCache = new Map<string, Texture>();
+
+/** Head-and-shoulders crop of a full-body art (canvas, cached per size). */
+function portraitTexture(tex: Texture, w: number, h: number, key: string): Texture | null {
+  const k = `${key}:${Math.round(w)}x${Math.round(h)}`;
+  const hit = portraitCache.get(k);
+  if (hit) return hit;
+  const src = (tex.source as unknown as { resource?: CanvasImageSource }).resource;
+  if (!src || typeof document === "undefined") return null;
+  const res = 2;
+  const W = Math.max(4, Math.round(w * res)), H = Math.max(4, Math.round(h * res));
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const g = c.getContext("2d")!;
+  g.imageSmoothingQuality = "high";
+  // the figure's own alpha box, then its top ~38% (head, shoulders)
+  const b = pieceBounds(tex);
+  const bx = tex.width / 2 + b.ox - b.w / 2, by = tex.height / 2 + b.oy - b.h / 2;
+  const cropW = b.w * 0.8, cropH = cropW * (H / W);
+  const sx = bx + (b.w - cropW) / 2, sy = by - cropH * 0.04;
+  const r = 7 * res;
+  g.beginPath();
+  g.moveTo(r, 0); g.arcTo(W, 0, W, H, r); g.arcTo(W, H, 0, H, r); g.arcTo(0, H, 0, 0, r); g.arcTo(0, 0, W, 0, r);
+  g.closePath(); g.clip();
+  g.drawImage(src, sx, sy, cropW, cropH, 0, 0, W, H);
+  const t = Texture.from(c);
+  portraitCache.set(k, t);
+  return t;
+}
 
 export class CardPeekView extends Container {
   private cards: Container[] = [];
@@ -28,6 +60,7 @@ export class CardPeekView extends Container {
 
   private screenWidth = 1024;
   private readonly compact = new Container();
+  private readonly strip = new Container();
   private readonly tickPositions = this.updatePositions.bind(this);
 
   constructor(
@@ -41,6 +74,8 @@ export class CardPeekView extends Container {
     this.compact.cursor = "pointer";
     this.compact.on("pointertap", () => this.onCardTapped());
     this.addChild(this.compact);
+    this.strip.eventMode = "passive";
+    this.addChild(this.strip);
 
     // Register smooth slider animation in the ambient ticker
     ambientTicker.add(this.tickPositions);
@@ -115,6 +150,33 @@ export class CardPeekView extends Container {
     }
   }
 
+  /** One quiet line under the character: "SAPPHIRE  3/8" over a hairline bar.
+   *  Tapping it (or her) opens the gallery. */
+  private drawStrip(rect: Rect, prog: { girlId: number; girlName: string; pieces: number; totalPieces: number }): void {
+    for (const child of this.strip.removeChildren()) child.destroy({ children: true });
+    const accent = GIRL_ACCENT[prog.girlId] ?? 0xffcf6b;
+    const w = Math.min(190, rect.width - 40);
+    const x = rect.x + (rect.width - w) / 2;
+    const y = rect.y + rect.height - 34;
+    const name = makeText(prog.girlName.toUpperCase(), 13, 0xfff4f8, x, y, "left");
+    name.style.fontWeight = "700";
+    name.style.letterSpacing = 2.4;
+    name.style.dropShadow = { color: 0x0b0716, alpha: 0.8, blur: 4, distance: 1, angle: Math.PI / 2 };
+    const count = makeText(`${prog.pieces}/${prog.totalPieces}`, 13, accent, x + w, y, "right");
+    count.style.fontWeight = "700";
+    count.style.dropShadow = name.style.dropShadow;
+    const bar = new Graphics();
+    bar.roundRect(x, y + 21, w, 3, 1.5).fill({ color: 0xffffff, alpha: 0.18 });
+    const frac = Math.min(1, prog.pieces / Math.max(1, prog.totalPieces));
+    if (frac > 0) bar.roundRect(x, y + 21, Math.max(3, w * frac), 3, 1.5).fill(accent);
+    const hit = new Graphics();
+    hit.rect(rect.x, rect.y, rect.width, rect.height).fill({ color: 0x000000, alpha: 0.001 });
+    hit.eventMode = "static";
+    hit.cursor = "pointer";
+    hit.on("pointertap", (e) => { e.stopPropagation(); this.onCardTapped(); });
+    this.strip.addChild(hit, bar, name, count);
+  }
+
   /** Redraw / refresh the cards with current layout and gallery progress */
   layout(layout: LayoutMetrics): void {
     this.screenWidth = layout.width;
@@ -122,6 +184,7 @@ export class CardPeekView extends Container {
     const currentGirlIdx = prog.completedGirls;
     const isPortrait = layout.portrait;
     this.compact.visible = isPortrait;
+    this.strip.visible = !isPortrait;
     for (const card of this.cards) card.visible = !isPortrait;
     if (isPortrait && layout.collectionBar) {
       const rect = layout.collectionBar;
@@ -138,248 +201,11 @@ export class CardPeekView extends Container {
       return;
     }
 
-    const centerY = layout.height / 2;
-    const cardStep = this.cardHeight + this.gap;
-
-    for (let i = 0; i < 3; i++) {
-      const card = this.cards[i]!;
-      const bg = this.cardBgs[i]!;
-
-      card.y = centerY + (i - 1) * cardStep;
-
-      const collapsedX = this.getCollapsedX(i, layout.width, isPortrait);
-      const expandedX = this.getExpandedX(i, layout.width, isPortrait);
-      const targetX = this.hoveredStates[i] ? expandedX : collapsedX;
-      
-      this.targetXPositions[i] = targetX;
-      if (this.currentXPositions[i] === 0) {
-        this.currentXPositions[i] = targetX;
-        card.x = targetX;
-      }
-
-      card.rotation = this.tilts[i]!;
-
-      while (card.children.length > 1) {
-        const child = card.children[1]!;
-        card.removeChild(child);
-        child.destroy({ children: true });
-      }
-
-      bg.clear();
-      
-      let borderGlowColor = 0x2b3b5e;
-      let fillAlpha = 0.88;
-      let borderWidth = 2.5;
-
-      const isCompleted = prog.prestige > 0 || i < currentGirlIdx;
-      const isActive = i === prog.girlId;
-      const isLocked = !isCompleted && !isActive;
-
-      if (isCompleted || isActive) {
-        borderGlowColor = this.themeColors[i]!;
-        fillAlpha = 0.93;
-        borderWidth = 3;
-      }
-
-      bg.roundRect(-this.cardWidth / 2 - 2, -this.cardHeight / 2 - 2, this.cardWidth + 4, this.cardHeight + 4, 8)
-        .fill({ color: borderGlowColor, alpha: 0.18 });
-
-      bg.roundRect(-this.cardWidth / 2, -this.cardHeight / 2, this.cardWidth, this.cardHeight, 6)
-        .fill({ color: 0x070c1e, alpha: fillAlpha })
-        .stroke({ color: borderGlowColor, width: borderWidth });
-
-      bg.roundRect(-this.cardWidth / 2 + 3, -this.cardHeight / 2 + 3, this.cardWidth - 6, this.cardHeight - 6, 4)
-        .stroke({ color: borderGlowColor, width: 1, alpha: 0.25 });
-
-      const nameStr = i === 0 ? "SAPPHIRE" : i === 1 ? "ROXY" : "VEGA";
-      const nameText = new Text({
-        text: nameStr,
-        style: new TextStyle({
-          fill: isLocked ? 0x6e7e9a : 0xffffff,
-          fontFamily: "Impact, 'Arial Black', Arial, sans-serif",
-          fontSize: 11,
-          fontWeight: "900",
-          letterSpacing: 1
-        })
-      });
-      nameText.anchor.set(0.5, 0);
-      nameText.position.set(0, -this.cardHeight / 2 + 8);
-      card.addChild(nameText);
-
-      // Render Prestige Badge if prestige > 0
-      if (prog.prestige > 0) {
-        const pBadge = new Graphics();
-        pBadge.roundRect(-24, -this.cardHeight / 2 - 10, 48, 14, 3)
-          .fill(0x1a1403)
-          .stroke({ color: 0xffdf65, width: 1 });
-        const pTxt = new Text({
-          text: `★ ${toRomanNumeral(prog.prestige)}`,
-          style: new TextStyle({
-            fill: 0xffdf65,
-            fontFamily: "Impact, sans-serif",
-            fontSize: 9,
-            letterSpacing: 0.5
-          })
-        });
-        pTxt.anchor.set(0.5, 0.5);
-        pTxt.position.set(0, -this.cardHeight / 2 - 3);
-        card.addChild(pBadge, pTxt);
-      }
-
-      // Card Artwork / Placeholders
-      if (isLocked) {
-        // --- LOCKED STATE ---
-        const lockIcon = new Graphics();
-        // Body of lock
-        lockIcon.roundRect(-8, 4, 16, 12, 2).fill(0x3e4e6c);
-        // Loop of lock
-        lockIcon.arc(0, 4, 6, Math.PI, 0).stroke({ color: 0x3e4e6c, width: 2 });
-        lockIcon.y = -10;
-        card.addChild(lockIcon);
-
-        const lockText = makeText("LOCKED", 10, 0x5a6a8c, 0, this.cardHeight / 2 - 20, "center");
-        card.addChild(lockText);
-
-      } else if (isCompleted) {
-        // --- COMPLETED / UNLOCKED STATE ---
-        if (i === 0) {
-          // Sapphire full art exists!
-          const fullTex = getExtraTexture("char_full");
-          if (fullTex) {
-            const artSprite = new Sprite(fullTex);
-            artSprite.anchor.set(0.5);
-            // Scale and crop to fit card beautifully
-            const scale = Math.min((this.cardWidth - 10) / fullTex.width, (this.cardHeight - 40) / fullTex.height);
-            artSprite.scale.set(scale);
-            artSprite.y = 5;
-            card.addChild(artSprite);
-          }
-        } else if (i === 1) {
-          // Roxy full art exists!
-          const fullTex = getExtraTexture("char2_full");
-          if (fullTex) {
-            const artSprite = new Sprite(fullTex);
-            artSprite.anchor.set(0.5);
-            // Scale and crop to fit card beautifully
-            const scale = Math.min((this.cardWidth - 10) / fullTex.width, (this.cardHeight - 40) / fullTex.height);
-            artSprite.scale.set(scale * 1.25);
-            artSprite.y = 5;
-            card.addChild(artSprite);
-          }
-        } else {
-          // Vega full art exists!
-          const fullTex = getExtraTexture("char3_full");
-          if (fullTex) {
-            const artSprite = new Sprite(fullTex);
-            artSprite.anchor.set(0.5);
-            const scale = Math.min((this.cardWidth - 10) / fullTex.width, (this.cardHeight - 40) / fullTex.height);
-            artSprite.scale.set(scale * 1.25);
-            artSprite.y = 5;
-            card.addChild(artSprite);
-          }
-        }
-
-        const statusText = makeText("UNLOCKED", 10, borderGlowColor, 0, this.cardHeight / 2 - 20, "center");
-        card.addChild(statusText);
-
-      } else if (isActive) {
-        // --- ACTIVE IN PROGRESS STATE ---
-        if (i === 0) {
-          // Sapphire interactive progress assembly
-          const assembly = new Container();
-          const silTex = getExtraTexture("char_silhouette");
-          if (silTex) {
-            const silSprite = new Sprite(silTex);
-            silSprite.anchor.set(0.5);
-            // Per-character registration offset so pieces land inside the outline
-            // at any size (girl 1's silhouette is off-centre from her pieces).
-            const silOff = silhouetteOffset("char", silTex);
-            silSprite.x = silOff.x;
-            silSprite.y = silOff.y;
-            silSprite.tint = 0x000000;
-            silSprite.alpha = 0.8;
-            assembly.addChild(silSprite);
-
-            // Overlay pieces
-            const collectedPieces = prog.pieces;
-            for (let p = 1; p <= Math.min(8, collectedPieces); p++) {
-              const pieceTex = getExtraTexture(`char_piece_${p}`);
-              if (pieceTex) {
-                const pieceSprite = new Sprite(pieceTex);
-                pieceSprite.anchor.set(0.5);
-                assembly.addChild(pieceSprite);
-              }
-            }
-
-            const scale = Math.min((this.cardWidth - 12) / silTex.width, (this.cardHeight - 44) / silTex.height);
-            assembly.scale.set(scale * 1.05);
-            assembly.y = 4;
-            card.addChild(assembly);
-          }
-        } else if (i === 1) {
-          // Roxy interactive progress assembly
-          const assembly = new Container();
-          const silTex = getExtraTexture("char2_silhouette");
-          if (silTex) {
-            const silSprite = new Sprite(silTex);
-            silSprite.anchor.set(0.5);
-            silSprite.x = 0;
-            silSprite.y = 0;
-            silSprite.tint = 0x000000;
-            silSprite.alpha = 0.8;
-            assembly.addChild(silSprite);
-
-            // Overlay pieces
-            const collectedPieces = prog.pieces;
-            for (let p = 1; p <= Math.min(8, collectedPieces); p++) {
-              const pieceTex = getExtraTexture(`char2_piece_${p}`);
-              if (pieceTex) {
-                const pieceSprite = new Sprite(pieceTex);
-                pieceSprite.anchor.set(0.5);
-                assembly.addChild(pieceSprite);
-              }
-            }
-
-            const scale = Math.min((this.cardWidth - 12) / silTex.width, (this.cardHeight - 44) / silTex.height);
-            assembly.scale.set(scale * 1.05 * 1.25);
-            assembly.y = 4;
-            card.addChild(assembly);
-          }
-        } else {
-          // Vega interactive progress assembly
-          const assembly = new Container();
-          const silTex = getExtraTexture("char3_silhouette");
-          if (silTex) {
-            const silSprite = new Sprite(silTex);
-            silSprite.anchor.set(0.5);
-            silSprite.x = 0;
-            silSprite.y = 0;
-            silSprite.tint = 0x000000;
-            silSprite.alpha = 0.8;
-            assembly.addChild(silSprite);
-
-            // Overlay pieces
-            const collectedPieces = prog.pieces;
-            for (let p = 1; p <= Math.min(8, collectedPieces); p++) {
-              const pieceTex = getExtraTexture(`char3_piece_${p}`);
-              if (pieceTex) {
-                const pieceSprite = new Sprite(pieceTex);
-                pieceSprite.anchor.set(0.5);
-                assembly.addChild(pieceSprite);
-              }
-            }
-
-            const scale = Math.min((this.cardWidth - 12) / silTex.width, (this.cardHeight - 44) / silTex.height);
-            assembly.scale.set(scale * 1.05 * 1.25);
-            assembly.y = 4;
-            card.addChild(assembly);
-          }
-        }
-
-        const progText = makeText(`${prog.pieces} / ${prog.totalPieces}`, 11, 0xffffff, 0, this.cardHeight / 2 - 20, "center");
-        card.addChild(progText);
-      }
-    }
+    // Landscape: the crew strip sits INSIDE the art panel, under the character.
+    // (The old tilted cards peeked in from past the screen edge and read as UI
+    // cut off by the viewport.)
+    for (const card of this.cards) card.visible = false;
+    if (layout.artPanel) this.drawStrip(layout.artPanel, prog);
   }
 
   destroy(options?: any): void {
