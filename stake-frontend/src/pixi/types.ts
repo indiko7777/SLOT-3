@@ -1,3 +1,4 @@
+import type { DriveByCue } from "./driveBy";
 import type { RoundRecord, UiStrings } from "../domain";
 import type { BetModeObject } from "../rgs/types";
 import type { PieceGain } from "../meta/collection";
@@ -93,6 +94,8 @@ export interface SceneRuntime {
   /** Whether the head-start is active for the current bet (false = dimmed). */
   isHeadStartActive?(): boolean;
   onAction(action: string): Promise<void>;
+  /** DRIVE-BY sound moments, fired from the animation's own timeline. */
+  onDriveByCue?(cue: DriveByCue, turbo: boolean): void;
   /** Girl collection reveal sound moments, fired on their visual frames. */
   onCollectionCue?(cue: "lock" | "snap" | "sweep" | "shutter" | "name", turbo: boolean): void;
   onSafeLand?: (index: number, total: number) => void;

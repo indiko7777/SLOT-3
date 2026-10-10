@@ -2,6 +2,7 @@ import { BlurFilter, ColorMatrixFilter, Container, Graphics, RenderTexture, Spri
 import { AdvancedBloomFilter, OutlineFilter, RGBSplitFilter, ShockwaveFilter } from "pixi-filters";
 import { allLoadedTextures } from "./assets";
 import { allFxTextures } from "./fxTextures";
+import { prewarmDriveBy } from "./driveBy";
 import { DISPLAY_FONT } from "../typography";
 
 /**
@@ -18,7 +19,7 @@ export function warmUpGpu(renderer: Renderer): void {
   const root = new Container();
   const target = RenderTexture.create({ width: 64, height: 64 });
   try {
-    for (const tex of [...allLoadedTextures(), ...allFxTextures()]) {
+    for (const tex of [...allLoadedTextures(), ...allFxTextures(), ...prewarmDriveBy()]) {
       if (!tex || tex.destroyed || tex.width <= 0) continue;
       const s = new Sprite(tex);
       s.width = 8;

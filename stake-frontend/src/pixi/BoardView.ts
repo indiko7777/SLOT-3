@@ -519,6 +519,49 @@ export class BoardView extends Container {
   }
 
   /**
+   * DRIVE-BY landing: the symbol in this cell is knocked out and the thrown
+   * Body Armor wild slams in (oversized → seated, with a pink burst). Called on
+   * the impact frame of the throw, so the swap and the hit are one beat.
+   */
+  slamWild(position: Position, board: Board, turbo: boolean): void {
+    this.currentBoard = board;
+    const [col, row] = position;
+    const key = keyOf(position);
+    const old = this.symbols.get(key);
+    if (old) {
+      this.symbols.delete(key);
+      const ox = old.x, oy = old.y;
+      old.pivot.set(this.cellWidth / 2, this.cellHeight / 2);
+      old.position.set(ox + this.cellWidth / 2, oy + this.cellHeight / 2);
+      void tween(turbo ? 70 : 140, (p) => {
+        if (old.destroyed) return;
+        old.scale.set(1 - 0.45 * p);
+        old.alpha = 1 - p;
+        old.rotation = 0.35 * p;
+      }, easeOutCubic).then(() => { if (!old.destroyed) old.destroy({ children: true }); });
+    }
+    const id = board[col]![row]!;
+    const view = new SymbolView(id);
+    view.layout(this.cellWidth, this.cellHeight);
+    view.pivot.set(this.cellWidth / 2, this.cellHeight / 2);
+    view.position.set(this.cellX(col) + this.cellWidth / 2, this.cellY(row) + this.cellHeight / 2);
+    view.scale.set(1.5);
+    this.symbols.set(key, view);
+    this.reelContainer.addChild(view);
+    this.cellBurst(col, row, 0xff4f8b, turbo, 1.35);
+    void tween(turbo ? 140 : 260, (p) => {
+      if (view.destroyed) return;
+      view.scale.set(1.5 - 0.5 * easeOutBack(p));
+    }, linear).then(() => {
+      if (view.destroyed) return;
+      view.scale.set(1);
+      view.pivot.set(0, 0);
+      view.position.set(this.cellX(col), this.cellY(row));
+      view.touchdown("reel", turbo);
+    });
+  }
+
+  /**
    * 2×2 mega wild. The four cells cave in, then ONE giant symbol slams down
    * across the block (shake, flash, shock ring, shards), holds for a beat
    * playing its win, and settles into the four live cells under a shared frame

@@ -1,5 +1,7 @@
 import type { GameEvent } from "./domain";
 import { dudArm, dudFizzle, noHitImpact, tapeSlap } from "./audio/bonusStings";
+import { driveByImpact, driveByPass, driveByTitle } from "./audio/driveBySound";
+import type { DriveByCue } from "./pixi/driveBy";
 import { collectionSting, type CollectionCue } from "./audio/collectionStings";
 import { GetawayResultSound } from "./audio/GetawayResultSound";
 import { FoleyGate, hasFoley, playFoley } from "./audio/SymbolFoley";
@@ -213,6 +215,13 @@ export class EventAudioBus {
   /** Girl collection reveal moments (lock-on, snap, sweep, shutter, name card). */
   collectionCue(cue: CollectionCue, turbo: boolean): void {
     this.sting((c, o) => collectionSting(c, o, cue, turbo));
+  }
+  /** DRIVE-BY: title swoosh, the scheduled pass-by, one hit per landed wild. */
+  driveByCue(cue: DriveByCue, turbo: boolean): void {
+    const scale = turbo ? 0.6 : 1;
+    if (cue.kind === "title") this.sting((c, o) => driveByTitle(c, o, scale));
+    else if (cue.kind === "pass") this.sting((c, o) => driveByPass(c, o, cue, scale));
+    else this.sting((c, o) => driveByImpact(c, o, cue.index, cue.pan, scale));
   }
   getawayCue(cue: GetawayCue, turbo: boolean): void {
     const gain = turbo ? .5 : .8;

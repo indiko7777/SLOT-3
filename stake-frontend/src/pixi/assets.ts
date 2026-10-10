@@ -171,6 +171,10 @@ const OPTIONAL_ASSETS: Record<string, string> = {
   "gold_bar": "gold_bar.webp",
   "dynamite": "dynamite.webp",
   "heat_chase_logo": "Heat Chase Logo.webp",
+  // DRIVE-BY: the getaway car (side profile, body + rolling rims).
+  "driveby_car": "driveby/car_body.webp",
+  "driveby_rim_f": "driveby/rim_f.webp",
+  "driveby_rim_r": "driveby/rim_r.webp",
   // Buy-column cards: crops of the confirmation popups' key art.
   "card_getaway": "popup/card_getaway.webp",
   "card_super": "popup/card_super.webp",

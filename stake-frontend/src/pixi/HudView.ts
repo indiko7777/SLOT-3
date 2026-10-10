@@ -7,6 +7,7 @@ import { drawCabinetBack, drawCabinetFront } from "./cabinet";
 import { buildLivingBackground, BASE_STREET } from "./livingBackground";
 import { GIRL_ACCENT, pieceBounds } from "./girlReveal";
 import { wantedStarsGeometry } from "./layout";
+import { artCharTransform } from "./artCharacter";
 import { makeText } from "./text";
 import { ambientTicker, tween, wait, easeOutBack, easeOutCubic, easeInCubic, linear } from "./tween";
 import { softGlowTexture } from "./fxTextures";
@@ -475,6 +476,8 @@ export class HudView extends Container {
         return "HEAT LEVEL INCREASED!";
       case "heat_feature_transform":
         return "BUST THE STASH!";
+      case "drive_by":
+        return "DRIVE-BY · WILDS INCOMING";
       case "round_complete":
         return "SPIN COMPLETED!";
       default:
@@ -485,12 +488,6 @@ export class HudView extends Container {
   private drawArt(rect: Rect, _snapshot: PlaybackSnapshot): void {
     // The wanted stars live in layout.starsBar, on top of the reel frame.
     this.drawCharacter(rect, _snapshot.collectionCount);
-  }
-
-  /** The character fits above the crew tag that CardPeekView draws at the
-   *  bottom of the art panel. */
-  private crewBounds(rect: Rect): { top: number; bottom: number } {
-    return { top: rect.y + 8, bottom: rect.y + rect.height - 44 };
   }
 
   async animateStarFill(starIndex: number): Promise<void> {
@@ -748,11 +745,8 @@ export class HudView extends Container {
     const silOff = silhouetteOffset(prog.artPrefix, silTex);
     silSprite.x = silOff.x;
     silSprite.y = silOff.y;
-    // Unrevealed = a dark slate figure with a cream keyline, not a pure-black
-    // cut-out (that read as a missing image).
-    silSprite.tint = 0x1a2331;
-    silSprite.alpha = 0.92;
-    const outline = new OutlineFilter({ thickness: 1.6, color: 0xf3e6d4, alpha: 0.75, quality: 1.0 });
+    silSprite.tint = 0x000000;
+    const outline = new OutlineFilter({ thickness: 2, color: 0xffffff, quality: 1.0 });
     outline.resolution = window.devicePixelRatio || 1;
     silSprite.filters = [outline];
     assembly.addChild(silSprite);
@@ -775,19 +769,14 @@ export class HudView extends Container {
       }
     }
 
-    // Fit the FIGURE (its alpha box), not the padded canvas, between the crew
-    // header and the crew strip.
-    const { top, bottom } = this.crewBounds(rect);
-    const fig = pieceBounds(silTex);
-    const boxW = rect.width - 24;
-    const boxH = Math.max(80, bottom - top);
-    const scale = Math.min(boxW / fig.w, boxH / fig.h);
-    const multiplier = 1.0;
-    assembly.scale.set(scale * multiplier);
-    assembly.position.set(rect.x + rect.width / 2 - (fig.ox + silOff.x) * scale, top + boxH / 2 - (fig.oy + silOff.y) * scale);
+    // The ONE shared placement — the piece reveal stages on exactly this.
+    const t = artCharTransform(rect, prog.artPrefix);
+    if (!t) return;
+    assembly.scale.set(t.scale);
+    assembly.position.set(t.cx, t.cy);
     // Contact shadow: she stands ON the street, not pasted over it.
     const fb = pieceBounds(silTex);
-    const k = scale * multiplier;
+    const k = t.scale;
     const footY = assembly.y + (fb.oy + silOff.y + fb.h / 2) * k;
     const footX = assembly.x + (fb.ox + silOff.x) * k;
     const shadowW = fb.w * k * 0.62;

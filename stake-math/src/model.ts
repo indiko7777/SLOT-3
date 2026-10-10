@@ -207,6 +207,27 @@ export const MODES: Record<BetMode, ModeConfig> = {
   base_tier3: baseTier(3, { basegame: 0.08, basebig: 0.1, freegame: 0.76, wincap: 0.06 })
 };
 
+/**
+ * DRIVE-BY — the getaway car tears across the reels right after they land and
+ * drops Body Armor wilds onto the board before anything pays.
+ *
+ * It runs on a share of the WINNING base-cost books (basegame/basebig) and of
+ * the Wanted-path bonus runs, never on dead spins: a Drive-By that drops wilds
+ * and then pays nothing feels like a broken promise. The wilds are placed
+ * against the board's biggest symbol group so they connect (see
+ * dropDriveByWilds). Published frequency ≈ 1 in 25 base spins — rare enough to
+ * stay an event, common enough that a 50-spin session usually sees it.
+ * The optimizer re-solves every mode to exactly 96%, so this reshapes the feel
+ * of the base game, never its EV. Measure with scripts/measure-driveby.ts.
+ */
+export const DRIVE_BY_SHARE = 0.105;
+/** How many wilds a Drive-By drops. */
+export const DRIVE_BY_COUNTS: { value: number; weight: number }[] = [
+  { value: 3, weight: 58 },
+  { value: 4, weight: 30 },
+  { value: 5, weight: 12 }
+];
+
 export const MIN_CLUSTER = 5;
 /** The 5x4 grid holds 20 cells, so 20 is the largest possible cluster. */
 export const MAX_CLUSTER = 20;

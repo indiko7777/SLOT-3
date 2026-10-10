@@ -70,6 +70,14 @@ export function applyEvent(snapshot: PlaybackSnapshot, event: GameEvent, record:
         board: event.board,
         lastMessage: "Board settled"
       };
+    case "drive_by":
+      return {
+        ...next,
+        state: "drive_by",
+        board: event.board,
+        transformed: event.positions,
+        lastMessage: "Drive-By"
+      };
     case "scatter_tease":
       return {
         ...next,
@@ -208,6 +216,8 @@ export function eventDelay(event: GameEvent, turbo: boolean): number {
     case "mega_wild_place":
     case "global_multiplier_apply":
       return 1050;
+    case "drive_by":
+      return 2400;
     case "bonus_trigger":
       return 1200;
     case "master_key_crack":

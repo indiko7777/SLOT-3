@@ -181,6 +181,8 @@ export type GameEvent =
   | { type: "round_start"; mode: BetMode; boardSeedLabel: string; turboProfile: "normal" | "turbo" }
   | { type: "board_settle"; board: Board }
   | { type: "scatter_tease"; count: number; positions: Position[] }
+  /** DRIVE-BY: the getaway car drops Body Armor wilds (CAR_WILD) at `positions`; `board` is the result. */
+  | { type: "drive_by"; positions: Position[]; board: Board }
   | {
       type: "cluster_win";
       winId: string;
@@ -412,7 +414,7 @@ export function validateRoundRecord(record: RoundRecord): void {
 
   let ended = false;
   for (const event of record.events) {
-    if (event.type === "board_settle" || event.type === "tumble_drop" || event.type === "heat_transform" || event.type === "mega_wild_place") {
+    if (event.type === "board_settle" || event.type === "tumble_drop" || event.type === "heat_transform" || event.type === "mega_wild_place" || event.type === "drive_by") {
       assertBoard(event.board);
     }
     if (event.type === "round_end") {
@@ -439,6 +441,8 @@ function assertPosition([column, row]: Position): void {
 
 function eventPositions(event: GameEvent): Position[] {
   switch (event.type) {
+    case "drive_by":
+      return event.positions;
     case "scatter_tease":
       return event.positions;
     case "cluster_win":

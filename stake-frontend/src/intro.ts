@@ -11,7 +11,7 @@ export function showIntro(onEnter?: () => void): Promise<void> {
     root.setAttribute('aria-modal', 'true');
     root.setAttribute('aria-labelledby', 'intro-title');
     const features = [
-      ['diamond.webp', 'MAKE THE CONNECTION', '5+ matching symbols connected horizontally or vertically win. Winning symbols clear; new ones tumble in.'],
+      ['diamond.webp', 'MAKE THE CONNECTION', '5+ matching symbols connected horizontally or vertically win. Winning symbols clear; new ones tumble in. Watch for the DRIVE-BY: the getaway car throws Body Armor wilds onto the reels.'],
       ['burner_phone.webp', 'MAKE YOUR GETAWAY', `Fill 5 Wanted stars or land 3+ trucks to start ${BONUS_START_RESPINS} spins. Gold bars stick; only a spin that lands nothing uses one up.`],
       ['cash.webp', 'TURN UP THE HEAT', 'Consecutive cascade wins raise the Wanted level and upgrade the grid. Fill all 20 bonus cells for the Grand Escape.'],
       ['wild_symbole.webp', 'EARN YOUR GOLD STARS', 'Wilds reveal character pieces. Complete a silhouette to earn a gold star and unlock its head-start mode for later base spins.'],

@@ -17,6 +17,8 @@ import {
   BONUS_CELLS,
   BONUS_START_RESPINS,
   cascadeMultiplier,
+  DRIVE_BY_COUNTS,
+  DRIVE_BY_SHARE,
   clusterPay,
   type Criteria,
   LOW_SYMBOLS,
@@ -136,7 +138,19 @@ export function simulateRound(
   else if (forceBonus) plantScatters(board, rng, SCATTER_TRIGGER_COUNT); // buy: straight to the Getaway
   else capScatters(board, rng, SCATTER_TRIGGER_COUNT - 1);
 
-  events.push({ type: "board_settle", board: cloneBoard(board) });
+  // Drive-By: on a share of winning base spins (and Wanted-path bonus runs) the
+  // getaway car drops Body Armor wilds before the first evaluation. The landed
+  // board shows first, then the drive_by event carries the board with wilds.
+  const landed = cloneBoard(board);
+  let driveBy: Position[] = [];
+  const driveByEligible =
+    isCash && !forceScatter && (criteria === "basegame" || criteria === "basebig" || forceDeep);
+  if (driveByEligible && rng.bool(DRIVE_BY_SHARE)) {
+    driveBy = dropDriveByWilds(board, rng, pickWeighted(rng, DRIVE_BY_COUNTS));
+  }
+
+  events.push({ type: "board_settle", board: landed });
+  if (driveBy.length) events.push({ type: "drive_by", positions: driveBy, board: cloneBoard(board) });
 
   const scatterPositions = findSymbol(board, SCATTER);
   if (scatterPositions.length >= 2) {
@@ -351,6 +365,76 @@ function genBoard(rng: Rng, mode: BetMode): Board {
     board.push(col);
   }
   return board;
+}
+
+/**
+ * Drive-By wilds. They go where they CONNECT: next to the board's biggest
+ * group of one paying symbol first (so the drop nearly always pays), then
+ * anywhere free. Never on a scatter or an existing wild. Returns the cells,
+ * left to right — the order the car passes them.
+ */
+function dropDriveByWilds(board: Board, rng: Rng, count: number): Position[] {
+  const key = ([c, r]: Position) => `${c}:${r}`;
+  const free = (p: Position): boolean => {
+    const s = board[p[0]]![p[1]]!;
+    return s !== SCATTER && !WILDS.has(s);
+  };
+  // biggest same-symbol component among paying symbols (ties random)
+  let best: Position[] = [];
+  const seen = new Set<string>();
+  for (let c = 0; c < GRID_COLUMNS; c++) {
+    for (let r = 0; r < GRID_ROWS; r++) {
+      const start: Position = [c, r];
+      const sym = board[c]![r]!;
+      if (seen.has(key(start)) || !PAYABLE_SYMBOLS.includes(sym)) continue;
+      const comp: Position[] = [];
+      const stack: Position[] = [start];
+      seen.add(key(start));
+      while (stack.length) {
+        const cur = stack.pop()!;
+        comp.push(cur);
+        for (const n of neighbours(cur)) {
+          if (seen.has(key(n)) || board[n[0]]![n[1]] !== sym) continue;
+          seen.add(key(n));
+          stack.push(n);
+        }
+      }
+      if (comp.length > best.length || (comp.length === best.length && rng.bool(0.5))) best = comp;
+    }
+  }
+  const inBest = new Set(best.map(key));
+  const adjacent: Position[] = [];
+  const adjSeen = new Set<string>();
+  for (const p of best)
+    for (const n of neighbours(p))
+      if (!inBest.has(key(n)) && !adjSeen.has(key(n)) && free(n)) { adjSeen.add(key(n)); adjacent.push(n); }
+  shuffle(adjacent, rng);
+  const chosen: Position[] = [];
+  const taken = new Set<string>();
+  for (const p of adjacent) {
+    if (chosen.length >= count) break;
+    chosen.push(p); taken.add(key(p));
+  }
+  const rest: Position[] = [];
+  for (let c = 0; c < GRID_COLUMNS; c++)
+    for (let r = 0; r < GRID_ROWS; r++) {
+      const p: Position = [c, r];
+      if (!taken.has(key(p)) && !inBest.has(key(p)) && free(p)) rest.push(p);
+    }
+  shuffle(rest, rng);
+  for (const p of rest) {
+    if (chosen.length >= count) break;
+    chosen.push(p); taken.add(key(p));
+  }
+  for (const [c, r] of chosen) board[c]![r] = WILD;
+  return chosen.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+}
+
+function shuffle<T>(arr: T[], rng: Rng): void {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = rng.int(i + 1);
+    [arr[i], arr[j]] = [arr[j]!, arr[i]!];
+  }
 }
 
 function cloneBoard(board: Board): Board {

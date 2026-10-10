@@ -157,7 +157,7 @@ export class CardPeekView extends Container {
     const accent = GIRL_ACCENT[prog.girlId] ?? 0xffcf6b;
     const w = Math.min(190, rect.width - 40);
     const x = rect.x + (rect.width - w) / 2;
-    const y = rect.y + rect.height - 34;
+    const y = rect.y + 10;
     const name = makeText(prog.girlName.toUpperCase(), 13, 0xfff4f8, x, y, "left");
     name.style.fontWeight = "700";
     name.style.letterSpacing = 2.4;

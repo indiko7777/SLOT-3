@@ -11,13 +11,15 @@ import { EffectsLayer } from "./EffectsLayer";
 import { HudView } from "./HudView";
 import { SymbolView, WIN_ACCENT, DEFAULT_ACCENT } from "./SymbolView";
 import { computeLayout, logicalViewport, wantedStarsGeometry } from "./layout";
-import { getExtraTexture, silhouetteOffset } from "./assets";
+import { getExtraTexture, getSymbolTexture, silhouetteOffset } from "./assets";
 import { tween, wait, linear, easeInCubic, easeInOutCubic, easeOutBack, easeOutCubic, simulate } from "./tween";
 import type { LayoutMetrics, SceneRuntime } from "./types";
 import { OutlineFilter } from "pixi-filters";
 import { CardPeekView } from "./CardPeekView";
 import { GalleryView } from "./GalleryView";
 import { money } from "../currency";
+import { playDriveBy } from "./driveBy";
+import { artCharTransform } from "./artCharacter";
 
 /** Collection voice lines per girl, indexed by GIRLS[] id, in PLAY ORDER.
  *  The file names are inconsistent ("milstone1", "mileston3", and girl 1's set
@@ -388,6 +390,24 @@ export class PixiGameScene {
             this.effects.floatValue(at.x, at.y, money(amount), accent, this.layout.board, turbo));
         }
         await this.board.highlight(event.positions, turbo);
+        return;
+      }
+      case "drive_by": {
+        // The getaway car tears across the reels throwing Body Armor wilds.
+        const cell = Math.min(this.layout.board.width / 5, this.layout.board.height / 4);
+        await playDriveBy({
+          layer: this.effects,
+          board: this.layout.board,
+          screenW: this.layout.width,
+          cell,
+          turbo,
+          wildTexture: getSymbolTexture("CAR_WILD"),
+          targets: event.positions.map((p) => ({
+            ...this.board.centerOf(p),
+            land: () => this.board.slamWild(p, event.board, turbo),
+          })),
+          onCue: (cue) => this.runtime.onDriveByCue?.(cue, turbo),
+        });
         return;
       }
       case "tumble_remove":
@@ -766,14 +786,7 @@ export class PixiGameScene {
    *  a flown-in piece / the full image lands EXACTLY on the persistent silhouette. */
   private artCharTransform(prefix: string): { cx: number; cy: number; scale: number } | null {
     const rect = this.layout.artPanel;
-    if (!rect) return null;
-    const silTex = getExtraTexture(`${prefix}_silhouette`);
-    if (!silTex) return null;
-    const boxW = rect.width - 24;
-    const boxH = rect.height - 84;
-    const raw = Math.min(boxW / silTex.width, boxH / silTex.height);
-    const scale = prefix !== "char" ? raw * 1.25 : raw;
-    return { cx: rect.x + rect.width / 2, cy: rect.y + 60 + (rect.height - 60) / 2, scale };
+    return rect ? artCharTransform(rect, prefix) : null;
   }
 
   private girlInfo(gain: PieceGain): { name: string; accent: number; reward: string | null } {

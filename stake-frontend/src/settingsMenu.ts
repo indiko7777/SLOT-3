@@ -707,6 +707,15 @@ export class SettingsMenu {
       ),
     );
 
+    parent.appendChild(this.sep("Drive-By"));
+    parent.appendChild(
+      this.bodyText(
+        "On any base game spin (including Ante and Head-Start spins) the getaway car can speed across the reels right after they land and throw " +
+          "3 to 5 Body Armor wilds onto the reels. The wilds land before any wins are evaluated and substitute for every paying symbol. " +
+          "Drive-By does not occur in The Getaway or Super Getaway feature plays.",
+      ),
+    );
+
     parent.appendChild(this.sep("Wanted Level (Heat)"));
     parent.appendChild(
       this.bodyText(
@@ -736,7 +745,7 @@ export class SettingsMenu {
 
     parent.appendChild(this.sep("Special Symbols"));
     parent.appendChild(
-      this.specialRow("CAR_WILD", "Body Armor", "WILD — substitutes for every symbol in the table (it does not trigger the bonus). At 3★/4★ Wanted Level it lands as a 2x2 mega wild."),
+      this.specialRow("CAR_WILD", "Body Armor", "WILD — substitutes for every symbol in the table (it does not trigger the bonus). At 3★/4★ Wanted Level it lands as a 2x2 mega wild; the Drive-By throws 3 to 5 of them onto the reels."),
     );
     parent.appendChild(
       this.specialRow("WILD", "Beach Girl Wild", "WILD — substitutes for every symbol in the table AND reveals one Collection gallery piece each time it lands."),

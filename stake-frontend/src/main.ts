@@ -422,6 +422,7 @@ async function boot(): Promise<void> {
     onCollectionCue: (cue, turbo) => {
       if (!muted) audioBus.collectionCue(cue, turbo);
     },
+    onDriveByCue: (cue, turbo) => { if (!muted) audioBus.driveByCue(cue, turbo); },
     onGetawayCue: (cue, turbo) => {
       if (!muted) audioBus.getawayCue(cue, turbo);
     },
@@ -576,6 +577,33 @@ async function boot(): Promise<void> {
       }
     };
     (window as unknown as { __scene: PixiGameScene }).__scene = scene;
+    // __driveBy(n) → a scripted base spin with an n-wild DRIVE-BY (default 4).
+    (window as unknown as { __driveBy: (n?: number) => Promise<void> }).__driveBy = async (n = 4) => {
+      if (isPlaying) return;
+      isPlaying = true;
+      try {
+        const rec: RoundRecord = { id: 0, payoutMultiplier: 0, events: [] };
+        const play = async (ev: GameEvent) => {
+          snapshot = applyEvent(snapshot, ev, rec);
+          audioBus.playEvent(ev, muted, isTurbo());
+          await scene.playEvent(ev, snapshot);
+        };
+        const board: Board = [
+          ["PISTOL", "BRASS", "KNIFE", "AMMO"], ["PISTOL", "DUFFEL", "BRASS", "KNIFE"], ["AMMO", "PISTOL", "CASH", "BRASS"],
+          ["KNIFE", "AMMO", "PISTOL", "DUFFEL"], ["BRASS", "KNIFE", "AMMO", "CASH"],
+        ] as SymbolId[][];
+        const spots: Position[] = ([[1, 0], [2, 0], [0, 2], [3, 1], [2, 2]] as Position[]).slice(0, Math.max(1, Math.min(5, n)));
+        const after = board.map((c) => c.slice()) as Board;
+        for (const [c, r] of spots) after[c]![r] = "CAR_WILD";
+        snapshot = { ...INITIAL_SNAPSHOT, betAmount: betLevels[betIndex] ?? 1 };
+        await play({ type: "round_start", mode: "base", boardSeedLabel: "dev", turboProfile: "normal" });
+        await play({ type: "board_settle", board });
+        await play({ type: "drive_by", positions: spots, board: after });
+        await play({ type: "round_end", payoutMultiplier: 0, capApplied: false });
+      } finally {
+        isPlaying = false;
+      }
+    };
     // __play([...events]) → replay any scripted event list through the real
     // audio + scene path (mega wilds, transforms, cascades…) for inspection.
     (window as unknown as { __play: (events: GameEvent[]) => Promise<void> }).__play = async (events) => {
@@ -592,6 +620,55 @@ async function boot(): Promise<void> {
         isPlaying = false;
       }
     };
+    // __wildPiece() → a base spin that lands ONE Beach Girl WILD, so the real
+    // collection flow runs: scan, seat the next body piece, (intro on the last).
+    (window as unknown as { __wildPiece: () => Promise<void> }).__wildPiece = async () => {
+      if (isPlaying) return;
+      isPlaying = true;
+      try {
+        const rec: RoundRecord = { id: 0, payoutMultiplier: 0, events: [] };
+        const play = async (ev: GameEvent) => {
+          snapshot = applyEvent(snapshot, ev, rec);
+          audioBus.playEvent(ev, muted, isTurbo());
+          await scene.playEvent(ev, snapshot);
+        };
+        const board = filler();
+        board[2]![1] = "WILD";
+        snapshot = { ...INITIAL_SNAPSHOT, betAmount: betLevels[betIndex] ?? 1 };
+        await play({ type: "round_start", mode: "base", boardSeedLabel: "dev", turboProfile: "normal" });
+        await play({ type: "board_settle", board });
+        await play({ type: "round_end", payoutMultiplier: 0, capApplied: false });
+        scene.renderSnapshot(snapshot);
+      } finally {
+        isPlaying = false;
+      }
+    };
+    // Always-on DEV test buttons (compiled out of the Stake build).
+    {
+      const bar = document.createElement("div");
+      Object.assign(bar.style, { position: "fixed", top: "8px", right: "10px", zIndex: "10002", display: "flex", gap: "8px" });
+      const mk = (label: string, run: () => Promise<void>) => {
+        const b = document.createElement("button");
+        b.textContent = label;
+        Object.assign(b.style, {
+          font: "700 12px 'Barlow Semi Condensed', Arial, sans-serif", letterSpacing: "1.5px", color: "#170b2a",
+          background: "linear-gradient(90deg,#ff3d8b,#ff9a3c)", border: "0", borderRadius: "999px", padding: "7px 14px",
+          cursor: "pointer", boxShadow: "0 4px 14px rgba(255,61,139,.35)",
+        });
+        b.onclick = async (e) => {
+          e.stopPropagation();
+          b.blur();
+          if (b.disabled) return;
+          b.disabled = true; b.style.opacity = "0.5";
+          try { await audioBus.unlock(); await run(); } finally { b.disabled = false; b.style.opacity = "1"; }
+        };
+        bar.appendChild(b);
+      };
+      const dev = window as unknown as { __driveBy: (n?: number) => Promise<void>; __wildPiece: () => Promise<void> };
+      mk("▶ DRIVE-BY", () => dev.__driveBy(3 + Math.floor(Math.random() * 3)));
+      mk("▶ WILD PIECE", () => dev.__wildPiece());
+      document.body.appendChild(bar);
+    }
     // Slow-motion for inspecting fast beats (1 = normal). __slow(0.2) = 5x slower.
     (window as unknown as { __slow: (s?: number) => void }).__slow = (s = 0.2) => setTimeScale(s);
     // Explicit local presentation harness; compiled out of publication builds.
