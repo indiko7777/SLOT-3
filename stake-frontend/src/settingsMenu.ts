@@ -70,6 +70,8 @@ export interface SettingsMenuFlags {
 }
 
 export interface SettingsMenuHooks {
+  /** Replay the first-run guided tour (optional). */
+  startTour?: () => void;
   getTurboMode(): TurboMode;
   setTurboMode(mode: TurboMode): void;
   isAutoplayActive(): boolean;
@@ -529,6 +531,17 @@ export class SettingsMenu {
       });
     }
 
+    if (this.hooks.startTour) {
+      this.addActionRow(parent, {
+        label: "Game Tour",
+        desc: "Replay the quick guided tour of the controls and features.",
+        onActivate: () => {
+          this.close();
+          this.hooks.startTour?.();
+        },
+      });
+    }
+
     this.addActionRow(parent, {
       label: "Resume Game",
       desc: "Close the menu and return to the game.",
@@ -775,13 +788,16 @@ export class SettingsMenu {
     const controls: Array<[string, string]> = [
       ["SPIN", `Plays one round at the shown ${amount} amount. On desktop the SPACEBAR also spins (only while no window is open). During autoplay this button shows STOP and halts the run.`],
       ["+ / −", `Raise or lower the ${amount} amount through the levels provided by the operator. Locked while a round or autoplay is running.`],
-      ["☰ MENU", "Opens this menu on the GAME tab: spin speed (Normal / Turbo / Extra Turbo) and Autoplay. Autoplay needs a spin count selection plus a separate Start press, and stops automatically if the balance cannot cover the next spin."],
-      ["📻 RADIO", "Music and sound: pick a station or OFF to mute all game audio."],
+      ["AUTO", "Opens the Autoplay settings. Autoplay needs a spin count selection plus a separate Start press, and stops automatically if the balance cannot cover the next spin. While autoplay runs, this button (or SPIN) stops it."],
+      ["⚡ TURBO", "Cycles the spin speed: Normal → Turbo → Extra Turbo. The current speed is lit on the button."],
+      ["☰ MENU", "Opens this menu on the GAME tab: spin speed, Autoplay and the Game Tour."],
+      ["🔊 RADIO", "Music and sound: pick a station or OFF to mute all game audio."],
       ["i INFO", `Opens this menu on the ${t.paytableTab.toUpperCase()} tab with all game information.`],
       ["CLOSE ✕", "Closes this menu (or press Esc on a keyboard)."],
       [social ? "GETAWAY / SUPER" : "BUY GETAWAY / SUPER", `Feature plays: open a confirmation window showing the full price (100x / 500x your ${amount}) before anything is played.`],
       ["ANTE", `Toggles Ante Mode (1.5x ${amount}) with more Wilds and Armored Trucks.`],
-      ["GALLERY CARD", "Shows your Collection progress. Holding SPACE during a spin gives momentary turbo."],
+      ["BEACH GIRL", "Tap the girl (or the Collection bar on phones) to open the Beach Girl Deck with your collection progress."],
+      ["SPACE (HOLD)", "Holding SPACE during a spin gives momentary turbo."],
     ];
     for (const [name, txt] of controls) {
       const row = document.createElement("div");

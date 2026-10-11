@@ -75,6 +75,8 @@ export class HudView extends Container {
   /** Star position cache — set by drawWantedStars, read by animateStarFill */
   private starDrawRect: Rect | null = null;
   private wantedLabel: Text | null = null;
+  /** Scene-space rects of the controls the guided tour spotlights. */
+  private anchors: Record<string, Rect> = {};
   private starFlash: { text: string; until: number } | null = null;
   private starRadius = 0;
 
@@ -124,6 +126,16 @@ export class HudView extends Container {
     this.winText = null;
     this.winLabel = null;
     this.updateStateMessages(snapshot.state);
+    this.anchors = {};
+    if (layout.starsBar) {
+      // just the five stars and their label, not the whole strip
+      const g = wantedStarsGeometry(layout.starsBar);
+      const a = g.centers[0]!, b = g.centers[4]!;
+      const top = g.labelY - 2;
+      this.anchors.stars = { x: a.x - g.starR - 6, y: top, width: b.x - a.x + g.starR * 2 + 12, height: a.y + g.starR + 4 - top };
+    }
+    const crew = layout.artPanel ?? layout.collectionBar;
+    if (crew) this.anchors.crew = crew;
     this.drawBackground(layout, snapshot);
     if (layout.leftPanel) this.drawBuyPanel(layout.leftPanel, layout);
     if (layout.artPanel) this.drawArt(layout.artPanel, snapshot);
@@ -322,6 +334,7 @@ export class HudView extends Container {
         x: rect.x + (w + gap) * 2, y: rect.y, w, h, compact: true, on: anteOn, title: "Ante",
         detail: "", cost: `+${Math.round((anteX - 1) * 100)}%`, disabled: locked, onTap: tap("ante"),
       }));
+      this.anchors.buy = { ...rect };
       return;
     }
 
@@ -349,6 +362,7 @@ export class HudView extends Container {
       detail: "", cost: anteCost, disabled: locked, onTap: tap("ante"),
     }));
     y += 56;
+    this.anchors.buy = { x: left, y: rect.y, width: w, height: y - rect.y };
 
     const logoTex = getExtraTexture("heat_chase_logo");
     if (logoTex && logoTex.width > 0 && logoTex.height > 0) {
@@ -391,6 +405,7 @@ export class HudView extends Container {
     }, (action) => void rt.onAction(action));
     this.addChild(bar.root);
     this.addAmbient(bar.tick);
+    Object.assign(this.anchors, bar.anchors);
     this.creditText = bar.balance;
     this.betText = bar.bet;
     this.winText = bar.win;
@@ -788,6 +803,11 @@ export class HudView extends Container {
     this.underParticlesContainer.addChild(contact);
     assembly.label = "artChar";
     this.underParticlesContainer.addChild(assembly);
+  }
+
+  /** Scene-space rect of a tour target ("spin", "bet", "mute", "stars", "crew", "buy"…). */
+  getAnchor(name: string): Rect | null {
+    return this.anchors[name] ?? null;
   }
 
   /** Hide the art-panel girl while a full-screen reveal draws its own copy of her. */

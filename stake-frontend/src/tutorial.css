@@ -1,0 +1,47 @@
+/* Guided tour — spotlight coach marks in the bet bar's Vice City language. */
+.hc-tour{position:fixed;inset:0;z-index:9000;pointer-events:none;font-family:'Barlow Semi Condensed','Arial Narrow',Arial,sans-serif;color:#fff4f8}
+.hc-tour *{box-sizing:border-box}
+.hc-tour-veil{position:fixed;left:0;top:0;width:0;height:0;pointer-events:auto;background:rgba(12,6,26,.5);
+  -webkit-backdrop-filter:blur(7px) saturate(.85);backdrop-filter:blur(7px) saturate(.85);
+  opacity:0;transition:opacity .35s ease}
+.hc-tour.on .hc-tour-veil{opacity:1}
+.hc-tour.no-veil .hc-tour-veil{opacity:0;pointer-events:none}
+/* catches clicks inside the spotlight unless the step wants the tap */
+.hc-tour-block{position:fixed;pointer-events:auto;background:transparent}
+.hc-tour-block.open{pointer-events:none}
+.hc-tour-ring{position:fixed;pointer-events:none;border-radius:16px;opacity:0;transition:opacity .3s ease;
+  box-shadow:0 0 0 2px rgba(255,244,248,.95),0 0 0 6px rgba(255,61,139,.35),0 0 36px 8px rgba(255,61,139,.45),inset 0 0 22px rgba(255,138,61,.25)}
+.hc-tour.on .hc-tour-ring.show{opacity:1;animation:hcTourPulse 1.6s ease-in-out infinite}
+@keyframes hcTourPulse{0%,100%{box-shadow:0 0 0 2px rgba(255,244,248,.95),0 0 0 6px rgba(255,61,139,.35),0 0 30px 6px rgba(255,61,139,.4),inset 0 0 22px rgba(255,138,61,.22)}
+  50%{box-shadow:0 0 0 2px rgba(255,244,248,1),0 0 0 10px rgba(255,61,139,.22),0 0 48px 14px rgba(255,61,139,.55),inset 0 0 26px rgba(255,138,61,.32)}}
+.hc-tour-card{position:fixed;width:min(352px,calc(100vw - 32px));pointer-events:auto;padding:18px 20px 16px;border-radius:18px;
+  background:linear-gradient(160deg,rgba(46,20,74,.97),rgba(16,9,32,.98));
+  border:1px solid rgba(255,255,255,.12);box-shadow:0 24px 70px rgba(0,0,0,.55),0 0 0 1px rgba(0,0,0,.3);
+  opacity:0;transform:translateY(10px) scale(.98);transition:opacity .28s ease,transform .38s cubic-bezier(.2,.9,.25,1.15)}
+.hc-tour-card::before{content:"";position:absolute;left:18px;right:18px;top:0;height:2px;border-radius:2px;
+  background:linear-gradient(90deg,#22d3c5,#8b3dff,#ff3d8b,#ff8a3d,#ffd166)}
+.hc-tour-card.show{opacity:1;transform:none}
+.hc-tour-card.narrow{width:min(296px,calc(100vw - 32px))}
+.hc-tour-card.nudge{animation:hcTourNudge 1.5s ease-in-out infinite}
+@keyframes hcTourNudge{0%,100%{translate:0 0}50%{translate:var(--nx,0) var(--ny,0)}}
+.hc-tour-caret{position:absolute;width:16px;height:16px;background:#26113f;border-left:1px solid rgba(255,255,255,.12);border-top:1px solid rgba(255,255,255,.12);transform:rotate(45deg)}
+.hc-tour-kicker{font-size:11px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;
+  background:linear-gradient(90deg,#ff6fae,#ffb15c);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hc-tour-title{font-family:'Heat Display',Impact,sans-serif;font-size:30px;line-height:1.02;letter-spacing:.02em;margin:6px 0 8px;color:#fff4f8}
+.hc-tour-body{font-size:15.5px;line-height:1.42;font-weight:600;color:#cfc4ea;margin:0}
+.hc-tour-body b{color:#fff4f8;font-weight:700}
+.hc-tour-foot{display:flex;align-items:center;gap:10px;margin-top:16px}
+.hc-tour-dots{display:flex;gap:5px;flex:1}
+.hc-tour-dots i{display:block;height:6px;width:6px;border-radius:3px;background:rgba(255,255,255,.22);transition:width .3s ease,background .3s ease}
+.hc-tour-dots i.on{width:20px;background:linear-gradient(90deg,#ff3d8b,#ffb15c)}
+.hc-tour-skip{appearance:none;border:0;background:none;color:#a89cc8;font:700 12px 'Barlow Semi Condensed',Arial,sans-serif;letter-spacing:.14em;cursor:pointer;padding:8px 4px}
+.hc-tour-skip:hover{color:#fff4f8}
+.hc-tour-next{appearance:none;border:0;cursor:pointer;border-radius:999px;padding:10px 18px;min-height:40px;
+  font:700 13px 'Barlow Semi Condensed',Arial,sans-serif;letter-spacing:.14em;color:#170b2a;
+  background:linear-gradient(90deg,#ff3d8b,#ff8a3d 60%,#ffd166);box-shadow:0 6px 18px rgba(255,61,139,.35);transition:transform .15s ease,filter .15s ease}
+.hc-tour-next:hover{transform:translateY(-1px);filter:brightness(1.08)}
+.hc-tour-next:focus-visible,.hc-tour-skip:focus-visible{outline:2px solid #fff4f8;outline-offset:3px}
+.hc-tour-hint{font:700 12px 'Barlow Semi Condensed',Arial,sans-serif;letter-spacing:.18em;color:#ffd166;animation:hcTourBlink 1.2s ease-in-out infinite}
+@keyframes hcTourBlink{0%,100%{opacity:1}50%{opacity:.45}}
+@media (max-width:560px){.hc-tour-title{font-size:25px}.hc-tour-body{font-size:14px}.hc-tour-card{padding:15px 16px 13px}}
+@media (prefers-reduced-motion:reduce){.hc-tour-card,.hc-tour-veil,.hc-tour-ring{transition:none}.hc-tour-card.nudge,.hc-tour.on .hc-tour-ring.show{animation:none}}

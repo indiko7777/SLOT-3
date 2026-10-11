@@ -66,6 +66,8 @@ export interface BarRefs {
   message: Text;
   /** Per-frame animation for the spin mark / pulses (hand to the ambient loop). */
   tick: (dt: number, elapsed: number) => void;
+  /** Where each control sits (scene coords) — the guided tour spotlights these. */
+  anchors: Record<string, Rect>;
 }
 
 // ───────────────────────────────── text ─────────────────────────────────
@@ -295,6 +297,10 @@ let markAngle = 0;
 export function buildControlBar(rect: Rect, st: BarState, onTap: (a: BarAction) => void): BarRefs {
   const root = new Container();
   const portrait = rect.height > 110;
+  const anchors: Record<string, Rect> = {};
+  const mark = (name: string, x: number, y: number, r: number): void => {
+    anchors[name] = { x: x - r, y: y - r, width: r * 2, height: r * 2 };
+  };
 
   // ── console body: twilight glass under a sunset stripe ──
   const body = new Graphics();
@@ -334,8 +340,12 @@ export function buildControlBar(rect: Rect, st: BarState, onTap: (a: BarAction) 
   const win = value("", portrait ? 24 : 32, BAR.gold);
   win.style.fill = sunset("v", [[0, "#ffe48a"], [0.55, "#ffb04a"], [1, "#ff4f8b"]]);
   win.style.dropShadow = { color: 0xff3d8b, alpha: 0.35, blur: 10, distance: 0, angle: 0 };
-  const message = value("", portrait ? 15 : 17, BAR.cream);
-  message.alpha = 0.78;
+  // the centre status line ("PLACE YOUR BET", "DRIVE-BY · WILDS INCOMING"…):
+  // big, heavy, full white — same slot, same centring
+  const message = value("", portrait ? 17 : 24, BAR.cream);
+  message.style.fontWeight = "900";
+  message.style.letterSpacing = portrait ? 0.8 : 1.4;
+  message.style.dropShadow = { color: 0x0b0716, alpha: 0.85, blur: 6, distance: 2, angle: Math.PI / 2 };
 
   let spin: SpinParts;
 
@@ -348,6 +358,7 @@ export function buildControlBar(rect: Rect, st: BarState, onTap: (a: BarAction) 
     [["menu", 0], ["mute", 1], ["info", 2]].forEach(([a, i]) => {
       const k = keycap({ r: kr, action: a as BarAction, st, onTap: tap });
       k.position.set(rect.x + pad + kr + (i as number) * (kr * 2 + 8), cy);
+      mark(a as string, k.x, cy, kr);
       root.addChild(k);
     });
     const utilEnd = rect.x + pad + kr * 6 + 16;
@@ -361,12 +372,15 @@ export function buildControlBar(rect: Rect, st: BarState, onTap: (a: BarAction) 
     const autoOn = st.autoRemaining > 0;
     const auto = keycap({ r: sk, action: "autoplay", st, onTap: tap, on: autoOn, disabled: st.replay || (st.playing && !autoOn) });
     auto.position.set(autoX, cy);
+    mark("autoplay", autoX, cy, sk);
     root.addChild(auto);
     const turbo = keycap({ r: sk, action: "turbo", st, onTap: tap, on: st.turbo !== "off", disabled: st.replay });
     turbo.position.set(turboX, cy);
+    mark("turbo", turboX, cy, sk);
     root.addChild(turbo);
     spin = spinButton(R, st, tap);
     spin.root.position.set(spinX, cy);
+    mark("spin", spinX, cy, R);
     root.addChild(spin.root);
     const capY = cy + sk + 9;
     for (const [x, t] of [[autoX, "AUTO"], [turboX, st.turbo === "super" ? "TURBO+" : "TURBO"]] as const) {
@@ -383,6 +397,7 @@ export function buildControlBar(rect: Rect, st: BarState, onTap: (a: BarAction) 
     minus.position.set(betX + 17, cy);
     const plus = keycap({ r: 17, action: "plus", st, onTap: tap, ring: BAR.pink, disabled: lockBet || !st.canPlus });
     plus.position.set(betX + betW - 17, cy);
+    anchors.bet = { x: betX, y: cy - 30, width: betW, height: 60 };
     root.addChild(minus, plus);
     betLabel.position.set(betX + betW / 2, cy - 14);
     bet.position.set(betX + betW / 2, cy + 8);
@@ -406,24 +421,30 @@ export function buildControlBar(rect: Rect, st: BarState, onTap: (a: BarAction) 
     root.addChild(balanceLabel, balance, betLabel, bet, winLabel, win, message);
   } else {
     // ── portrait: read-outs on top, controls below ──
+    // The centre status / WIN is the headline: it gets the wide middle column
+    // and the big type; balance and bet sit smaller either side.
     const pad = 10;
-    const rowH = 50;
-    const top = rect.y + 12;
-    const colW = (rect.width - pad * 2 - 12) / 3;
-    const cols = [rect.x + pad, rect.x + pad + colW + 6, rect.x + pad + (colW + 6) * 2];
-    balanceLabel.position.set(cols[0]! + colW / 2, top + 14);
-    balance.position.set(cols[0]! + colW / 2, top + 33);
-    fitWidth(balance, colW - 12);
-    winLabel.position.set(cols[1]! + colW / 2, top + 14);
-    win.position.set(cols[1]! + colW / 2, top + 33);
-    win.style.fontSize = 19;
-    (win as Text & { maxW?: number }).maxW = colW - 12;
-    message.style.fontSize = 13;
-    message.position.set(cols[1]! + colW / 2, top + rowH / 2);
-    (message as Text & { maxW?: number }).maxW = colW - 10;
-    betLabel.position.set(cols[2]! + colW / 2, top + 14);
-    bet.position.set(cols[2]! + colW / 2, top + 33);
-    fitWidth(bet, colW - 12);
+    const rowH = 44;
+    const top = rect.y + 8;
+    const inner = rect.width - pad * 2 - 12;
+    const sideW = inner * 0.25, midW = inner - sideW * 2;
+    const cols = [rect.x + pad, rect.x + pad + sideW + 6, rect.x + pad + sideW + 6 + midW + 6];
+    const colW = [sideW, midW, sideW];
+    balanceLabel.position.set(cols[0]! + sideW / 2, top + 12);
+    balance.style.fontSize = 14;
+    balance.position.set(cols[0]! + sideW / 2, top + 30);
+    fitWidth(balance, sideW - 4);
+    winLabel.position.set(cols[1]! + midW / 2, top + 10);
+    win.position.set(cols[1]! + midW / 2, top + 30);
+    win.style.fontSize = 26;
+    (win as Text & { maxW?: number }).maxW = colW[1]! - 8;
+    message.style.fontSize = 22;
+    message.position.set(cols[1]! + midW / 2, top + rowH / 2 + 1);
+    (message as Text & { maxW?: number }).maxW = colW[1]! - 6;
+    betLabel.position.set(cols[2]! + sideW / 2, top + 12);
+    bet.style.fontSize = 14;
+    bet.position.set(cols[2]! + sideW / 2, top + 30);
+    fitWidth(bet, sideW - 4);
 
     const rowY = top + rowH + (rect.y + rect.height - (top + rowH)) / 2 + 2;
     const R = Math.min(40, Math.max(32, rect.width * 0.1));
@@ -446,10 +467,14 @@ export function buildControlBar(rect: Rect, st: BarState, onTap: (a: BarAction) 
       const on = a === "autoplay" ? st.autoRemaining > 0 : a === "turbo" ? st.turbo !== "off" : false;
       const key = keycap({ r: k, action: a, st, onTap: tap, disabled, on, ring: a === "minus" || a === "plus" ? BAR.pink : undefined });
       key.position.set(cx + dir * dist[i]!, rowY);
+      mark(a, key.x, rowY, k);
       root.addChild(key);
     }
     spin = spinButton(R, st, tap);
     spin.root.position.set(cx, rowY);
+    mark("spin", cx, rowY, R);
+    // portrait: the BET read-out plus its −/+ keys either side of the disc
+    anchors.bet = { x: cols[2]!, y: top, width: sideW, height: rowH };
     root.addChild(spin.root);
     root.addChild(balanceLabel, balance, betLabel, bet, winLabel, win, message);
   }
@@ -465,5 +490,5 @@ export function buildControlBar(rect: Rect, st: BarState, onTap: (a: BarAction) 
     }
   };
 
-  return { root, balance, bet, win, winLabel, message, tick };
+  return { root, balance, bet, win, winLabel, message, tick, anchors };
 }

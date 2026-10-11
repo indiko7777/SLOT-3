@@ -70,7 +70,7 @@ export function computeLayout(width: number, height: number): LayoutMetrics {
     // strip between the collection bar and the machine.
     const starsH = starsStripHeight(width - 16);
 
-    const bottomHeight = width < 560 ? 192 : 160;
+    const bottomHeight = width < 560 ? 168 : 148;
     const bottomBar: Rect = { x: 0, y: height - bottomHeight, width, height: bottomHeight };
 
     const buyPanelH = 46;

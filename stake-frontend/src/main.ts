@@ -7,6 +7,7 @@ import { isModalOpen, showChoiceModal, showToast } from "./modals";
 import { formatMultiplier } from "./format";
 import { hideLoader, showLoader, updateLoader } from "./loader";
 import { showIntro } from "./intro";
+import { isTourOpen, runTour, tourSeen } from "./tutorial";
 import { applyEvent, INITIAL_SNAPSHOT, type PlaybackSnapshot } from "./playback";
 import { GIRLS, type PieceGain, collectWild as collectWildPiece, consumeGetawayStars, sanitize as sanitizeGallery, emptyGallery, type GalleryData } from "./meta/collection";
 import {
@@ -167,6 +168,7 @@ function hasFundsFor(modeKey: string): boolean {
 function anyOverlayOpen(): boolean {
   return (
     isModalOpen() ||
+    isTourOpen() ||
     (settingsMenu?.isOpen() ?? false) ||
     (radioWheel?.isOpen() ?? false) ||
     (scene?.isGalleryOpen() ?? false)
@@ -643,32 +645,6 @@ async function boot(): Promise<void> {
         isPlaying = false;
       }
     };
-    // Always-on DEV test buttons (compiled out of the Stake build).
-    {
-      const bar = document.createElement("div");
-      Object.assign(bar.style, { position: "fixed", top: "8px", right: "10px", zIndex: "10002", display: "flex", gap: "8px" });
-      const mk = (label: string, run: () => Promise<void>) => {
-        const b = document.createElement("button");
-        b.textContent = label;
-        Object.assign(b.style, {
-          font: "700 12px 'Barlow Semi Condensed', Arial, sans-serif", letterSpacing: "1.5px", color: "#170b2a",
-          background: "linear-gradient(90deg,#ff3d8b,#ff9a3c)", border: "0", borderRadius: "999px", padding: "7px 14px",
-          cursor: "pointer", boxShadow: "0 4px 14px rgba(255,61,139,.35)",
-        });
-        b.onclick = async (e) => {
-          e.stopPropagation();
-          b.blur();
-          if (b.disabled) return;
-          b.disabled = true; b.style.opacity = "0.5";
-          try { await audioBus.unlock(); await run(); } finally { b.disabled = false; b.style.opacity = "1"; }
-        };
-        bar.appendChild(b);
-      };
-      const dev = window as unknown as { __driveBy: (n?: number) => Promise<void>; __wildPiece: () => Promise<void> };
-      mk("▶ DRIVE-BY", () => dev.__driveBy(3 + Math.floor(Math.random() * 3)));
-      mk("▶ WILD PIECE", () => dev.__wildPiece());
-      document.body.appendChild(bar);
-    }
     // Slow-motion for inspecting fast beats (1 = normal). __slow(0.2) = 5x slower.
     (window as unknown as { __slow: (s?: number) => void }).__slow = (s = 0.2) => setTimeScale(s);
     // Explicit local presentation harness; compiled out of publication builds.
@@ -789,6 +765,7 @@ async function boot(): Promise<void> {
       disabledAutoplay: isReplayActive || Boolean(jurisdiction?.disabledAutoplay)
     }),
     playClick: () => { if (!muted) audioBus.playUI("click", false); },
+    startTour: () => { if (!isReplayActive) void startTour(); },
     // GAME INFO tab content sources.
     getUiStrings: () => ui(),
     isSocial: () => isSocial(),
@@ -849,6 +826,10 @@ async function boot(): Promise<void> {
       await resumeInterruptedRound(resume);
     }
   }
+
+  // First visit: the guided tour, right after the loader and the ENTER THE
+  // CITY page (and after any unfinished round has been settled).
+  if (!isReplayActive && !tourSeen()) void startTour();
 }
 
 /**
@@ -856,6 +837,20 @@ async function boot(): Promise<void> {
  * player the choice of watching it play out or jumping straight to the result;
  * either way the round is settled with the RGS afterwards, never before.
  */
+/** The guided tour (first run, the menu's Game Tour, the DEV button). */
+async function startTour(): Promise<void> {
+  if (isTourOpen() || isPlaying || autoplayRemaining > 0 || isReplayActive) return;
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  await runTour({
+    anchor: (name) => scene.tourAnchor(name),
+    isGalleryOpen: () => scene.isGalleryOpen(),
+    closeGallery: () => scene.closeGallery(),
+    social: isSocial(),
+    portrait: () => scene.isPortraitLayout(),
+    click: () => { if (!muted) audioBus.playUI("click", false); },
+  });
+}
+
 async function resumeInterruptedRound(record: RoundRecord): Promise<void> {
   const s = ui();
   const betAmount = currentBet();

@@ -267,6 +267,24 @@ export class PixiGameScene {
   }
 
   /** Overlay-state helper — the spacebar must be dead while it is open. */
+  /** A tour target's rect in CSS pixels (page coordinates), or null. */
+  tourAnchor(name: string): { x: number; y: number; width: number; height: number } | null {
+    const r = this.hud.getAnchor(name);
+    if (!r) return null;
+    const canvas = this.app.canvas as HTMLCanvasElement;
+    const box = canvas.getBoundingClientRect();
+    const k = (box.width / this.app.screen.width) * this.root.scale.x;
+    return { x: box.left + r.x * k, y: box.top + r.y * k, width: r.width * k, height: r.height * k };
+  }
+
+  isPortraitLayout(): boolean {
+    return this.layout.portrait;
+  }
+
+  closeGallery(): void {
+    if (this.gallery.isOpen()) this.gallery.hide();
+  }
+
   isGalleryOpen(): boolean {
     return this.gallery.visible;
   }
