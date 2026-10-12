@@ -237,18 +237,22 @@ export function simulateRound(
       }
     }
 
-    applyGravity(board, removed, rng, mode);
+    const fresh = applyGravity(board, removed, rng, mode);
     // Wanted-path coverage: force the fresh drop to contain a cluster so the
     // chain keeps climbing toward `climbTo`. Looks like a lucky refill and stops
     // once the target heat is reached. Deep (Getaway) books plant any low/mid so
     // the run pays; shallow teases plant LOW only so the climb stays cheap and the
     // book remains a frequent, low-paying basegame book.
+    // The blob goes ONLY into the cells that just fell in from above. Survivors
+    // keep their symbols: the client drops them with real gravity, so stamping
+    // over a survivor made the screen disagree with the evaluated board (Engine
+    // review, ante event 60301: a "knife" cluster drawn over cash and a pistol).
     if (heat < climbTo) {
       const pool = teaseLowOnly
         ? LOW_SYMBOLS
         : (["BRASS", "KNIFE", "PISTOL", "AMMO"] as SymbolId[]);
       const sym = pool[rng.int(pool.length)]!;
-      plantBlob(board, rng, sym, 5);
+      plantBlobIn(board, rng, sym, 5, fresh);
     }
     events.push({ type: "tumble_drop", board: cloneBoard(board) });
 
@@ -550,22 +554,83 @@ function unionPositions(clusters: Cluster[]): Position[] {
 }
 
 /** Gravity: survivors fall to the bottom (high row idx); new fills enter top. */
+/** Drops survivors to the bottom of each reel and fills the top. Returns the
+ *  freshly filled cells (the top `removed-in-reel` rows of each reel). */
 function applyGravity(
   board: Board,
   removed: Position[],
   rng: Rng,
   mode: BetMode
-): void {
+): Position[] {
   const dead = new Set(removed.map((p) => `${p[0]}:${p[1]}`));
+  const fresh: Position[] = [];
   for (let c = 0; c < GRID_COLUMNS; c++) {
     const survivors: SymbolId[] = [];
     for (let r = 0; r < GRID_ROWS; r++)
       if (!dead.has(`${c}:${r}`)) survivors.push(board[c]![r]!);
     const need = GRID_ROWS - survivors.length;
     const col: SymbolId[] = [];
-    for (let i = 0; i < need; i++) col.push(randomFill(rng, mode));
+    for (let i = 0; i < need; i++) {
+      col.push(randomFill(rng, mode));
+      fresh.push([c, i]);
+    }
     for (const s of survivors) col.push(s);
     board[c] = col;
+  }
+  return fresh;
+}
+
+/** plantBlob restricted to `allowed` cells. A removed cluster spans adjacent
+ *  reels, so its refill is a connected top-aligned region at least as large as
+ *  the cluster (≥ 5): the blob always fits. It grows from the largest region. */
+function plantBlobIn(
+  board: Board,
+  rng: Rng,
+  symbol: SymbolId,
+  size: number,
+  allowed: Position[]
+): void {
+  const ok = new Set(allowed.map(([c, r]) => `${c}:${r}`));
+  if (ok.size === 0) return;
+  // Largest connected region of allowed cells; a random start inside it.
+  const seen = new Set<string>();
+  let best: Position[] = [];
+  for (const p of allowed) {
+    const k0 = `${p[0]}:${p[1]}`;
+    if (seen.has(k0)) continue;
+    const comp: Position[] = [];
+    const stack: Position[] = [p];
+    seen.add(k0);
+    while (stack.length) {
+      const q = stack.pop()!;
+      comp.push(q);
+      for (const nb of neighbours(q)) {
+        const k = `${nb[0]}:${nb[1]}`;
+        if (ok.has(k) && !seen.has(k)) {
+          seen.add(k);
+          stack.push(nb);
+        }
+      }
+    }
+    if (comp.length > best.length) best = comp;
+  }
+  const start = best[rng.int(best.length)]!;
+  const blob = new Set<string>([`${start[0]}:${start[1]}`]);
+  const frontier: Position[] = [start];
+  while (blob.size < size && frontier.length) {
+    const pick = frontier.splice(rng.int(frontier.length), 1)[0]!;
+    for (const nb of rng.shuffle(neighbours(pick))) {
+      const k = `${nb[0]}:${nb[1]}`;
+      if (ok.has(k) && !blob.has(k)) {
+        blob.add(k);
+        frontier.push(nb);
+        if (blob.size >= size) break;
+      }
+    }
+  }
+  for (const k of blob) {
+    const [c, r] = k.split(":").map(Number) as [number, number];
+    board[c]![r] = symbol;
   }
 }
 

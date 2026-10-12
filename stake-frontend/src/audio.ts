@@ -58,7 +58,7 @@ const TRACK_PATHS: Partial<Record<TrackName, string>> = {
   milstone1_girl2: "assets/new sound/milstone1 girl2.mp3",
   milestone2_girl2: "assets/new sound/milestone2 girl2.mp3",
   mileston3_girl2: "assets/new sound/mileston3 girl2.mp3",
-  mileston4_girl2: "assets/new sound/mileston4 girl2 (2).mp3",
+  mileston4_girl2: "assets/new sound/mileston4 girl2.mp3",
   mileston1_girl3: "assets/new sound/mileston1 girl3.mp3",
   mileston2_girl3: "assets/new sound/mileston2 girl3.mp3",
   mileston3_girl3: "assets/new sound/mileston3 girl3.mp3",

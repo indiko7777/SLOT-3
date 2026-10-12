@@ -124,6 +124,41 @@ describe("cascade / heat_transform", () => {
     expect(transforms).toBeGreaterThan(0); // the pattern is actually exercised
     expect(overlaps).toBe(0);
   });
+
+  it("every tumble_drop keeps the survivors exactly where gravity puts them", () => {
+    // Engine review (ante event 60301): the client drops the surviving symbols
+    // with real gravity and only takes the NEW top cells from tumble_drop. A
+    // refill that overwrites a survivor shows a cluster over mismatched art.
+    const key = (c: number, r: number) => `${c}:${r}`;
+    const crits: Criteria[] = ["basegame", "basebig", "freegame", "wincap"];
+    let drops = 0;
+    const bad: string[] = [];
+    for (const mode of ["base", "ante", "base_tier1", "base_tier3"] as const) {
+      for (let seed = 1; seed <= 2000; seed++) {
+        const { record } = simulateRound(mode, crits[seed % crits.length]!, seed * 7919, seed);
+        let cur: string[][] | null = null;
+        let removed: Set<string> | null = null;
+        for (const ev of record.events) {
+          if (ev.type === "tumble_remove") removed = new Set(ev.positions.map(([c, r]) => key(c, r)));
+          if (ev.type === "tumble_drop" && cur && removed) {
+            drops++;
+            for (let c = 0; c < cur.length; c++) {
+              const surv = cur[c]!.filter((_, r) => !removed!.has(key(c, r)));
+              const tail = ev.board[c]!.slice(ev.board[c]!.length - surv.length);
+              if (surv.length && JSON.stringify(tail) !== JSON.stringify(surv)) bad.push(`${mode}#${seed} reel ${c}`);
+            }
+            removed = null;
+          }
+          if (
+            ev.type === "board_settle" || ev.type === "drive_by" || ev.type === "tumble_drop" ||
+            ev.type === "heat_transform" || ev.type === "mega_wild_place"
+          ) cur = ev.board;
+        }
+      }
+    }
+    expect(drops).toBeGreaterThan(1000);
+    expect(bad.slice(0, 5)).toEqual([]);
+  });
 });
 
 describe("optimizer", () => {

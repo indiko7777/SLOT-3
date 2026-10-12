@@ -7,7 +7,7 @@ import { isModalOpen, showChoiceModal, showToast } from "./modals";
 import { formatMultiplier } from "./format";
 import { hideLoader, showLoader, updateLoader } from "./loader";
 import { showIntro } from "./intro";
-import { isTourOpen, runTour, tourSeen } from "./tutorial";
+import { isTourOpen, runTour } from "./tutorial";
 import { applyEvent, INITIAL_SNAPSHOT, type PlaybackSnapshot } from "./playback";
 import { GIRLS, type PieceGain, collectWild as collectWildPiece, consumeGetawayStars, sanitize as sanitizeGallery, emptyGallery, type GalleryData } from "./meta/collection";
 import {
@@ -279,7 +279,7 @@ async function boot(): Promise<void> {
   // of as freezes on the first spin / big win / Getaway intro.
   warmUpGpu(pixi.renderer);
   GetawayResult.prewarm();
-  prewarmConfirmPopups();
+  prewarmConfirmPopups(isSocial());
   void audioBus.prefetch();
   updateLoader(0.55);
 
@@ -321,7 +321,12 @@ async function boot(): Promise<void> {
       currency = auth.balance.currency;
       setActiveCurrency(currency);
       balance = toDisplay(auth.balance.amount);
-      betModes = auth.config.betModes ?? {};
+      betModes = { ...(auth.config.betModes ?? {}) };
+      for (const gm of auth.config.gameModes ?? []) {
+        if (gm?.mode && !betModes[gm.mode] && Number(gm.costMultiplier) > 0) {
+          betModes[gm.mode] = { mode: gm.mode, costMultiplier: Number(gm.costMultiplier), feature: gm.mode !== "base" };
+        }
+      }
       // ROBUSTNESS — the BUY GETAWAY / SUPER / ANTE buttons are drawn
       // unconditionally, so their bet modes MUST exist or a click silently does
       // nothing (reads as "bonus modes do not work"). If the live RGS omitted a
@@ -705,6 +710,21 @@ async function boot(): Promise<void> {
       add("QA Sound", () => { muted = false; audioBus.setMuted(false); });
       document.body.appendChild(panel);
     }
+    // __action("mute"|"menu"|"info"|"getaway"…) → press a control-bar key, so
+    // the layout rig can open every overlay at every Engine frame size.
+    (window as unknown as { __action: (a: string) => Promise<void> }).__action = (a) => handleAction(a);
+    (window as unknown as { __scene: unknown }).__scene = scene;
+    // __texts() → every visible Pixi text on stage, for the social-word audit.
+    (window as unknown as { __texts: () => string[] }).__texts = () => {
+      const out: string[] = [];
+      const walk = (o: { visible?: boolean; children?: unknown[]; text?: unknown; worldAlpha?: number }): void => {
+        if (o.visible === false) return;
+        if (typeof o.text === "string" && o.text.trim() && (o.worldAlpha ?? 1) > 0.02) out.push(o.text);
+        for (const c of o.children ?? []) walk(c as typeof o);
+      };
+      walk(pixi.stage as unknown as Parameters<typeof walk>[0]);
+      return out;
+    };
     // eslint-disable-next-line no-console
     console.info("[dev] __trigger('stars'|'trucks'), __slow(0.2) — preview/inspect trigger beats");
   }
@@ -827,9 +847,9 @@ async function boot(): Promise<void> {
     }
   }
 
-  // First visit: the guided tour, right after the loader and the ENTER THE
-  // CITY page (and after any unfinished round has been settled).
-  if (!isReplayActive && !tourSeen()) void startTour();
+  // Every launch, like the ENTER THE CITY page before it: the guided tour
+  // (after any unfinished round has been settled). SKIP / Esc dismiss it.
+  if (!isReplayActive) void startTour();
 }
 
 /**
@@ -1139,7 +1159,7 @@ async function playRound(modeKey: string): Promise<void> {
 
   let record: RoundRecord;
   try {
-    const res = await client.play(betAmount, currency, modeKey);
+    const res = await client.play(betAmount, currency, modeKey, balance);
     // Debit reflected by the RGS — never computed locally.
     balance = toDisplay(res.balance.amount);
     // Count this paid spin toward the current tier's average bet (organic play).
@@ -1162,6 +1182,15 @@ async function playRound(modeKey: string): Promise<void> {
     if (!muted) audioBus.playApprovedEffect("uierror");
     autoplayStop = true;
     autoplayRemaining = 0;
+    // The connection dropped mid-play and the RGS settled the round itself as a
+    // zero win: take its balance and carry on.
+    if (e instanceof RgsError && e.code === "ERR_SETTLED" && e.balanceAmount != null) {
+      balance = toDisplay(e.balanceAmount);
+      showToast("CONNECTION RESTORED · ROUND SETTLED", 4200);
+      snapshot = { ...snapshot, state: "idle" };
+      scene.renderSnapshot(snapshot);
+      return;
+    }
     // A timed-out play or settlement may already exist on the server. Never
     // place another spin until authentication has recovered that round.
     if (!(e instanceof RgsError) || e.code !== "ERR_IPB") {

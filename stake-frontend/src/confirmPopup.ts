@@ -16,7 +16,11 @@ type FeatureAction = "getaway" | "super_getaway";
 const DESIGN = {
   landscape: { w: 980, h: 600 },
   portrait: { w: 400, h: 800 },
+  // Short landscape frames (Engine Popout S 400x225, phones on their side):
+  // the full poster would shrink to ~0.3x there, so a tighter 16:9 card is used.
+  mini: { w: 520, h: 292 },
 } as const;
+type PopupLayout = keyof typeof DESIGN;
 
 interface PopupCopy {
   isSuper: boolean;
@@ -112,10 +116,11 @@ function popupMarkup(c: PopupCopy): string {
 function fitPopup(overlay: HTMLElement): void {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  const portrait = vw < 640 || vh > vw * 1.1;
-  const d = portrait ? DESIGN.portrait : DESIGN.landscape;
-  const fit = Math.min((vw - 16) / d.w, (vh - 16) / d.h, portrait ? 1.6 : 1.35);
-  overlay.classList.toggle("portrait", portrait);
+  const layout: PopupLayout = vh > vw * 1.1 ? "portrait" : vh < 400 || vw < 640 ? "mini" : "landscape";
+  const d = DESIGN[layout];
+  const fit = Math.min((vw - 16) / d.w, (vh - 16) / d.h, layout === "landscape" ? 1.35 : layout === "mini" ? 1.3 : 1.6);
+  overlay.classList.toggle("portrait", layout === "portrait");
+  overlay.classList.toggle("mini", layout === "mini");
   overlay.style.setProperty("--fit", String(Math.max(0.2, fit)));
 }
 
@@ -138,12 +143,12 @@ function copyFor(action: FeatureAction, betAmount: number, currency: string, cos
  * browser decodes the key art and rasterises these gradients and the display
  * font costs a visible stall — that would otherwise land on the first BUY tap.
  */
-export function prewarmConfirmPopups(): void {
+export function prewarmConfirmPopups(social = false): void {
   for (const action of ["getaway", "super_getaway"] as const) {
     const el = document.createElement("div");
     el.className = `hc-buy-overlay hc-prewarm show${action === "super_getaway" ? " super" : ""}`;
     el.setAttribute("aria-hidden", "true");
-    el.innerHTML = popupMarkup(copyFor(action, 1, "USD", undefined, false));
+    el.innerHTML = popupMarkup(copyFor(action, 1, "USD", undefined, social));
     fitPopup(el);
     document.body.appendChild(el);
     window.setTimeout(() => el.remove(), 2500);

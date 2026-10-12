@@ -60,6 +60,8 @@ export interface RgsConfig {
   defaultBetLevel: number; // 6dp
   betLevels: number[]; // 6dp
   betModes: Record<string, BetModeObject>;
+  /** Engine's live RGS lists the modes here instead of `betModes`. */
+  gameModes?: { mode: string; costMultiplier: number; maxBet?: number }[];
   jurisdiction: Jurisdiction;
 }
 

@@ -12,7 +12,7 @@
 .loader-fill{width:0;height:100%;background:#f7c8a7;transition:width .3s ease}
 .loader-footer p{font-size:9px;letter-spacing:.2em;color:#c4c8c7;margin-top:16px}
 .splash-leaving{opacity:0;pointer-events:none}
-.intro{z-index:9998;overflow:auto;display:flex;align-items:center;padding:48px 7%;background-position:70% center}
+.intro{z-index:9998;overflow:hidden;display:flex;align-items:center;padding:48px 7%;background-position:70% center}
 .intro::before{background:linear-gradient(90deg,rgba(11,21,28,.97),rgba(11,21,28,.86) 48%,rgba(11,21,28,.15))}
 .intro-content{width:min(650px,100%);margin:auto 0}
 .intro .splash-eyebrow{color:#efb799}
@@ -32,3 +32,8 @@
 @media(max-width:560px){.splash{background-position:65% center}.splash-brand{top:10%}.splash h1{font-size:84px}.splash-eyebrow{font-size:8px}.loader-caption{font-size:8px;letter-spacing:.1em}.loader-footer p{font-size:8px;letter-spacing:.1em}.intro{padding:28px 24px}.intro::before{background:rgba(11,21,28,.89)}.intro h1{font-size:52px}.intro-features{grid-template-columns:1fr}.intro-feature{padding:12px 0}.intro-headline{margin:20px 0 16px}.intro-enter{width:100%;margin-top:16px}}
 @media(max-height:500px) and (min-width:561px){.splash-brand{top:9%}.splash h1{font-size:66px;margin:15px 0}.intro{padding:24px 6%}.intro h1{font-size:46px}}
 @media(prefers-reduced-motion:reduce){.splash,.loader-fill,.intro-enter{transition:none}.intro-enter:hover{transform:none}}
+
+/* Short landscape frames (Engine Popout S 400x225, phones on their side): keep
+   the two-column brief and tighten it, so the fit-zoom in intro.ts stays near
+   1x instead of shrinking a one-column phone layout to unreadable type. */
+@media(max-height:340px) and (orientation:landscape){.intro{padding:10px 18px}.intro .splash-eyebrow{font-size:8px}.intro h1{font-size:34px;margin:4px 0 7px}.intro .splash-subtitle{font-size:9px;margin:0}.intro-headline{font-size:12px;margin:8px 0 6px}.intro-headline strong{font-size:16px}.intro-features{grid-template-columns:1fr 1fr;gap:0 14px}.intro-feature{padding:6px 0;grid-template-columns:26px 1fr;gap:8px}.intro-feature img{width:24px;height:24px}.intro-feature h2{font-size:10px;margin:0 0 3px}.intro-feature p{font-size:10.5px;line-height:1.35}.intro-enter{width:auto;margin:8px 0 6px;padding:10px 20px;min-height:36px}.intro-foot{font-size:8px}}

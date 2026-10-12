@@ -40,6 +40,15 @@
       "port": 5177
     },
     {
+      "name": "release-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "stake-frontend/tools/preview-release.mjs",
+        "release/2026-10-11T10-29-50Z/frontend"
+      ],
+      "port": 5177
+    },
+    {
       "name": "mock-rgs",
       "runtimeExecutable": "npm",
       "runtimeArgs": [

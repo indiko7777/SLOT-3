@@ -22,15 +22,18 @@ describe("public replay requests", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ state: [] }))));
     await expect(client().getReplayData("game", "1", "base", "42")).rejects.toThrow("no events");
   });
-  it("times out when headers arrive but the response body stalls", async () => {
+  it("times out when headers arrive but the response body stalls (retried, then gives up)", async () => {
     vi.useFakeTimers();
-    vi.stubGlobal("fetch", vi.fn().mockImplementation((_url, init) => Promise.resolve({
+    const fetchMock = vi.fn().mockImplementation((_url, init) => Promise.resolve({
       ok: true,
       json: () => new Promise((_resolve, reject) => init.signal.addEventListener("abort", () => reject(new Error("aborted body")))),
-    })));
+    }));
+    vi.stubGlobal("fetch", fetchMock);
     const result = expect(client().getReplayData("game", "1", "base", "42")).rejects.toThrow("aborted body");
-    await vi.advanceTimersByTimeAsync(15000);
+    // 5 attempts × 15 s deadline + the backoff between them
+    await vi.advanceTimersByTimeAsync(5 * 15000 + 6100);
     await result;
+    expect(fetchMock).toHaveBeenCalledTimes(5);
   });
 });
 
@@ -82,9 +85,12 @@ describe("social terminology", () => {
   });
 
   it("the restricted-term matcher catches Engine's list", () => {
-    for (const bad of ["Total Cost", "Payout Multiplier", "Paytable", "pays 2x", "Cash", "Buy feature", "stake", "credited"])
+    // Engine review: "substitute for every paying symbol" was flagged, so every
+    // inflection (paying, buying, cashed, payline …) must be caught too.
+    for (const bad of ["Total Cost", "Payout Multiplier", "Paytable", "pays 2x", "Cash", "Buy feature", "stake",
+      "credited", "every paying symbol", "buying", "cashed out", "payline", "Place your bet", "Bets", "costly"])
       expect(bad).toMatch(SOCIAL_RESTRICTED);
-    for (const ok of ["Play Amount", "Final Multiplier", "Total Win", "Loot", "Paying attention"])
+    for (const ok of ["Play Amount", "Final Multiplier", "Total Win", "Loot", "better", "between", "alphabet", "Stack"])
       expect(ok).not.toMatch(SOCIAL_RESTRICTED);
   });
 

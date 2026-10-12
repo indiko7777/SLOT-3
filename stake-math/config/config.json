@@ -19,7 +19,7 @@
       "tables": [
         {
           "file": "lookUpTable_base_0.csv",
-          "sha256": "5300bb5f527e2dc274bd7ae3c31d6af0b997321df340121947d54e394f06a7ee"
+          "sha256": "a49dc715b9c15bc752c725d1d6fe153e5d22cc972ee5e75c8ba87aa22975be8f"
         }
       ],
       "cost": 1,
@@ -31,7 +31,7 @@
       "maxWin": 5000,
       "booksFile": {
         "file": "books_base.jsonl.zst",
-        "sha256": "ce73d748eb63f9e01c0a9ba4dd1e34e4485e53ec3a0bc25eda7bb07f6fa95572"
+        "sha256": "17628fbf96adc869d0d7aae9df85bea2613a3b9ec22e2ba6f6b880b871ec8799"
       },
       "forceFile": {
         "file": "force.json",
@@ -43,7 +43,7 @@
       "tables": [
         {
           "file": "lookUpTable_ante_0.csv",
-          "sha256": "a27d2af48b3a905cda86c7ce28a39f58e877d98b148d08a228083d7446bb27a9"
+          "sha256": "6624d95d0a063ff366ef01dc0f011066402fdf5877ecdceacd60a77acccd9ea8"
         }
       ],
       "cost": 1.5,
@@ -55,7 +55,7 @@
       "maxWin": 5000,
       "booksFile": {
         "file": "books_ante.jsonl.zst",
-        "sha256": "5085bb955d54f851855cb97d4b06a6b8293dd1ac6ffebe68058992463dc72f04"
+        "sha256": "c114f6946a54576daff92ce59b5d2c9e560f337712a04c2e12a4aa0d991fcef2"
       },
       "forceFile": {
         "file": "force.json",
@@ -115,7 +115,7 @@
       "tables": [
         {
           "file": "lookUpTable_base_tier1_0.csv",
-          "sha256": "b4b8788a39d511639fc89d6f4aefd377c22ad38e1184ab6fea11b1e14771da74"
+          "sha256": "2ad302ce958e7986960a32b66ba6d8831cfab39a66d77470ef258918056c37f7"
         }
       ],
       "cost": 1,
@@ -127,7 +127,7 @@
       "maxWin": 5000,
       "booksFile": {
         "file": "books_base_tier1.jsonl.zst",
-        "sha256": "adddc1a5eda4fe6bd3862af6bda10c3fe4246bcf8c1ff4172d7913809f70c5b5"
+        "sha256": "838b661f4cfe8a7f559bffebc3099aff071cbb2dc9f7d311a5a51d475df6908f"
       },
       "forceFile": {
         "file": "force.json",
@@ -139,7 +139,7 @@
       "tables": [
         {
           "file": "lookUpTable_base_tier2_0.csv",
-          "sha256": "8c8f11fc023de1b824ec648f3753b9d574fa5fc1bf93488a3f375c75a3e7f568"
+          "sha256": "603c8dc04ab9466917bc0bea5e889a0694f43bea1cb1e73ce263122c05e785b1"
         }
       ],
       "cost": 1,
@@ -151,7 +151,7 @@
       "maxWin": 5000,
       "booksFile": {
         "file": "books_base_tier2.jsonl.zst",
-        "sha256": "da8ad133d170024352c77bbd21d327f06d5e7c5388fca6ae04e5fb82da7fc02e"
+        "sha256": "0132e741f13b9f9021468bfef1668734e523d81128b645c9ecbcc26acf573c22"
       },
       "forceFile": {
         "file": "force.json",
@@ -163,7 +163,7 @@
       "tables": [
         {
           "file": "lookUpTable_base_tier3_0.csv",
-          "sha256": "fb1ff58c2e556d815673bd82ad7db5956e2713b644787062bb0398d45415d131"
+          "sha256": "2156252de31149c78bf2aabb6c0afe0dd4530078a15f198dea1b26528b735ec2"
         }
       ],
       "cost": 1,
@@ -175,7 +175,7 @@
       "maxWin": 5000,
       "booksFile": {
         "file": "books_base_tier3.jsonl.zst",
-        "sha256": "aa7ceef1d0d07423780676de8422d578c298e093fd05a0ec4a63c35c20beaf50"
+        "sha256": "75f09e720581958a094771f54a9fc777b30f0f5610f1d79643d64a0bbb120ad8"
       },
       "forceFile": {
         "file": "force.json",
