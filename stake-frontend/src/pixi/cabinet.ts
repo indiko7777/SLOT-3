@@ -67,7 +67,9 @@ function frostTexture(bg: Texture, view: { w: number; h: number }, rect: Rect): 
   if (!src) return null;
   const s = Math.max(view.w / bg.width, view.h / bg.height);
   const ox = view.w / 2 - (bg.width * s) / 2, oy = view.h / 2 - (bg.height * s) / 2;
-  const sx = (rect.x - ox) / s, sy = (rect.y - oy) / s, sw = rect.width / s, sh = rect.height / s;
+  // Source rect in the bitmap's own pixels (a low-memory load is downscaled).
+  const px = bg.source.resolution || 1;
+  const sx = (rect.x - ox) / s * px, sy = (rect.y - oy) / s * px, sw = rect.width / s * px, sh = rect.height / s * px;
   const W = Math.max(8, Math.round(rect.width / 2)), H = Math.max(8, Math.round(rect.height / 2));
   const out = document.createElement("canvas");
   out.width = W; out.height = H;

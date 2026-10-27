@@ -31,7 +31,9 @@ function portraitTexture(tex: Texture, w: number, h: number, key: string): Textu
   g.beginPath();
   g.moveTo(r, 0); g.arcTo(W, 0, W, H, r); g.arcTo(W, H, 0, H, r); g.arcTo(0, H, 0, 0, r); g.arcTo(0, 0, W, 0, r);
   g.closePath(); g.clip();
-  g.drawImage(src, sx, sy, cropW, cropH, 0, 0, W, H);
+  // Source rect in the bitmap's own pixels (a low-memory load is downscaled).
+  const px = tex.source.resolution || 1;
+  g.drawImage(src, sx * px, sy * px, cropW * px, cropH * px, 0, 0, W, H);
   const t = Texture.from(c);
   portraitCache.set(k, t);
   return t;

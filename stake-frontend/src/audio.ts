@@ -7,6 +7,7 @@ import { GetawayResultSound } from "./audio/GetawayResultSound";
 import { FoleyGate, hasFoley, playFoley } from "./audio/SymbolFoley";
 import { ApprovedAudio } from "./audio/ApprovedAudio";
 import type { GetawayCue } from "./pixi/types";
+import { isLowMemoryDevice } from "./device";
 
 /* ═══════════════════════════════════════════════════
    Layered Audio Bus – GTA 6 Miami Heist theme
@@ -95,6 +96,15 @@ const ALL_TRACKS: TrackName[] = [
   "win_big_lowest", "sticky_gold_bar", "typewriter",
   "sunset_synths", "turbo_night", "vice_nights", "open_lines"
 ];
+
+/**
+ * The long music beds (2.5–4 min each). Decoded, every one of them is 30–90 MB
+ * of PCM — ~240 MB together, which (with the art) pushed an iPhone 12 past
+ * iOS Safari's memory limit while loading. On a low-memory device only the
+ * bed that is actually playing is decoded; the others wait as their small
+ * compressed mp3s and are decoded when a station switch asks for them.
+ */
+const MUSIC_TRACKS: ReadonlySet<TrackName> = new Set<TrackName>(["bg_base", "sunset_synths", "vice_nights", "open_lines"]);
 
 /** Base volume per track (0–1+) */
 const VOLUME: Record<TrackName, number> = {
@@ -259,6 +269,12 @@ export class EventAudioBus {
   private ctx: AudioContext | null = null;
   private rawData = new Map<TrackName, ArrayBuffer>();    // pre-fetched
   private buffers = new Map<TrackName, AudioBuffer>();    // decoded
+  /** Low-memory devices decode one music bed at a time (see MUSIC_TRACKS). */
+  private readonly lazyMusic = isLowMemoryDevice();
+  private readonly musicRaw = new Map<TrackName, ArrayBuffer>();
+  private readonly musicDecodes = new Map<TrackName, Promise<void>>();
+  /** The music bed asked for while it was still decoding. */
+  private pendingBg: TrackName | null = null;
   private fetched = false;
   private decodePromise: Promise<void> | null = null;
   private master: GainNode | null = null;
@@ -386,6 +402,14 @@ export class EventAudioBus {
   /** Decode all pre-fetched ArrayBuffers → AudioBuffers */
   private async decodeAll(): Promise<void> {
     if (!this.ctx) return;
+    if (this.lazyMusic) {
+      // Music beds stay compressed until one is played (decodeMusic).
+      for (const name of MUSIC_TRACKS) {
+        const raw = this.rawData.get(name);
+        if (raw) this.musicRaw.set(name, raw);
+        this.rawData.delete(name);
+      }
+    }
     await Promise.all(
       [...this.rawData.entries()].map(async ([name, raw]) => {
         try {
@@ -396,6 +420,29 @@ export class EventAudioBus {
       })
     );
     this.rawData.clear(); // free memory
+  }
+
+  /**
+   * Low-memory path: decode one music bed on demand and drop every other
+   * decoded bed (a bed still fading out keeps its buffer alive through its
+   * source node until it stops), so at most one is resident.
+   */
+  private decodeMusic(track: TrackName): Promise<void> {
+    const inFlight = this.musicDecodes.get(track);
+    if (inFlight) return inFlight;
+    const raw = this.musicRaw.get(track);
+    if (!this.ctx || !raw) return Promise.resolve();
+    const job = this.ctx
+      // decodeAudioData detaches its input, so decode a copy and keep the mp3.
+      .decodeAudioData(raw.slice(0))
+      .then((buf) => {
+        for (const other of MUSIC_TRACKS) if (other !== track) this.buffers.delete(other);
+        this.buffers.set(track, buf);
+      })
+      .catch(() => { /* undecodable — the bed stays silent */ })
+      .finally(() => this.musicDecodes.delete(track));
+    this.musicDecodes.set(track, job);
+    return job;
   }
 
   /* ── public API (same signature as before) ─────── */
@@ -1641,7 +1688,20 @@ export class EventAudioBus {
     if (!buf && track === "bg_bonus" && this.buffers.has("police_sound_loop")) {
       buf = this.buffers.get("police_sound_loop");
     }
+    if (!buf && slot === "bg" && this.musicRaw.has(track)) {
+      // Not decoded yet (low-memory path): whatever plays now keeps playing
+      // until the bed is ready, then it crossfades in — unless something
+      // else claimed the bg slot meanwhile.
+      this.pendingBg = track;
+      void this.decodeMusic(track).then(() => {
+        if (this.pendingBg !== track) return;
+        this.pendingBg = null;
+        if (this.buffers.has(track)) this.startLoop(track, "bg");
+      });
+      return;
+    }
     if (!buf) return;
+    if (slot === "bg") this.pendingBg = null;
 
     // fade out whatever was in this slot
     if (existing) this.fadeAndStop(existing);
@@ -1668,6 +1728,7 @@ export class EventAudioBus {
   /** Fade out and stop a loop slot */
   private fadeOut(slot: "bg" | "spin" | "counter"): void {
     const loop = slot === "bg" ? this.bgLoop : slot === "spin" ? this.spinLoop : this.counterLoop;
+    if (slot === "bg") this.pendingBg = null;
     if (!loop) return;
     this.fadeAndStop(loop);
     if (slot === "bg") this.bgLoop = null;

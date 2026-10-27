@@ -29,32 +29,68 @@ export const easeOutBack: Ease = (t) => {
 /**
  * Global animation speed multiplier. 1 = normal; >1 runs every tween/wait faster.
  * "Extra Turbo" sets this above 1 to compress the whole playback uniformly,
- * stacking on top of the per-animation turbo branches. Never <=0.
+ * stacking on top of the per-animation turbo branches; a player's deliberate
+ * feature skip raises it too. Never <=0.
+ *
+ * A change applies to tweens, waits and simulations ALREADY in flight, not
+ * just to the next one: a skip pressed mid-way through a long cinematic beat
+ * must speed up that beat at once instead of after it ends. At a constant
+ * scale the timing is identical to scaling each duration once up front.
  */
 let timeScale = 1;
+
+interface PendingWait { remaining: number; armedAt: number; timer: number; resolve: () => void }
+const pendingWaits = new Set<PendingWait>();
+
+function armWait(w: PendingWait): void {
+  w.armedAt = performance.now();
+  w.timer = window.setTimeout(() => {
+    pendingWaits.delete(w);
+    w.resolve();
+  }, Math.max(0, w.remaining) / timeScale);
+}
+
 export function setTimeScale(scale: number): void {
-  timeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  const next = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  if (next === timeScale) return;
+  // Re-time every pending wait: bank the progress made at the old speed, then
+  // re-arm the rest at the new one.
+  const now = performance.now();
+  for (const w of pendingWaits) {
+    window.clearTimeout(w.timer);
+    w.remaining -= (now - w.armedAt) * timeScale;
+  }
+  timeScale = next;
+  for (const w of pendingWaits) armWait(w);
 }
 export function getTimeScale(): number {
   return timeScale;
 }
 
 export function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms / timeScale));
+  return new Promise((resolve) => {
+    const w: PendingWait = { remaining: ms, armedAt: 0, timer: 0, resolve };
+    pendingWaits.add(w);
+    armWait(w);
+  });
 }
 
 export function tween(duration: number, update: (progress: number) => void, ease: Ease = easeOutCubic): Promise<void> {
-  duration = duration / timeScale;
-  if (duration <= 0) {
+  if (duration / timeScale <= 0) {
     update(1);
     return Promise.resolve();
   }
 
   return new Promise((resolve) => {
-    const start = performance.now();
+    // Progress is accumulated in unscaled ms, frame by frame, at whatever the
+    // time scale is on that frame.
+    let elapsed = 0;
+    let last = performance.now();
 
     function frame(now: number): void {
-      const raw = Math.min(1, (now - start) / duration);
+      elapsed += Math.max(0, now - last) * timeScale;
+      last = now;
+      const raw = Math.min(1, elapsed / duration);
       update(ease(raw));
       if (raw < 1) {
         requestAnimationFrame(frame);
@@ -76,14 +112,15 @@ export function tween(duration: number, update: (progress: number) => void, ease
  * every such effect ran 2.4x too fast on high-refresh screens.
  */
 export function simulate(duration: number, step: (k: number, p: number) => void): Promise<void> {
-  const ms = duration / timeScale;
   return new Promise((resolve) => {
-    const start = performance.now();
-    let last = start;
+    let last = performance.now();
+    let elapsed = 0;
     const frame = (now: number): void => {
-      const k = Math.min(4, Math.max(0, (now - last) / (1000 / 60))) * timeScale;
+      const dt = Math.max(0, now - last);
+      const k = Math.min(4, dt / (1000 / 60)) * timeScale;
       last = now;
-      const p = ms <= 0 ? 1 : Math.min(1, (now - start) / ms);
+      elapsed += dt * timeScale;
+      const p = duration / timeScale <= 0 ? 1 : Math.min(1, elapsed / duration);
       step(k, p);
       if (p < 1) requestAnimationFrame(frame);
       else resolve();

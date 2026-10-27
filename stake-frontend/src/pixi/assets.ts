@@ -1,6 +1,7 @@
-import { Assets, Texture } from "pixi.js";
+import { Assets, ImageSource, Texture } from "pixi.js";
 import type { SymbolId } from "../domain";
 import { SkelPlayer, type SkelData } from "./SkelPlayer";
+import { isLowMemoryDevice } from "../device";
 
 export interface SymbolSkin {
   color: number;
@@ -193,6 +194,119 @@ const BG_ASSETS: Record<string, string> = {
 // browser cache and redownloaded every texture on each launch.
 const CACHE_BUST = "";
 
+/**
+ * LOW-MEMORY LOADING (phones / tablets — see device.ts).
+ *
+ * Decoded at full size, the art loaded at boot is ~350 MB of RGBA (three girls
+ * x ten 1000x1600 layers, eleven 2048 skeletal atlases, 2200 px backgrounds),
+ * held once on the GPU and once more as the CPU-side bitmap. That is far past
+ * what iOS Safari allows a tab on a 4 GB iPhone 12, which killed the game
+ * while loading. On those devices every image is decoded, downscaled to a cap
+ * that still exceeds what the phone screen can show, and kept at the smaller
+ * size (~130 MB in total).
+ *
+ * The texture's `resolution` is set to the downscale factor, so its LOGICAL
+ * size (texture.width/height, atlas frame coordinates, every layout that
+ * measures a texture) is exactly the original — only the pixel count drops.
+ * Desktop loads keep the untouched full-resolution path.
+ */
+const LOW_MEMORY_CAP = {
+  /** Girl silhouettes / body pieces / full images: never shown full-screen-tall. */
+  character: 880,
+  /** Screen-covering scenery. */
+  background: 1600,
+  /** Skeletal atlases and all other art. */
+  other: 1024,
+} as const;
+type CapClass = keyof typeof LOW_MEMORY_CAP;
+
+const BACKGROUND_FILES = new Set([
+  "street_golden_v1.webp",
+  "vault_bonus.webp",
+  "brinks_truck_frame.webp",
+  "truck_frame_open.webp",
+]);
+
+/** At most this many full-size decodes in flight on a low-memory device, so
+ *  the transient full-size bitmaps never pile up into the spike we avoid. */
+const LOW_MEMORY_DECODES = 3;
+let decodeSlots = LOW_MEMORY_DECODES;
+const decodeQueue: Array<() => void> = [];
+async function withDecodeSlot<T>(job: () => Promise<T>): Promise<T> {
+  if (decodeSlots === 0) await new Promise<void>((resolve) => decodeQueue.push(resolve));
+  else decodeSlots--;
+  try {
+    return await job();
+  } finally {
+    const next = decodeQueue.shift();
+    if (next) next();
+    else decodeSlots++;
+  }
+}
+
+/** Decode `url` and shrink it so its long edge is at most `cap` pixels. */
+async function loadDownscaled(url: string, cap: number): Promise<Texture> {
+  return withDecodeSlot(async () => {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`${response.status} ${url}`);
+    const full = await createImageBitmap(await response.blob());
+    const { width, height } = full;
+    const k = Math.min(1, cap / Math.max(width, height));
+    let bitmap: ImageBitmap | HTMLCanvasElement = full;
+    if (k < 1) {
+      const w = Math.max(1, Math.round(width * k));
+      const h = Math.max(1, Math.round(height * k));
+      try {
+        bitmap = await createImageBitmap(full, { resizeWidth: w, resizeHeight: h, resizeQuality: "high" });
+      } catch {
+        bitmap = full;
+      }
+      // A browser that ignores the resize options hands back a full-size
+      // bitmap — shrink through a canvas instead.
+      if (bitmap.width !== w) {
+        if (bitmap !== full) (bitmap as ImageBitmap).close();
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d")!;
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(full, 0, 0, w, h);
+        try {
+          bitmap = await createImageBitmap(canvas);
+          // Release the canvas backing store (Safari caps total canvas memory).
+          canvas.width = 0;
+          canvas.height = 0;
+        } catch {
+          bitmap = canvas;
+        }
+      }
+      if (bitmap !== full) full.close();
+    }
+    const source = new ImageSource({
+      resource: bitmap,
+      alphaMode: "premultiply-alpha-on-upload",
+      resolution: bitmap.width / width,
+    });
+    return new Texture({ source, label: url });
+  });
+}
+
+const downscaled = new Map<string, Promise<Texture>>();
+
+/** Load one image texture — full resolution, or downscaled on a low-memory device. */
+function loadImage(url: string, capClass: CapClass): Promise<Texture> {
+  if (!isLowMemoryDevice() || typeof createImageBitmap !== "function") return Assets.load<Texture>(url);
+  // One decode per file, like Assets.load (two keys can share an image).
+  let pending = downscaled.get(url);
+  if (!pending) {
+    pending = loadDownscaled(url, LOW_MEMORY_CAP[capClass]);
+    pending.catch(() => downscaled.delete(url));
+    downscaled.set(url, pending);
+  }
+  return pending;
+}
+
 export async function loadSymbolTextures(): Promise<void> {
   if (loaded) return;
 
@@ -203,7 +317,7 @@ export async function loadSymbolTextures(): Promise<void> {
       .filter(([id]) => !BONUS_ONLY_SYMBOLS.has(id))
       .map(async ([, skin]) => {
         try {
-          const tex = await Assets.load<Texture>(BASE_PATH + skin.assetKey + CACHE_BUST);
+          const tex = await loadImage(BASE_PATH + skin.assetKey + CACHE_BUST, "other");
           if (tex instanceof Texture) textureCache.set(skin.assetKey, tex);
         } catch (err) {
           console.warn(`[assets] Failed to load symbol texture: ${skin.assetKey}`, err);
@@ -216,7 +330,7 @@ export async function loadSymbolTextures(): Promise<void> {
     Object.entries(EXTRA_ASSETS).map(async ([key, file]) => {
       try {
         const url = BASE_PATH + file + CACHE_BUST;
-        const tex = await Assets.load<Texture>(url);
+        const tex = await loadImage(url, key.startsWith("char") ? "character" : "other");
         if (tex instanceof Texture) textureCache.set(key, tex);
       } catch (err) {
         console.warn(`[assets] Failed to load extra texture: ${file}`, err);
@@ -231,7 +345,7 @@ export async function loadSymbolTextures(): Promise<void> {
   await Promise.all([...Object.entries(BG_ASSETS), ...Object.entries(OPTIONAL_ASSETS)].map(async ([key, file]) => {
     try {
       const url = BASE_PATH + file + CACHE_BUST;
-      const tex = await Assets.load<Texture>(url);
+      const tex = await loadImage(url, BACKGROUND_FILES.has(file) ? "background" : "other");
       if (tex instanceof Texture) textureCache.set(key, tex);
     } catch {
       // Missing file — procedural fallback will be used
@@ -253,7 +367,7 @@ export async function loadSymbolTextures(): Promise<void> {
               if (!r.ok) throw new Error(`${r.status}`);
               return r.text();
             }),
-            Assets.load<Texture>(`${BASE_PATH}${cfg.dir}/packed.webp${CACHE_BUST}`),
+            loadImage(`${BASE_PATH}${cfg.dir}/packed.webp${CACHE_BUST}`, "other"),
           ]);
           if (texture instanceof Texture) {
             skelCache.set(id, { data, atlasText, texture, fitW: cfg.fitW, fitH: cfg.fitH });

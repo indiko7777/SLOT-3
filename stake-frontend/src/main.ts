@@ -32,6 +32,7 @@ import { setActiveCurrency, money } from "./currency";
 import { selectSpinMode, starsForMode } from "./meta/starModes";
 import { cosmeticThemeFor } from "./meta/rewards";
 import { countRoundWilds, receiptKey, sanitizeReceipts, type CollectionReceipts } from "./meta/roundCollection";
+import { FeaturePacer, SKIP_TIME_SCALE } from "./featurePace";
 
 const root = document.querySelector<HTMLDivElement>("#app");
 if (!root) throw new Error("Missing #app root");
@@ -78,6 +79,9 @@ let anteEnabled = false;
 // the whole animation layer (see applyTurboMode).
 let turboMode: TurboMode = "off";
 let turboHeld = false;
+// Turbo never fast-forwards the Getaway or the other feature moments; only a
+// deliberate burst of taps / spacebar presses skips one (see featurePace.ts).
+const featurePacer = new FeaturePacer({ onChange: () => applyTurboMode() });
 // Autoplay: number of spins remaining (Infinity = endless until stopped/funds out).
 let autoplayRemaining = 0;
 let autoplayStop = false;
@@ -384,6 +388,8 @@ async function boot(): Promise<void> {
     isAnteEnabled: () => anteEnabled,
     isMuted: () => muted,
     isTurbo: () => isTurbo(),
+    beginFeature: () => featurePacer.begin(),
+    endFeature: () => featurePacer.end(),
     isPlaying: () => isPlaying,
     isReplayActive: () => isReplayActive,
     getBetLevel: () => betLevels[betIndex] ?? 0,
@@ -539,8 +545,7 @@ async function boot(): Promise<void> {
         const rec: RoundRecord = { id: 0, payoutMultiplier: 0, events: [] };
         const play = async (ev: GameEvent) => {
           snapshot = applyEvent(snapshot, ev, rec);
-          audioBus.playEvent(ev, muted, isTurbo());
-          await scene.playEvent(ev, snapshot);
+          await presentEvent(ev);
         };
         let respins = 5;
         const spin = async (lands: Array<{ symbol: "SAFE" | "MASTER_KEY"; position: Position; value?: number }>) => {
@@ -587,8 +592,7 @@ async function boot(): Promise<void> {
         const rec: RoundRecord = { id: 0, payoutMultiplier: 0, events: [] };
         const play = async (ev: GameEvent) => {
           snapshot = applyEvent(snapshot, ev, rec);
-          audioBus.playEvent(ev, muted, isTurbo());
-          await scene.playEvent(ev, snapshot);
+          await presentEvent(ev);
         };
         const board: Board = [
           ["PISTOL", "BRASS", "KNIFE", "AMMO"], ["PISTOL", "DUFFEL", "BRASS", "KNIFE"], ["AMMO", "PISTOL", "CASH", "BRASS"],
@@ -615,8 +619,7 @@ async function boot(): Promise<void> {
         const rec: RoundRecord = { id: 0, payoutMultiplier: 0, events: [] };
         for (const ev of events) {
           snapshot = applyEvent(snapshot, ev, rec);
-          audioBus.playEvent(ev, muted, isTurbo());
-          await scene.playEvent(ev, snapshot);
+          await presentEvent(ev);
         }
       } finally {
         isPlaying = false;
@@ -631,8 +634,7 @@ async function boot(): Promise<void> {
         const rec: RoundRecord = { id: 0, payoutMultiplier: 0, events: [] };
         const play = async (ev: GameEvent) => {
           snapshot = applyEvent(snapshot, ev, rec);
-          audioBus.playEvent(ev, muted, isTurbo());
-          await scene.playEvent(ev, snapshot);
+          await presentEvent(ev);
         };
         const board = filler();
         board[2]![1] = "WILD";
@@ -802,6 +804,11 @@ async function boot(): Promise<void> {
       void handleAction("spin");
       return;
     }
+    // During a feature the spacebar is a skip press, never a turbo hold.
+    if (featurePacer.active) {
+      registerSkipPress();
+      return;
+    }
     if (!turboDisabled()) {
       turboHeld = true;
       // Never re-render the base snapshot on top of a LIVE bonus cinematic — that
@@ -815,9 +822,14 @@ async function boot(): Promise<void> {
   window.addEventListener("keyup", (event) => {
     if (event.code === "Space" && turboHeld) {
       turboHeld = false;
-      scene.renderSnapshot(snapshot);
+      if (!scene.isBonusActive()) scene.renderSnapshot(snapshot);
     }
   });
+  // Taps / clicks anywhere count as skip presses while a feature is on screen.
+  // Capture phase, so a view that handles the tap itself still counts it.
+  window.addEventListener("pointerdown", () => {
+    if (featurePacer.active && !anyOverlayOpen()) registerSkipPress();
+  }, { capture: true });
 
   if (resume) {
     if (isReplayActive) {
@@ -1066,16 +1078,30 @@ function spinModeForUser(): string {
   return selectSpinMode(anteEnabled, galleryStars(), betModes);
 }
 
-/** True when animations should run at turbo speed (persistent mode or held space). */
+/** True when animations should run at turbo speed (persistent mode or held
+ *  space). While a feature is on screen turbo is ignored: the feature plays at
+ *  full presentation speed unless the player deliberately skipped it. */
 function isTurbo(): boolean {
+  if (featurePacer.active) return featurePacer.skipping;
   return turboMode !== "off" || turboHeld;
 }
 
 /** Apply the persistent turbo mode to the global animation time-scale. Extra
  *  Turbo compresses the whole playback; Turbo/Normal run at 1x (Turbo already
- *  picks the fast per-animation branches via isTurbo()). */
+ *  picks the fast per-animation branches via isTurbo()). Features always run
+ *  at 1x, or fast-forward once skipped. */
 function applyTurboMode(): void {
-  setTimeScale(turboMode === "super" ? 2 : 1);
+  if (featurePacer.active) setTimeScale(featurePacer.skipping ? SKIP_TIME_SCALE : 1);
+  else setTimeScale(turboMode === "super" ? 2 : 1);
+}
+
+/** One deliberate skip press (tap, click or spacebar) during a feature. */
+function registerSkipPress(): void {
+  // Jurisdictions that forbid slam-stop also forbid cutting a feature short.
+  if (jurisdiction?.disabledSlamstop) return;
+  const left = featurePacer.press(performance.now());
+  if (left === null) return;
+  showToast(left > 0 ? `${left} MORE TO SKIP` : "SKIPPING", left > 0 ? 1100 : 900);
 }
 
 /** Start an autoplay run of `count` spins (Infinity = endless). */
@@ -1198,12 +1224,25 @@ function consumeRoundStars(record: RoundRecord): void {
 
 
 
-async function replayRound(record: RoundRecord, active: boolean): Promise<void> {
-  for (const event of record.events as GameEvent[]) {
-    snapshot = applyEvent(snapshot, event, record);
-    syncSoundToggle();
+/** Present one round event (audio + scene) under feature pacing. */
+async function presentEvent(event: GameEvent): Promise<void> {
+  await featurePacer.run(event, async () => {
     audioBus.playEvent(event, muted, isTurbo());
     await scene.playEvent(event, snapshot);
+  });
+}
+
+async function replayRound(record: RoundRecord, active: boolean): Promise<void> {
+  featurePacer.reset();
+  try {
+    for (const event of record.events as GameEvent[]) {
+      snapshot = applyEvent(snapshot, event, record);
+      syncSoundToggle();
+      await presentEvent(event);
+    }
+  } finally {
+    // A round that stopped mid-feature must not leave turbo suspended.
+    featurePacer.reset();
   }
   // Settle the round with the RGS; the final balance is whatever it returns.
   // Zero-win rounds arrive with active=false (the RGS settles them itself), so

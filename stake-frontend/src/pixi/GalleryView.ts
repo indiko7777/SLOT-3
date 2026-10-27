@@ -93,7 +93,9 @@ function portrait(tex: Texture, w: number, h: number, key: string, dark: boolean
   const bx = tex.width / 2 + b.ox - b.w / 2, by = tex.height / 2 + b.oy - b.h / 2;
   const cw = b.w * 0.86, ch = cw * (H / W);
   if (dark) g.filter = "brightness(0.18) saturate(0.4)";
-  g.drawImage(src, bx + (b.w - cw) / 2, by - ch * 0.02, cw, ch, 0, 0, W, H);
+  // Source rect in the bitmap's own pixels (a low-memory load is downscaled).
+  const px = tex.source.resolution || 1;
+  g.drawImage(src, (bx + (b.w - cw) / 2) * px, (by - ch * 0.02) * px, cw * px, ch * px, 0, 0, W, H);
   g.filter = "none";
   const shade = g.createLinearGradient(0, H * 0.55, 0, H);
   shade.addColorStop(0, "rgba(10,6,20,0)"); shade.addColorStop(1, "rgba(10,6,20,0.85)");

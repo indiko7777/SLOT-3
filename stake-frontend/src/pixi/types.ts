@@ -52,6 +52,10 @@ export interface SceneRuntime {
   isAnteEnabled(): boolean;
   isMuted(): boolean;
   isTurbo(): boolean;
+  /** Bracket a feature moment the scene starts on its own (a girl completing):
+   *  turbo is suspended in between, exactly as for the Getaway. */
+  beginFeature?(): void;
+  endFeature?(): void;
   /** Persistent spin-speed setting shown on the bar's TURBO key. */
   getTurboMode?(): "off" | "turbo" | "super";
   /** Whether the bet can step down / up from the current level (RGS bet levels). */

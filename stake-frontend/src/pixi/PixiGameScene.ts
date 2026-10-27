@@ -20,6 +20,7 @@ import { GalleryView } from "./GalleryView";
 import { money } from "../currency";
 import { playDriveBy } from "./driveBy";
 import { artCharTransform } from "./artCharacter";
+import { CINEMATIC_WIN_MULTIPLIER } from "../featurePace";
 
 /** Collection voice lines per girl, indexed by GIRLS[] id, in PLAY ORDER.
  *  The file names are inconsistent ("milstone1", "mileston3", and girl 1's set
@@ -591,7 +592,7 @@ export class PixiGameScene {
         //   5x–20x  → light "NICE WIN" flourish + coin burst — the frequent little
         //             dopamine hit. Does NOT take over the screen or block the spin.
         //   < 5x    → silent tally in the bottom panel
-        if (event.payoutMultiplier >= 20) {
+        if (event.payoutMultiplier >= CINEMATIC_WIN_MULTIPLIER) {
           const currency = this.runtime.getCurrency();
           // Reset HUD win text to 0 so it counts up in sync with the cinematic win counter
           this.hud.setWinAmountDirect(0);
@@ -647,7 +648,17 @@ export class PixiGameScene {
     for (const pos of newWilds) {
       const gain = this.runtime.collectWild();
       if (!gain) continue; // no piece unlocked this WILD — keep looping for others
-      await this.runCollectionAnimation(pos, gain, turbo);
+      if (!gain.completedGirl) {
+        await this.runCollectionAnimation(pos, gain, turbo);
+        continue;
+      }
+      // A completed girl is a feature moment: turbo never rushes her intro.
+      this.runtime.beginFeature?.();
+      try {
+        await this.runCollectionAnimation(pos, gain, this.runtime.isTurbo());
+      } finally {
+        this.runtime.endFeature?.();
+      }
     }
   }
 
