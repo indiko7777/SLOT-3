@@ -190,7 +190,7 @@ export function applyEvent(snapshot: PlaybackSnapshot, event: GameEvent, record:
         lastWin: 0,
         capApplied: event.capApplied,
         lastMessage: event.payoutMultiplier === 0 ? ""
-                   : event.capApplied ? "Max win paid"
+                   : event.capApplied ? "Max win reached"
                    : "Round complete"
       };
     default:

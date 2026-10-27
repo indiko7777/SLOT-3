@@ -369,8 +369,10 @@ export function symbolLabel(id: SymbolId, social: boolean): string {
  * Requirements). Social-mode text must never match. Used by the tests and by
  * the DEV-only on-screen audit.
  */
+// Every inflection counts: Engine's review flagged "paying" (Drive-By rules),
+// so pay*/cash*/buy*/cost*/… match as word PREFIXES, not just whole words.
 export const SOCIAL_RESTRICTED =
-  /\b(bet|bets|betting|rebet|stake|stakes|cash|pay|pays|paid|payer|payout|payouts|paytable|money|buy|bought|purchase|purchased|cost|costs|credit|credited|gamble|wager|deposit|withdraw|currency|fund|funds)\b|win feature|bonus buy|place your bets/i;
+  /\b((re)?bet(s|ting|ted|tor|tors)?|stak(e|es|ed|ing)|cash\w*|pa(y|id)\w*|money\w*|buy\w*|bought|purchas\w*|cost\w*|credit\w*|gambl\w*|wager\w*|deposit\w*|withdr[ae]w\w*|currenc\w*|fund\w*)\b|win feature|bonus buy|place your bets?/i;
 
 /** Social currencies arrive as XGC / XSC / XEC and display as GC / SC / SC. */
 export function displayCurrency(code: string): string {

@@ -6,8 +6,8 @@ import "./tutorial.css";
  * Girl step waits for the player to actually tap her (the deck opens), then
  * explains the gold Wanted star inside the deck.
  *
- * Shown once per player (localStorage) after the loader and the ENTER THE CITY
- * page; replayable from the menu. DOM-only, above the canvas: four blurred
+ * Shown on every launch after the loader and the ENTER THE CITY page;
+ * replayable from the menu. DOM-only, above the canvas: four blurred
  * panels frame the spotlight, which follows its control every frame, so the
  * highlighted control is always crisp at any screen size; taps inside the
  * spotlight reach the game only on the step that asks for one.

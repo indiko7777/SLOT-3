@@ -168,8 +168,8 @@ function injectStyle(): void {
   .gta-hint-btn{cursor:pointer;}
   .gta-title{font-size:clamp(28px,5.5vw,46px);font-weight:700;line-height:1;
     text-transform:uppercase;letter-spacing:.5px;text-shadow:0 2px 10px rgba(0,0,0,.8);}
-  .gta-tabs{display:flex;gap:clamp(16px,3.5vw,30px);border-bottom:2px solid rgba(255,255,255,.95);
-    padding:0 var(--gx);flex-shrink:0;overflow-x:auto;scrollbar-width:none;white-space:nowrap;}
+  .gta-tabs{display:flex;flex-wrap:wrap;gap:0 clamp(12px,3.5vw,30px);border-bottom:2px solid rgba(255,255,255,.95);
+    padding:0 var(--gx);flex-shrink:0;white-space:nowrap;}
   .gta-tabs::-webkit-scrollbar{display:none;}
   .gta-tab{font-size:clamp(13px,2.6vw,15px);letter-spacing:2.5px;text-transform:uppercase;font-weight:600;
     padding:8px 2px 9px;color:rgba(255,255,255,.42);position:relative;cursor:pointer;flex-shrink:0;
@@ -201,7 +201,10 @@ function injectStyle(): void {
   .gta-arr{font-size:11px;opacity:.7;padding:4px 3px;cursor:pointer;}
   .gta-row.sel .gta-arr{opacity:.95;}
   .gta-row.disabled .gta-arr{visibility:hidden;}
-  .gta-stat{font-size:clamp(12px,2.4vw,14px);font-weight:600;color:#ffdf65;text-align:right;flex-shrink:0;}
+  .gta-stat{font-size:clamp(12px,2.4vw,14px);font-weight:600;color:#ffdf65;text-align:right;flex-shrink:1;min-width:0;}
+  /* Narrow phones: the price/RTP line drops under the mode name instead of running off-screen. */
+  .gta-row.static{flex-wrap:wrap;row-gap:3px;}
+  .gta-row.static .gta-stat{text-align:left;margin-left:auto;}
   .gta-body{background:rgba(0,0,0,.38);padding:11px var(--gx);margin-top:2px;
     font-size:clamp(12.5px,2.6vw,14px);line-height:1.6;color:#bcbcbc;letter-spacing:.2px;}
   .gta-desc{background:rgba(0,0,0,.66);border-top:2px solid rgba(255,255,255,.9);
@@ -252,6 +255,29 @@ function injectStyle(): void {
   }
   @media (hover:none){
     .gta-hints .gta-key{display:none;}
+  }
+  /* Short frames (Engine Popout S 400x225, phones in landscape): the title,
+     tabs, description and key hints used to eat the whole height and the tab
+     strip scrolled CONTROLS / INFO out of sight. Here the chrome shrinks, every
+     tab stays visible (the strip wraps if it must), and the content gets the room. */
+  @media (max-height:420px), (max-width:420px){
+    #settings-overlay{--gx:clamp(10px,4vw,40px);}
+    .gta-head{padding:8px var(--gx) 4px;}
+    .gta-title{font-size:clamp(18px,4.2vw,26px);}
+    .gta-close{min-height:32px;padding:5px 10px;font-size:12px;letter-spacing:1px;}
+    .gta-tabs{gap:2px 12px;}
+    .gta-tab{font-size:11px;letter-spacing:1.2px;padding:5px 1px 6px;}
+    .gta-scroll{padding:8px 0 12px;}
+    .gta-sep{font-size:10.5px;letter-spacing:1.6px;padding:5px var(--gx);margin-top:12px;}
+    .gta-row{padding:7px var(--gx);font-size:13.5px;gap:10px;}
+    .gta-body,.gta-ctl,.gta-special{padding-top:7px;padding-bottom:7px;}
+    .gta-body{font-size:12px;line-height:1.45;}
+    .gta-desc{padding:5px var(--gx);font-size:11.5px;line-height:1.35;min-height:0;}
+    .gta-hints{padding:4px var(--gx) 6px;gap:12px;font-size:10px;}
+  }
+  @media (max-height:300px){
+    .gta-hints{display:none;}
+    .gta-desc{max-height:2.7em;overflow:hidden;}
   }
   `;
   document.head.appendChild(s);
@@ -578,7 +604,9 @@ export class SettingsMenu {
       name.textContent = card.name;
       const stat = document.createElement("span");
       stat.className = "gta-stat";
-      stat.textContent = `${t.costWord}: ${formatMultiplier(mult)}x ${t.betWord} · RTP 96.00% · MAX WIN 5,000x`;
+      // Each part stays whole; on a narrow phone the line only breaks between parts.
+      const nb = (x: string): string => x.replace(/ /g, "\u00a0");
+      stat.textContent = [`${t.costWord}: ${formatMultiplier(mult)}x ${t.betWord}`, "RTP 96.00%", "MAX WIN 5,000x"].map(nb).join(" · ");
       row.append(name, stat);
       block.appendChild(row);
       block.appendChild(this.bodyText(card.desc));
@@ -724,7 +752,7 @@ export class SettingsMenu {
     parent.appendChild(
       this.bodyText(
         "On any base game spin (including Ante and Head-Start spins) the getaway car can speed across the reels right after they land and throw " +
-          "3 to 5 Body Armor wilds onto the reels. The wilds land before any wins are evaluated and substitute for every paying symbol. " +
+          "3 to 5 Body Armor wilds onto the reels. The wilds land before any wins are evaluated and substitute for every regular symbol. " +
           "Drive-By does not occur in The Getaway or Super Getaway feature plays.",
       ),
     );

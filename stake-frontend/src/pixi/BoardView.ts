@@ -421,7 +421,21 @@ export class BoardView extends Container {
       // Survivors fall to the BOTTOM of the column, keeping relative order.
       // Any that were still holding a win pose (won but not removed) let go.
       for (let i = 0; i < survivors.length; i++) {
-        const view = survivors[i]!;
+        let view = survivors[i]!;
+        // The book's board is the truth that wins are paid on. A survivor that
+        // disagrees with it (Engine review, ante event 60301: a knife cluster
+        // drawn over cash and a pistol) is swapped before it lands, so the screen
+        // can never show a win over the wrong symbols.
+        const want = board[col]![newCount + i]!;
+        if (view.id !== want) {
+          console.warn(`[board] survivor mismatch at ${col}:${newCount + i}: shown ${view.id}, book ${want}`);
+          const fixed = new SymbolView(want);
+          fixed.layout(this.cellWidth, this.cellHeight);
+          fixed.position.set(view.x, view.y);
+          this.reelContainer.addChild(fixed);
+          view.destroy({ children: true });
+          view = fixed;
+        }
         view.releaseHold();
         this.symbols.set(keyOf([col, newCount + i]), view);
         animations.push(drop(view, plan.survivors[i]!));

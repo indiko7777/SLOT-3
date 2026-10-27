@@ -20,12 +20,33 @@ export const RADIO_STATIONS: RadioStation[] = [
   { id: "off",       name: "RADIO OFF",       tag: "Silence the city",   icon: "✕",  color: "#ff5b5b" },
 ];
 
-const SIZE = 500;        // Wheel container size
-const C = SIZE / 2;      // Center coordinate
-const R = 180;           // Radius for the circle of buttons
+const MAX_R = 180;       // Wheel radius on a roomy screen
+const MAX_BTN = 72;      // Station button diameter on a roomy screen
+const MIN_BTN = 46;      // Smallest still comfortably tappable button
+const PAD = 10;          // Gap kept between the wheel and the screen edge
 
 const rad = (deg: number): number => (deg * Math.PI) / 180;
-const pt = (r: number, deg: number): [number, number] => [C + r * Math.cos(rad(deg)), C + r * Math.sin(rad(deg))];
+
+/** Wheel geometry for the current viewport. The wheel used to be a fixed
+ *  500px square, which spilled off Engine's Popout S (400x225) and phone
+ *  portrait sizes. It now fits any screen: a circle where there is room, an
+ *  ellipse on short landscape frames, buttons and type scaled to match. */
+interface WheelGeom { w: number; h: number; rx: number; ry: number; btn: number; hubW: number; hubFont: number; tagFont: number; }
+export function wheelGeometry(vw: number, vh: number): WheelGeom {
+  const btn = Math.round(Math.max(MIN_BTN, Math.min(MAX_BTN, Math.min(vw, vh) * 0.15)));
+  // Half the selected (scaled 1.25x) button plus its glow.
+  const edge = (btn * 1.25) / 2 + 4;
+  let rx = Math.min(MAX_R, vw / 2 - edge - PAD);
+  let ry = Math.min(MAX_R, vh / 2 - edge - PAD);
+  if (ry > rx) ry = rx;                       // portrait: stay a circle
+  rx = Math.max(btn, Math.min(rx, ry * 1.8)); // landscape: a gentle ellipse only
+  ry = Math.max(btn * 0.75, ry);
+  const w = Math.ceil(2 * (rx + edge));
+  const h = Math.ceil(2 * (ry + edge));
+  const hubW = Math.max(120, Math.min(300, 2 * (rx - btn / 2 - 8)));
+  const compact = Math.min(vw, vh) < 420;
+  return { w, h, rx, ry, btn, hubW, hubFont: compact ? 16 : 22, tagFont: compact ? 12 : 16 };
+}
 
 let styleInjected = false;
 function injectStyle(): void {
@@ -38,10 +59,10 @@ function injectStyle(): void {
     animation:radioFade .18s ease both;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
   #radio-overlay.closing{animation:radioFade .16s ease reverse both;}
   @keyframes radioFade{from{opacity:0}to{opacity:1}}
-  .radio-wheel{position:relative;width:${SIZE}px;height:${SIZE}px;animation:radioPop .26s cubic-bezier(.2,1.4,.4,1) both;}
+  .radio-wheel{--btn:72px;position:relative;flex:none;animation:radioPop .26s cubic-bezier(.2,1.4,.4,1) both;}
   @keyframes radioPop{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:scale(1)}}
   
-  .station-btn{position:absolute;width:72px;height:72px;margin-left:-36px;margin-top:-36px;
+  .station-btn{position:absolute;width:var(--btn);height:var(--btn);margin-left:calc(var(--btn) / -2);margin-top:calc(var(--btn) / -2);
     border-radius:50%;border:2px solid #fff;background:#000;
     display:flex;flex-direction:column;align-items:center;justify-content:center;
     cursor:pointer;transition:all .12s ease-out;color:#fff;opacity:0.45;}
@@ -49,15 +70,15 @@ function injectStyle(): void {
   .station-btn.sel{border:3px solid #9ae64e;box-shadow:0 0 15px rgba(154,230,78,.3);
     color:#fff;transform:scale(1.25);background:#000;z-index:10;opacity:1;}
   
-  .station-icon{font-size:26px;line-height:1;pointer-events:none;text-shadow:0 2px 5px rgba(0,0,0,.7);}
-  .station-label{font-size:8.5px;letter-spacing:.5px;margin-top:2px;text-align:center;
+  .station-icon{font-size:calc(var(--btn) * .36);line-height:1;pointer-events:none;text-shadow:0 2px 5px rgba(0,0,0,.7);}
+  .station-label{font-size:max(7px, calc(var(--btn) * .118));letter-spacing:.5px;margin-top:2px;text-align:center;
     pointer-events:none;font-weight:bold;text-transform:uppercase;line-height:1.1;padding:0 4px;}
   
   .radio-hub{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-    width:300px;text-align:center;display:flex;flex-direction:column;align-items:center;
+    width:300px;max-width:100%;text-align:center;display:flex;flex-direction:column;align-items:center;
     justify-content:center;text-shadow:0 2px 4px rgba(0,0,0,.8);}
   
-  .radio-name{font-size:22px;color:#fff;margin-bottom:6px;letter-spacing:1px;font-weight:bold;}
+  .radio-name{font-size:22px;white-space:nowrap;color:#fff;margin-bottom:6px;letter-spacing:1px;font-weight:bold;}
   .radio-tag{font-size:16px;color:#e0e0e0;margin-bottom:6px;}
   
   .radio-eq{display:flex;gap:3px;height:14px;align-items:flex-end;margin-top:4px;}
@@ -66,7 +87,7 @@ function injectStyle(): void {
   .radio-eq i:nth-child(4){animation-delay:.45s}.radio-eq i:nth-child(5){animation-delay:.1s}
   @keyframes radioEq{0%,100%{height:3px}50%{height:14px}}
   .radio-eq.off i{animation:none;height:3px;background:#5a6680;}
-  .radio-close-btn{position:absolute;top:20px;right:20px;background:rgba(0,0,0,0.6);
+  .radio-close-btn{position:absolute;top:max(8px, min(20px, 3vh));right:max(8px, min(20px, 3vw));background:rgba(0,0,0,0.6);
     border:1px solid rgba(255,255,255,0.3);border-radius:8px;color:#fff;
     font-size:13px;font-weight:700;padding:6px 12px;cursor:pointer;
     display:flex;align-items:center;gap:6px;transition:all .15s ease;z-index:10;}
@@ -77,6 +98,7 @@ function injectStyle(): void {
 
 export class RadioWheel {
   private overlay: HTMLDivElement | null = null;
+  private wheel: HTMLDivElement | null = null;
   private hubName: HTMLDivElement | null = null;
   private hubTag: HTMLDivElement | null = null;
   private eq: HTMLDivElement | null = null;
@@ -115,19 +137,10 @@ export class RadioWheel {
     const wheel = document.createElement("div");
     wheel.className = "radio-wheel";
 
-    const n = RADIO_STATIONS.length;
-    const seg = 360 / n;
-    
-    RADIO_STATIONS.forEach((st, i) => {
-      // 0 degrees is right. Subtract 90 to start at top (12 o'clock).
-      const center = -90 + i * seg;
-      const [bx, by] = pt(R, center);
-
+    RADIO_STATIONS.forEach((st) => {
       const btn = document.createElement("div");
       btn.className = "station-btn" + (st.id === this.currentId ? " sel" : "");
-      btn.style.left = `${bx}px`;
-      btn.style.top = `${by}px`;
-      
+
       const icon = document.createElement("div");
       icon.className = "station-icon";
       icon.textContent = st.icon;
@@ -161,13 +174,39 @@ export class RadioWheel {
     overlay.appendChild(wheel);
     document.body.appendChild(overlay);
     this.overlay = overlay;
+    this.wheel = wheel;
+    this.layout();
     document.addEventListener("keydown", this.onKey);
+    window.addEventListener("resize", this.layout);
     this.previewHub(this.currentId);
   }
+
+  /** Fits the wheel to the current viewport (also on resize / rotation). */
+  private layout = (): void => {
+    const wheel = this.wheel;
+    if (!wheel) return;
+    const g = wheelGeometry(window.innerWidth, window.innerHeight);
+    wheel.style.width = `${g.w}px`;
+    wheel.style.height = `${g.h}px`;
+    wheel.style.setProperty("--btn", `${g.btn}px`);
+    const seg = 360 / RADIO_STATIONS.length;
+    wheel.querySelectorAll<HTMLDivElement>(".station-btn").forEach((btn, i) => {
+      // 0 degrees is right. Subtract 90 to start at top (12 o'clock).
+      const a = rad(-90 + i * seg);
+      btn.style.left = `${g.w / 2 + g.rx * Math.cos(a)}px`;
+      btn.style.top = `${g.h / 2 + g.ry * Math.sin(a)}px`;
+    });
+    const hub = wheel.querySelector<HTMLDivElement>(".radio-hub");
+    if (hub) hub.style.width = `${g.hubW}px`;
+    if (this.hubName) this.hubName.style.fontSize = `${g.hubFont}px`;
+    if (this.hubTag) this.hubTag.style.fontSize = `${g.tagFont}px`;
+  };
 
   close(): void {
     if (!this.overlay) return;
     document.removeEventListener("keydown", this.onKey);
+    window.removeEventListener("resize", this.layout);
+    this.wheel = null;
     const o = this.overlay;
     this.overlay = null;
     o.classList.add("closing");
