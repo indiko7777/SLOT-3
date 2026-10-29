@@ -20,11 +20,11 @@ The radio wheel (the radio button on the control bar) picks one of these loops. 
 
 | Station | Track id | File |
 | --- | --- | --- |
-| COASTAL HEAT (default) | `bg_base` | `assets/audio/turbo_night.mp3` |
+| COASTAL HEAT (default) | `bg_base` | `assets/audio/coastal_heat.mp3` |
 | NEON NIGHTS | `sunset_synths` | `assets/audio/sunset_synths.mp3` |
 | VICE 95.6 | `vice_nights` | `assets/audio/vice_nights.mp3` |
 | OPEN LIVE | `open_lines` | `assets/Open Lines 97.mp3` |
-| VAULT FM | `bg_bonus` | same file as the Getaway loop below |
+| GROOVY FM | `groovy` | `assets/audio/groovy.mp3` |
 
 Volumes are in `VOLUME` in `src/audio.ts` (music sits at `0.30`).
 
@@ -33,7 +33,7 @@ Volumes are in `VOLUME` in `src/audio.ts` (music sits at `0.30`).
 | Moment | Track / cue id | File |
 | --- | --- | --- |
 | Cinematic intro hit (with the banner) | `getaway_intro` | `assets/new new sound/sound for getaway intro play in same time as the banner appear that give the cinematic look.mp3` |
-| **Getaway background loop** | `bg_bonus` | `assets/new new sound/continuous looping getaway background sound play after the intro sound.mp3` |
+| **Getaway music** (starts on the first bonus spin; the player's station returns after COLLECT) | `bg_bonus` | `assets/audio/getaway_bonus.mp3` |
 | Fallback loop if the one above is missing | `police_sound_loop` | `assets/sound/police sound loop.mp3` |
 | Typewriter (intro text) | `typewriter` | `assets/new new sound/type writer sound.mp3` |
 | Gold bar lands / sticks | `sticky_gold_bar` | `assets/new new sound/sound for sticky gold bar in getaway mode.mp3` |

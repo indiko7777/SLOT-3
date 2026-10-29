@@ -1,4 +1,5 @@
 import { Container, FillGradient, Graphics, Sprite, Text, TextStyle } from "pixi.js";
+import { cachedGradient } from "./gradients";
 import { softGlowTexture } from "./fxTextures";
 import type { Rect } from "./types";
 import { UI_FONT } from "../typography";
@@ -32,7 +33,7 @@ export const BAR = {
 
 /** GTA VI sunset: hot pink → orange → gold, along `dir` in the shape's own space. */
 function sunset(dir: "h" | "v" | "d" = "h", stops: Array<[number, string]> = [[0, "#ff3d8b"], [0.55, "#ff8a3d"], [1, "#ffd166"]]): FillGradient {
-  return new FillGradient({
+  return cachedGradient({
     type: "linear",
     start: { x: 0, y: 0 },
     end: dir === "h" ? { x: 1, y: 0 } : dir === "v" ? { x: 0, y: 1 } : { x: 1, y: 1 },

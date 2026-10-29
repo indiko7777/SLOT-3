@@ -1,4 +1,5 @@
 import { Container, FillGradient, Graphics, Sprite, Texture } from "pixi.js";
+import { cachedGradient } from "./gradients";
 import type { Rect } from "./types";
 
 /**
@@ -40,7 +41,7 @@ function geo(frame: Rect, board: Rect): Geo {
 }
 
 function grad(dir: "v" | "h", stops: [number, string][]): FillGradient {
-  return new FillGradient({
+  return cachedGradient({
     type: "linear",
     start: { x: 0, y: 0 },
     end: dir === "v" ? { x: 0, y: 1 } : { x: 1, y: 0 },

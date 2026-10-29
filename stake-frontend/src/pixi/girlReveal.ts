@@ -1,4 +1,5 @@
 import { Container, FillGradient, Graphics, Sprite, Text, TextStyle, type Texture } from "pixi.js";
+import { cachedGradient } from "./gradients";
 import { beamTexture, softGlowTexture, sparkDotTexture, streakTexture } from "./fxTextures";
 import { easeInCubic, easeInOutCubic, easeOutBack, easeOutCubic, linear, simulate, tween, wait, ambientTicker } from "./tween";
 import { DISPLAY_FONT, UI_FONT } from "../typography";
@@ -444,7 +445,7 @@ export async function girlIntro(o: {
     text: o.name.toUpperCase(),
     style: new TextStyle({
       fontFamily: DISPLAY_FONT, fontSize: nameSize, letterSpacing: 3, padding: 16,
-      fill: new FillGradient({ start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, colorStops: [
+      fill: cachedGradient({ start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, colorStops: [
         { offset: 0, color: 0xffffff }, { offset: 0.45, color: 0xfff1d6 }, { offset: 0.55, color: accent }, { offset: 1, color: 0x7a2d8a },
       ] }),
       stroke: { color: 0x12061a, width: 8, join: "round" },

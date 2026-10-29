@@ -1,4 +1,5 @@
 import { Container, FillGradient, Graphics, Sprite, Text, TextStyle, Texture } from "pixi.js";
+import { cachedGradient } from "./gradients";
 import { getExtraTexture } from "./assets";
 import { pieceBounds } from "./girlReveal";
 import { ambientTicker, tween, easeOutCubic, easeInOutCubic } from "./tween";
@@ -31,7 +32,7 @@ const NEON: Array<[string, string]> = [["#3fd4ff", "#7a7dff"], ["#ff3d8b", "#ffa
 const GLOW = [0x3f8dff, 0xff4f7a, 0x9a4dff];
 
 function grad(stops: Array<[number, string]>, dir: "h" | "v" | "d" = "h"): FillGradient {
-  return new FillGradient({
+  return cachedGradient({
     type: "linear",
     start: { x: 0, y: 0 },
     end: dir === "h" ? { x: 1, y: 0 } : dir === "v" ? { x: 0, y: 1 } : { x: 1, y: 1 },

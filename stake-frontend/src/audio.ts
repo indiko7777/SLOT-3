@@ -40,12 +40,13 @@ type TrackName =
   | "getaway_end" | "money_counter_end" | "money_counter_loop" | "reel_loop"
   | "win_mega_grand" | "win_max" | "getaway_explosive" | "getaway_intro"
   | "win_big_lowest" | "sticky_gold_bar" | "typewriter"
-  | "sunset_synths" | "turbo_night" | "vice_nights" | "open_lines";
+  | "sunset_synths" | "vice_nights" | "open_lines" | "groovy";
 
 const AUDIO_BASE = "assets/audio/";
 
-const TRACK_PATHS: Partial<Record<TrackName, string>> = {
-  bg_base: "assets/audio/turbo_night.mp3",
+export const TRACK_PATHS: Partial<Record<TrackName, string>> = {
+  bg_base: "assets/audio/coastal_heat.mp3",
+  groovy: "assets/audio/groovy.mp3",
   sunset_synths: "assets/audio/sunset_synths.mp3",
   vice_nights: "assets/audio/vice_nights.mp3",
   open_lines: "assets/Open Lines 97.mp3",
@@ -74,7 +75,8 @@ const TRACK_PATHS: Partial<Record<TrackName, string>> = {
   getaway_intro: "assets/new new sound/sound for getaway intro play in same time as the banner appear that give the cinematic look.mp3",
   win_big_lowest: "assets/new new sound/sound for lowest paying winning banner animation.mp3",
   sticky_gold_bar: "assets/new new sound/sound for sticky gold bar in getaway mode.mp3",
-  bg_bonus: "assets/new new sound/continuous looping getaway background sound play after the intro sound.mp3",
+  // The Getaway's own music: starts on the first bonus spin, not under the intro sting.
+  bg_bonus: "assets/audio/getaway_bonus.mp3",
   police_sound_loop: "assets/sound/police sound loop.mp3",
   typewriter: "assets/new new sound/type writer sound.mp3",
 };
@@ -94,7 +96,10 @@ const ALL_TRACKS: TrackName[] = [
   "getaway_end", "money_counter_end", "money_counter_loop", "reel_loop",
   "win_mega_grand", "win_max", "getaway_explosive", "getaway_intro",
   "win_big_lowest", "sticky_gold_bar", "typewriter",
-  "sunset_synths", "turbo_night", "vice_nights", "open_lines"
+  // No separate "turbo_night" id: that file IS bg_base (COASTAL HEAT). A
+  // duplicate id decoded the same 2.6-min bed a second time at boot (+57 MB
+  // of PCM on phones, bypassing MUSIC_TRACKS' one-bed-at-a-time rule).
+  "sunset_synths", "vice_nights", "open_lines", "groovy"
 ];
 
 /**
@@ -104,12 +109,14 @@ const ALL_TRACKS: TrackName[] = [
  * bed that is actually playing is decoded; the others wait as their small
  * compressed mp3s and are decoded when a station switch asks for them.
  */
-const MUSIC_TRACKS: ReadonlySet<TrackName> = new Set<TrackName>(["bg_base", "sunset_synths", "vice_nights", "open_lines"]);
+// bg_bonus is a full 2-min song now (not a 6 s loop), so it follows the same
+// one-bed-at-a-time rule; it is decoded while the Getaway intro plays.
+export const MUSIC_TRACKS: ReadonlySet<TrackName> = new Set<TrackName>(["bg_base", "groovy", "sunset_synths", "vice_nights", "open_lines", "bg_bonus"]);
 
 /** Base volume per track (0–1+) */
 const VOLUME: Record<TrackName, number> = {
   bg_base:           0.30,
-  bg_bonus:          0.55,
+  bg_bonus:          0.42,  // a full song now; sits ~2 dB over the radio, under the bonus FX
   spin_loop:         0.40,
   win_small:         0.55,
   win_big:           0.65,
@@ -162,7 +169,7 @@ const VOLUME: Record<TrackName, number> = {
   sticky_gold_bar:   0.70,
   typewriter:        0.80,
   sunset_synths:     0.30,
-  turbo_night:       0.30,
+  groovy:            0.30,
   vice_nights:       0.30,
   open_lines:        0.55,
 };
@@ -182,7 +189,7 @@ type StationAudio =
 export const STATION_AUDIO: Record<string, StationAudio> = {
   off:       { kind: "off" },
   heat:      { kind: "track", track: "bg_base" },
-  vault:     { kind: "track", track: "bg_bonus" },
+  groovy:    { kind: "track", track: "groovy" },
   neon:      { kind: "track", track: "sunset_synths" },
   vice:      { kind: "track", track: "vice_nights" },
   open_live: { kind: "track", track: "open_lines" },
@@ -315,6 +322,9 @@ export class EventAudioBus {
   private counterEnd: ActiveLoop | null = null;
   private bonusOutro: ActiveLoop | null = null;
   private inBonus = false;
+  /** The Getaway music waits for the first bonus spin, so the intro sting
+   *  (and the trucks / Wanted-star trigger beat) plays clean on its own. */
+  private bonusMusicLive = false;
   private inGetawayResult = false;
   private getawayResultSound: GetawayResultSound | null = null;
 
@@ -672,9 +682,9 @@ export class EventAudioBus {
         return;
       }
       if (this.inBonus) {
-        // During bonus spins (natural or paid), music cannot be changed to base radio stations.
-        // It stays locked to the exact bonus audio (bg_bonus).
-        this.startBonusBg();
+        // During the Getaway the radio cannot override the bonus music; the
+        // pick is remembered and plays once the bonus is over.
+        if (this.bonusMusicLive) this.startBonusBg();
         return;
       }
       this.fadeOut("bg");
@@ -870,10 +880,20 @@ export class EventAudioBus {
       case "bonus_trigger":
         this.fire("getaway_intro", vol, 1.25); // 25% faster so it ends sooner
         this.inBonus = true;
-        this.startBonusBg();
+        // The player's station bows out under the sting; the Getaway music
+        // itself starts with the first bonus spin. On phones it decodes now,
+        // during the ~8 s intro, so it is ready on time.
+        this.bonusMusicLive = false;
+        this.stopSynthRadio();
+        this.fadeOut("bg");
+        if (this.lazyMusic) void this.decodeMusic("bg_bonus");
         break;
 
       case "bonus_spin":
+        if (!this.bonusMusicLive) {
+          this.bonusMusicLive = true;
+          if (this.radioStation !== "off") this.startBonusBg();
+        }
         // Gold bar audio is handled by fireSafeLand() callback when they physically land on screen.
         break;
 
@@ -1601,6 +1621,7 @@ export class EventAudioBus {
     this.cancelWinCounter();
     this.stopBonusOutro();
     this.inBonus = false;
+    this.bonusMusicLive = false;
     if (!this.silenced) this.restoreBaseBg();
   }
 
@@ -1685,7 +1706,9 @@ export class EventAudioBus {
     if (existing?.track === track) return;          // already playing this track
 
     let buf = this.buffers.get(track);
-    if (!buf && track === "bg_bonus" && this.buffers.has("police_sound_loop")) {
+    // Phones: a not-yet-decoded bed (incl. the Getaway music) decodes first.
+    // Only a bonus track that is genuinely missing falls back to the police loop.
+    if (!buf && track === "bg_bonus" && !this.musicRaw.has(track) && this.buffers.has("police_sound_loop")) {
       buf = this.buffers.get("police_sound_loop");
     }
     if (!buf && slot === "bg" && this.musicRaw.has(track)) {
@@ -1751,7 +1774,7 @@ export class EventAudioBus {
   private ensureBg(): void {
     if (this.inGetawayResult) return;
     if (this.inBonus) {
-      if (this.radioStation === "off") return;
+      if (this.radioStation === "off" || !this.bonusMusicLive) return;
       if (!this.bgLoop || this.bgLoop.track !== "bg_bonus") {
         this.startBonusBg();
       }

@@ -1,4 +1,5 @@
 import { Container, FillGradient, Graphics, TextStyle } from "pixi.js";
+import { cachedGradient } from "./gradients";
 import { DISPLAY_FONT } from "../typography";
 
 export function announcementTitleStyle(size: number, tier = 0): TextStyle {
@@ -6,7 +7,7 @@ export function announcementTitleStyle(size: number, tier = 0): TextStyle {
   return new TextStyle({
     fontFamily: DISPLAY_FONT, fontWeight: "400", fontSize: size,
     letterSpacing: 1, align: "center", padding: 12,
-    fill: new FillGradient({ start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, colorStops: [
+    fill: cachedGradient({ start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, colorStops: [
       { offset: 0, color: 0xffffff }, { offset: .44, color: 0xffffe9 },
       { offset: .48, color: 0xffe8b3 }, { offset: 1, color: lower },
     ] }),
@@ -33,7 +34,7 @@ export class AnnouncementArt extends Container {
     const w = this.w, h = this.h;
     const accent = [0xffcc79, 0xffce70, 0xff876c, 0xf780b2, 0x7aeee7][tier] ?? 0xffcc79;
     this.halo.clear();
-    const glow = new FillGradient({ type: "radial", center: { x: .5, y: .5 }, innerRadius: 0,
+    const glow = cachedGradient({ type: "radial", center: { x: .5, y: .5 }, innerRadius: 0,
       outerCenter: { x: .5, y: .5 }, outerRadius: .5,
       colorStops: [{ offset: 0, color: "rgba(255,205,139,0.48)" },
         { offset: .44, color: "rgba(255,107,150,0.23)" },
@@ -67,7 +68,7 @@ export class AnnouncementArt extends Container {
           .stroke({ color, width, alpha });
       }
     }
-    this.flare.clear().ellipse(0, 0, w*.49, h*.62).fill(new FillGradient({
+    this.flare.clear().ellipse(0, 0, w*.49, h*.62).fill(cachedGradient({
       type: "radial", center: { x: .5, y: .5 }, innerRadius: 0,
       outerCenter: { x: .5, y: .5 }, outerRadius: .5,
       colorStops: [{ offset: 0, color: "rgba(255,253,217,.6)" }, { offset: .45, color: "rgba(255,195,105,.28)" }, { offset: 1, color: "rgba(255,195,105,0)" }],

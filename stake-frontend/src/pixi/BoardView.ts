@@ -1,4 +1,5 @@
 import { Container, FillGradient, Graphics, Sprite, Text, TextStyle, BlurFilter } from "pixi.js";
+import { cachedGradient } from "./gradients";
 import { GRID_COLUMNS, GRID_ROWS, type Board, type Position, type SymbolId } from "../domain";
 import { getSymbolTexture } from "./assets";
 import { SymbolView, WIN_ACCENT, DEFAULT_ACCENT } from "./SymbolView";
@@ -1174,7 +1175,7 @@ export class BoardView extends Container {
     // The dark frosted pane itself lives under the board (cabinet.ts). Here:
     // reel lanes that catch a little light in the middle, and engraved dividers.
     const colW = w / GRID_COLUMNS;
-    const lane = new FillGradient({
+    const lane = cachedGradient({
       type: "linear", start: { x: 0, y: 0 }, end: { x: 1, y: 0 }, textureSpace: "local",
       colorStops: [
         { offset: 0, color: "rgba(255,255,255,0)" },
@@ -1185,7 +1186,7 @@ export class BoardView extends Container {
     for (let col = 0; col < GRID_COLUMNS; col++) {
       this.background.rect(col * colW, 0, colW, h).fill(lane);
     }
-    const divider = (alpha: number): FillGradient => new FillGradient({
+    const divider = (alpha: number): FillGradient => cachedGradient({
       type: "linear", start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, textureSpace: "local",
       colorStops: [
         { offset: 0, color: `rgba(255,232,210,0)` },
@@ -1214,7 +1215,7 @@ export class BoardView extends Container {
     const h = this.rect.height;
     const g = this.glassOverlay;
     g.clear();
-    const v = (stops: [number, string][]): FillGradient => new FillGradient({
+    const v = (stops: [number, string][]): FillGradient => cachedGradient({
       type: "linear", start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, textureSpace: "local",
       colorStops: stops.map(([offset, color]) => ({ offset, color })),
     });

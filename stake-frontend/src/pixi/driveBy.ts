@@ -1,4 +1,5 @@
 import { Container, FillGradient, Graphics, Sprite, Text, TextStyle, Texture } from "pixi.js";
+import { cachedGradient } from "./gradients";
 import { getExtraTexture } from "./assets";
 import { softGlowTexture, streakTexture, sparkDotTexture } from "./fxTextures";
 import { ambientTicker, getTimeScale, tween, easeInCubic, easeOutCubic, easeOutBack } from "./tween";
@@ -280,7 +281,7 @@ export async function playDriveBy(o: DriveByOpts): Promise<void> {
     text: "DRIVE-BY",
     style: new TextStyle({
       fontFamily: DISPLAY_FONT, fontSize: tSize, letterSpacing: tSize * 0.04, padding: 12,
-      fill: new FillGradient({ type: "linear", start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, textureSpace: "local",
+      fill: cachedGradient({ type: "linear", start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, textureSpace: "local",
         colorStops: [{ offset: 0, color: "#ffe08a" }, { offset: 0.5, color: "#ff8a3d" }, { offset: 1, color: "#ff3d8b" }] }),
       dropShadow: { color: 0x12051f, alpha: 0.85, blur: 10, distance: 4, angle: Math.PI / 2 },
     }),
@@ -294,7 +295,7 @@ export async function playDriveBy(o: DriveByOpts): Promise<void> {
   sub.anchor.set(0.5);
   sub.position.set(0, tSize * 0.62);
   const bar = new Graphics();
-  bar.rect(-tSize * 2.2, tSize * 0.4, tSize * 4.4, 3).fill(new FillGradient({ type: "linear", start: { x: 0, y: 0 }, end: { x: 1, y: 0 }, textureSpace: "local",
+  bar.rect(-tSize * 2.2, tSize * 0.4, tSize * 4.4, 3).fill(cachedGradient({ type: "linear", start: { x: 0, y: 0 }, end: { x: 1, y: 0 }, textureSpace: "local",
     colorStops: [{ offset: 0, color: "rgba(34,211,197,0)" }, { offset: 0.3, color: "#22d3c5" }, { offset: 0.7, color: "#ff3d8b" }, { offset: 1, color: "rgba(255,61,139,0)" }] }));
   title.addChild(bar, word, sub);
   title.skew.x = -0.16;

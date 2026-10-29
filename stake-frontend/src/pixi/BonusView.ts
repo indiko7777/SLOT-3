@@ -2,6 +2,7 @@ import { formatMultiplier } from "../format";
 import { money as fmtMoney } from "../currency";
 import { MiamiStreet } from "./MiamiStreet";
 import { BlurFilter, ColorMatrixFilter, Container, FillGradient, Graphics, PerspectiveMesh, Sprite, Text, TextStyle, Texture } from "pixi.js";
+import { cachedGradient } from "./gradients";
 import { BONUS_START_RESPINS, GRID_COLUMNS, GRID_ROWS, MAX_WIN_MULTIPLIER, type BonusCell, type Position } from "../domain";
 import { getExtraTexture } from "./assets";
 import { softGlowTexture, sparkDotTexture, streakTexture } from "./fxTextures";
@@ -855,7 +856,7 @@ export class BonusView extends Container {
       text: "DUD",
       style: new TextStyle({
         fontFamily: DISPLAY_FONT, fontSize: size, letterSpacing: 2, padding: 12,
-        fill: new FillGradient({ start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, colorStops: [
+        fill: cachedGradient({ start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, colorStops: [
           { offset: 0, color: 0xffffff }, { offset: 0.48, color: 0xd5dbe3 }, { offset: 0.52, color: 0x9aa3ae }, { offset: 1, color: 0x5f6873 },
         ] }),
         stroke: { color: 0x101317, width: 7, join: "round" },
@@ -2479,7 +2480,7 @@ export class BonusView extends Container {
       text: "MAX WIN",
       style: new TextStyle({
         fontFamily: DISPLAY_FONT, fontSize: size, letterSpacing: 4, padding: 18,
-        fill: new FillGradient({ start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, colorStops: [
+        fill: cachedGradient({ start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, colorStops: [
           { offset: 0, color: 0xffffff }, { offset: 0.4, color: 0xfff1b8 }, { offset: 0.5, color: 0xffc23a }, { offset: 1, color: 0xff6a2a },
         ] }),
         stroke: { color: 0x2a1204, width: 9, join: "round" },
@@ -2556,7 +2557,7 @@ export class BonusView extends Container {
     const bandGlow = this.glow(POLICE_RED, 0, 0, bandW * 1.15, bandH * 2.2, stamp);
     bandGlow.alpha = 0;
     stamp.addChild(band);
-    const face = new FillGradient({ start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, colorStops: [
+    const face = cachedGradient({ start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, colorStops: [
       { offset: 0, color: 0xffffff }, { offset: 0.42, color: 0xffe0d2 },
       { offset: 0.5, color: last ? 0xff4a3a : 0xff7656 }, { offset: 1, color: 0xb80c22 },
     ] });
