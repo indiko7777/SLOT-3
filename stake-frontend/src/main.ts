@@ -1,3 +1,4 @@
+import "./pixi/pixiFixes"; // first: patches Pixi before any Graphics exists
 import { Application } from "pixi.js";
 import { loadUiFonts } from "./typography";
 import { EventAudioBus } from "./audio";
@@ -19,6 +20,7 @@ import { createPlayerStateStore } from "./meta/PlayerStateStore";
 import type { GalleryProgress } from "./pixi/types";
 import { loadSymbolTextures } from "./pixi/assets";
 import { warmUpGpu } from "./pixi/warmup";
+import { isLowMemoryDevice, renderDensity } from "./device";
 import { GetawayResult } from "./pixi/GetawayResult";
 import { PixiGameScene } from "./pixi/PixiGameScene";
 import { setTimeScale } from "./pixi/tween";
@@ -266,9 +268,10 @@ async function boot(): Promise<void> {
   pixi = new Application();
   await pixi.init({
     background: "#050816",
-    antialias: true,
+    // Phones: no MSAA backbuffer (4x the canvas memory, invisible at this density).
+    antialias: !isLowMemoryDevice(),
     resizeTo: window,
-    resolution: Math.min(window.devicePixelRatio || 1, 2),
+    resolution: renderDensity(),
     autoDensity: true
   });
   updateLoader(0.25);
@@ -282,8 +285,13 @@ async function boot(): Promise<void> {
   // Shader compiles + texture uploads happen here, behind the loader, instead
   // of as freezes on the first spin / big win / Getaway intro.
   warmUpGpu(pixi.renderer);
-  GetawayResult.prewarm();
-  prewarmConfirmPopups(isSocial());
+  // Phones skip the hidden DOM rehearsals: each holds full-screen composited
+  // layers and decoded key art at the very moment memory peaks (iPhone 12 tab
+  // kills while loading). The cost is a brief first-open hitch on those cards.
+  if (!isLowMemoryDevice()) {
+    GetawayResult.prewarm();
+    prewarmConfirmPopups(isSocial());
+  }
   void audioBus.prefetch();
   updateLoader(0.55);
 

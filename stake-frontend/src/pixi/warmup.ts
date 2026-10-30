@@ -4,6 +4,7 @@ import { allLoadedTextures } from "./assets";
 import { allFxTextures } from "./fxTextures";
 import { prewarmDriveBy } from "./driveBy";
 import { DISPLAY_FONT } from "../typography";
+import { isLowMemoryDevice } from "../device";
 
 /**
  * Pay every one-off GPU cost while the loader is still on screen.
@@ -19,7 +20,12 @@ export function warmUpGpu(renderer: Renderer): void {
   const root = new Container();
   const target = RenderTexture.create({ width: 64, height: 64 });
   try {
-    for (const tex of [...allLoadedTextures(), ...allFxTextures(), ...prewarmDriveBy()]) {
+    // Phones compile the shaders but upload nothing extra: pushing every girl
+    // and all the bonus art to the GPU while the CPU copies still exist doubled
+    // the boot peak, which is what got the tab killed on an iPhone 12. Textures
+    // upload on first draw instead, and the drive-by bakes its blur on first use.
+    const textures = isLowMemoryDevice() ? [] : [...allLoadedTextures(), ...allFxTextures(), ...prewarmDriveBy()];
+    for (const tex of textures) {
       if (!tex || tex.destroyed || tex.width <= 0) continue;
       const s = new Sprite(tex);
       s.width = 8;

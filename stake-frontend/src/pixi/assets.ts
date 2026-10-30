@@ -202,8 +202,8 @@ const CACHE_BUST = "";
  * held once on the GPU and once more as the CPU-side bitmap. That is far past
  * what iOS Safari allows a tab on a 4 GB iPhone 12, which killed the game
  * while loading. On those devices every image is decoded, downscaled to a cap
- * that still exceeds what the phone screen can show, and kept at the smaller
- * size (~130 MB in total).
+ * that still covers what the phone screen shows at its capped density (see
+ * device.ts renderDensity), and kept at the smaller size.
  *
  * The texture's `resolution` is set to the downscale factor, so its LOGICAL
  * size (texture.width/height, atlas frame coordinates, every layout that
@@ -212,11 +212,11 @@ const CACHE_BUST = "";
  */
 const LOW_MEMORY_CAP = {
   /** Girl silhouettes / body pieces / full images: never shown full-screen-tall. */
-  character: 880,
+  character: 640,
   /** Screen-covering scenery. */
-  background: 1600,
+  background: 1280,
   /** Skeletal atlases and all other art. */
-  other: 1024,
+  other: 640,
 } as const;
 type CapClass = keyof typeof LOW_MEMORY_CAP;
 

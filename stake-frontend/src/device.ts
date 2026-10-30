@@ -17,6 +17,16 @@ export function isLowMemoryDevice(): boolean {
   return cached;
 }
 
+/**
+ * Canvas / filter pixel density. iOS backs a tab's canvas and every filter
+ * render target at this density, so a 3x phone at full DPR multiplies GPU
+ * memory; 1.5x still reads sharp on a phone-sized screen.
+ */
+export function renderDensity(): number {
+  const dpr = (typeof window !== "undefined" && window.devicePixelRatio) || 1;
+  return Math.min(dpr, isLowMemoryDevice() ? 1.5 : 2);
+}
+
 function detect(): boolean {
   if (typeof navigator === "undefined" || typeof window === "undefined") return false;
   try {

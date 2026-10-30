@@ -206,6 +206,15 @@ interface ActiveLoop {
 
 /* ═══════════════════════════════════════════════════ */
 
+/** Phones decode everything at 32 kHz: a third less PCM for all music and FX,
+ *  with no audible loss on a phone speaker. Falls back to the device default. */
+function createAudioContext(): AudioContext {
+  if (isLowMemoryDevice()) {
+    try { return new AudioContext({ sampleRate: 32000 }); } catch { /* unsupported rate */ }
+  }
+  return new AudioContext();
+}
+
 export class EventAudioBus {
   private readonly approved = new ApprovedAudio();
   private readonly pendingSymbolSounds = new Set<string>();
@@ -282,6 +291,8 @@ export class EventAudioBus {
   private readonly musicDecodes = new Map<TrackName, Promise<void>>();
   /** The music bed asked for while it was still decoding. */
   private pendingBg: TrackName | null = null;
+  /** The bed most recently asked for; the only decode allowed to become resident. */
+  private wantedBed: TrackName | null = null;
   private fetched = false;
   private decodePromise: Promise<void> | null = null;
   private master: GainNode | null = null;
@@ -382,7 +393,7 @@ export class EventAudioBus {
    */
   async unlock(): Promise<void> {
     if (!this.ctx) {
-      this.ctx = new AudioContext();
+      this.ctx = createAudioContext();
       this.master = this.ctx.createGain();
       const limiter = this.ctx.createDynamicsCompressor();
       limiter.threshold.value = -3;
@@ -438,6 +449,7 @@ export class EventAudioBus {
    * source node until it stops), so at most one is resident.
    */
   private decodeMusic(track: TrackName): Promise<void> {
+    this.wantedBed = track;
     const inFlight = this.musicDecodes.get(track);
     if (inFlight) return inFlight;
     const raw = this.musicRaw.get(track);
@@ -446,6 +458,9 @@ export class EventAudioBus {
       // decodeAudioData detaches its input, so decode a copy and keep the mp3.
       .decodeAudioData(raw.slice(0))
       .then((buf) => {
+        // A slower, older request must not evict the bed asked for since (a
+        // late COASTAL HEAT decode wiping the Getaway music): it is dropped.
+        if (this.wantedBed !== track) return;
         for (const other of MUSIC_TRACKS) if (other !== track) this.buffers.delete(other);
         this.buffers.set(track, buf);
       })

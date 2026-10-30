@@ -1,4 +1,5 @@
 import { Application, Container, Sprite, Graphics, Text, TextStyle, Texture } from "pixi.js";
+import { renderDensity } from "../device";
 import { GRID_COLUMNS, GRID_ROWS, type Board, type GameEvent, type Position, type SymbolId } from "../domain";
 import type { PlaybackSnapshot } from "../playback";
 import type { PieceGain } from "../meta/collection";
@@ -910,7 +911,7 @@ export class PixiGameScene {
     silSprite.y = silOff.y;
     silSprite.tint = 0x000000;
     const outline = new OutlineFilter({ thickness: 2, color: 0xffffff, quality: 1.0 });
-    outline.resolution = window.devicePixelRatio || 1;
+    outline.resolution = renderDensity();
     silSprite.filters = [outline];
     charContainer.addChild(silSprite);
     for (let i = 1; i < newCount; i++) {
